@@ -1,0 +1,117 @@
+{
+    "aa": {
+        "a1": {
+            "format_version": 1,
+            "nodes": [
+                {
+                    "uuid": "4a53c7bb-af6e-48f2-92d0-4fbc1a4ba61a",
+                    "text": "New Node",
+                    "position": {
+                        "x": -298.0,
+                        "y": -79.0
+                    },
+                    "width": 100.0,
+                    "height": 37.0,
+                    "use_text_renderer": true,
+                    "style": {
+                        "bg_color": "#3c3c5c",
+                        "border_color": "#5c5c8c",
+                        "text_color": "#ffffff",
+                        "font_family": "Segoe UI",
+                        "font_size": 11
+                    },
+                    "config": {
+                        "uuid": "4a53c7bb-af6e-48f2-92d0-4fbc1a4ba61a",
+                        "text": "New Node",
+                        "font_family": "Segoe UI",
+                        "font_size": 14,
+                        "font_color": "#ffffff",
+                        "background_color": "#3c3c5c",
+                        "text_visible": true,
+                        "background_visible": true,
+                        "text_opacity": 100,
+                        "background_opacity": 100,
+                        "shadow_enabled": false,
+                        "shadow_color": "#000000",
+                        "shadow_opacity": 100,
+                        "shadow_blur": 0,
+                        "shadow_scale": 1.0,
+                        "shadow_offset_x": 0.1,
+                        "shadow_offset_y": 0.1,
+                        "is_vertical": false,
+                        "offset_mode": "B",
+                        "outline_enabled": false,
+                        "outline_color": "#000000",
+                        "outline_opacity": 100,
+                        "outline_width": 3.0,
+                        "outline_blur": 0,
+                        "second_outline_enabled": false,
+                        "second_outline_color": "#ffffff",
+                        "second_outline_opacity": 100,
+                        "second_outline_width": 6.0,
+                        "second_outline_blur": 0,
+                        "third_outline_enabled": false,
+                        "third_outline_color": "#000000",
+                        "third_outline_opacity": 100,
+                        "third_outline_width": 9.0,
+                        "third_outline_blur": 0,
+                        "background_outline_enabled": false,
+                        "background_outline_color": "#5c5c8c",
+                        "background_outline_opacity": 100,
+                        "background_outline_width_ratio": 0.05,
+                        "text_gradient_enabled": false,
+                        "text_gradient": [
+                            [
+                                0.0,
+                                "#ffffff"
+                            ],
+                            [
+                                1.0,
+                                "#6c9fff"
+                            ]
+                        ],
+                        "text_gradient_angle": 0,
+                        "text_gradient_opacity": 100,
+                        "background_gradient_enabled": false,
+                        "background_gradient": [
+                            [
+                                0.0,
+                                "#3c3c5c"
+                            ],
+                            [
+                                1.0,
+                                "#5c5c8c"
+                            ]
+                        ],
+                        "background_gradient_angle": 0,
+                        "background_gradient_opacity": 100,
+                        "horizontal_margin_ratio": 0.0,
+                        "vertical_margin_ratio": 0.2,
+                        "margin_top_ratio": 0.3,
+                        "margin_bottom_ratio": 0.3,
+                        "margin_left_ratio": 0.3,
+                        "margin_right_ratio": 0.3,
+                        "background_corner_ratio": 0.3,
+                        "position": {
+                            "x": 0.0,
+                            "y": 0.0
+                        },
+                        "border_color": "#5c5c8c",
+                        "is_expanded": true
+                    }
+                }
+            ],
+            "edges": [],
+            "canvas_settings": {
+                "bg_color": "#1e1e2e",
+                "grid_enabled": true,
+                "grid_size": 50,
+                "zoom": 1.0,
+                "center": {
+                    "x": -29.0,
+                    "y": -11.0
+                }
+            }
+        }
+    }
+}
