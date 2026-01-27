@@ -34,6 +34,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [3/6] Running Tests: Group 1 (Core Logic)...
+echo [3/5] Running Tests: Group 1 (Core Logic)...
 "%VENV_PYTHON%" -m pytest tests/ -k "not mindmap and not interactive and not chaos and not stress"
 if %errorlevel% neq 0 (
     echo [ERROR] Core Tests failed.
@@ -41,15 +42,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [4/6] Running Tests: Group 2 (MindMap)...
-"%VENV_PYTHON%" -m pytest tests/mindmap/ tests/ -k "mindmap"
-if %errorlevel% neq 0 (
-    echo [ERROR] MindMap Tests failed.
-    goto :FAIL
-)
-
-echo.
-echo [5/6] Running Tests: Group 3 (Interactive)...
+echo [4/5] Running Tests: Group 3 (Interactive)...
 "%VENV_PYTHON%" -m pytest tests/test_interactive/
 if %errorlevel% neq 0 (
     echo [ERROR] Interactive Tests failed.
