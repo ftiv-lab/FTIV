@@ -135,3 +135,6 @@ docs/
 # Agent & System Configs
 .agent/
 .claude/
+
+# User Data & Settings
+json/
