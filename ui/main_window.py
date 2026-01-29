@@ -46,6 +46,8 @@ from ui.tabs.about_tab import AboutTab
 from ui.tabs.animation_tab import AnimationTab
 from ui.tabs.general_tab import GeneralTab
 from ui.tabs.image_tab import ImageTab
+
+# MindMap tab removed for V1.0
 from ui.tabs.scene_tab import ConnectionsTab, SceneTab
 from ui.tabs.text_tab import TextTab
 from utils.app_settings import AppSettings
@@ -111,15 +113,9 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         self.main_controller = MainController(self, self.window_manager)
         self.main_controller.setup_connections()
 
-        # 12. マインドマップモード管理 (Phase 1 Integration)
-        from managers.app_mode_manager import AppModeManager
-        from ui.mindmap.mindmap_widget import MindMapWidget
-
-        self.app_mode_manager = AppModeManager(self)
-        # マインドマップウィジェットは独立ウィンドウとして初期化
-        self.mindmap_widget = MindMapWidget(self, parent=None)
-        self.mindmap_widget.setWindowTitle("FTIV Mind Map")
-        self.mindmap_widget.hide()
+        # MindMap widget config removed for V1.0
+        # self.mindmap_widget.setWindowTitle("FTIV Mind Map")
+        # self.mindmap_widget.hide()
 
         # --- 3. UI構築と信号接続 ---
         self.setup_ui()
@@ -129,8 +125,8 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
         self.create_undo_redo_actions()
         self.file_manager.load_scenes_db()
-        # マインドマップDBのロード
-        self.mindmaps = self.file_manager.load_mindmaps_db()
+        # マインドマップDBのロード removed for V1.0
+        # self.mindmaps = self.file_manager.load_mindmaps_db()
 
         # デフォルトノードスタイルの初期化とロード
         from models.default_node_style import DefaultNodeStyle
@@ -367,10 +363,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         self.about_tab = AboutTab(self)
         self.tabs.addTab(self.about_tab, tr("tab_about"))
         # 8. マインドマップタブ (新規)
-        from ui.tabs.mindmap_tab import MindMapTab
-
-        self.mindmap_tab = MindMapTab(self)
-        self.tabs.addTab(self.mindmap_tab, "MindMap")
+        # MindMap tab removed for V1.0
+        # from ui.tabs.mindmap_tab import MindMapTab
+        # self.mindmap_tab = MindMapTab(self)
+        # self.tabs.addTab(self.mindmap_tab, "MindMap")
 
     def _init_property_panel(self) -> None:
         """プロパティパネルの初期化（Undo/Redo action の取り込み含む）。"""

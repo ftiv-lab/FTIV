@@ -5,7 +5,7 @@
 ## 🚀 Key Features
 
 *   **Overlay Mode**: Place text and images anywhere on your screen with transparent backgrounds.
-*   **Mind Map Connections**: Link text and images with customizable connector lines (Shift+Drag).
+*   **Visual Connections**: Link text and images with customizable connector lines (Shift+Drag).
 *   **Highly Customizable**: Adjust fonts, colors, opacity, and animations per window.
 *   **Modern UI**: Sleek, dark-themed interface with fluent animations.
 *   **Performance**: Optimized for low resource usage.
