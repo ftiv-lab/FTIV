@@ -99,5 +99,13 @@ Phase 6 でビジネスロジックの分離が完了しました。Phase 7 で�
 # Phase 17: Localization Audit (日英翻訳網羅化)
 - [x] 監査: `tools/audit_translation.py` によるキー欠落とハードコードの検出
 - [x] 修正: `en.json` / `jp.json` の完全同期 (Parity Fix)
-- [x] 修正: `PropertyPanel` 等のハードコード文字列を `tr()` 化
 - [x] 成果: 言語リソースの完全性確保 (Zero Issues)
+
+# Phase 18-21: MindMap Development (Experiemntal)
+- *Note: These phases involved the development of MindMap features, which were ultimately removed in Phase 22 to prioritize core stability.*
+
+# Phase 22: V1.0 Release (Pivot & Cleanup)
+- [x] 決断: マインドマップ機能の完全削除による「選択と集中」
+- [x] 実行: `feature/mindmap_v1` への退避と `master` のクリーンアップ
+- [x] 検証: V1.0 テストスイートの通過 (Stabilized)
+- [x] 成果: [ポストモーテム文書](22_v1_release_postmortem.md) の作成
