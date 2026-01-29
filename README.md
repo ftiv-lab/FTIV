@@ -1,67 +1,83 @@
-# FTIV (Free Text & Image Viewer)
+# FTIV (Floating Text Image Viewer)
 
-**FTIV** は、コンテンツクリエイター、ストリーマー、パワーユーザー向けに設計された、高性能なオーバーレイ型テキスト＆画像ビューワーです。Python 3.14 と PySide6 で構築されています。
+**Floating Text & Image Viewer for Creators, Streamers, and Power Users.**
+**クリエイター、ストリーマー、パワーユーザーのための、高性能オーバーレイビューワー。**
 
-## 🚀 主な機能
+![Python](https://img.shields.io/badge/Python-3.13%2B-blue.svg)
+![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)
+![License](https://img.shields.io/badge/License-Proprietary-red.svg)
 
-*   **オーバーレイモード**: 背景透過ウィンドウとして、画面のあらゆる場所にテキストや画像を配置できます。
-*   **ビジュアルコネクション**: テキストや画像同士をカスタマイズ可能な接続線でリンクできます (Shift+Drag)。
-*   **高度なカスタマイズ**: ウィンドウごとにフォント、色、不透明度、アニメーションを調整可能。
-*   **モダンUI**: 流れるようなアニメーションを備えた、洗練されたダークテーマインターフェース。
-*   **ハイパフォーマンス**: リソース使用量を抑えた最適化設計。
+---
 
-## 🛠️ システム要件
+## 📥 Download / ダウンロード
 
-*   **OS**: Windows 10/11 (64-bit)
-*   **ランタイム**: Python 3.14.2 (開発推奨) / Python 3.13 (リリースビルドに必須)
+**[Get the latest version (v1.0.0) from Releases](https://github.com/Start-to-Finish/FTIV/releases)**
 
-## 📦 インストール (開発者向け)
+1.  Download `FTIV.zip`.
+2.  Extract the zip file.
+3.  Run `FTIV.exe`.
 
-1.  **リポジトリのクローン**
-    ```powershell
-    git clone https://github.com/Start-to-Finish/FTIV.git
-    cd FTIV
-    ```
+最新の `FTIV.zip` をダウンロード・解凍し、中の `FTIV.exe` を起動してください。
 
-2.  **仮想環境の作成 (Python 3.14)**
-    ```powershell
-    py -3.14 -m venv .venv314
-    .venv314\Scripts\activate
-    ```
+---
 
-3.  **依存関係のインストール**
-    ```powershell
-    pip install -r requirements.txt
-    ```
+## ✨ Features / 主な機能
 
-4.  **アプリケーションの実行**
-    ```powershell
-    python main.py
-    ```
+*   **Overlay Mode / オーバーレイモード**
+    *   Place text and images anywhere on your screen with transparent backgrounds.
+    *   画面のあらゆる場所に、背景透過でテキストや画像を配置できます。
 
-## 🏗️ リリースビルドの作成 (EXE化)
+*   **Visual Connections / ビジュアルコネクション**
+    *   Link windows with customizable lines (Shift+Drag).
+    *   Shift+ドラッグで、ウィンドウ同士を線で繋ぐことができます。
 
-**Nuitka** を使用してスタンドアロンの実行可能ファイルを作成します。
-**注意:** Nuitka との互換性のため、ビルドには現在 **Python 3.13** が必要です。
+*   **High Customization / 高度なカスタマイズ**
+    *   Adjust fonts, colors, opacity, and animations per window.
+    *   ウィンドウごとにフォント、色、不透明度、アニメーションを細かく調整可能。
 
-1.  **ビルド環境のセットアップ (Python 3.13)**
-    ```powershell
-    py -3.13 -m venv .venv313
-    .venv313\Scripts\pip install -r requirements.txt
-    ```
+*   **Modern UI / モダンUI**
+    *   Sleek dark theme with smooth animations.
+    *   流れるようなアニメーションを備えた、洗練されたダークテーマ。
 
-2.  **ビルドスクリプトの実行**
-    ```powershell
-    & '.venv313\Scripts\python.exe' build_release.py
-    ```
+---
 
-3.  **出力**
-    実行ファイルは `dist/FTIV/` に生成されます。
+## 🛠️ System Requirements / 動作環境
 
-## 🤝 コントリビューション
+*   **OS**: Windows 10 / 11 (64-bit)
+*   **Runtime**: No installation required (Portable EXE) / インストール不要
 
-開発ガイドラインやコーディング規約については [CONTRIBUTING.md](CONTRIBUTING.md) を参照してください。
+---
 
-## 📄 ライセンス
+## 👨‍� For Developers / 開発者向け情報
 
-(Proprietary / Contact Author)
+> **Note**: This project uses a Dual-Environment Strategy (Python 3.14 for Dev, Python 3.13 for Build).
+> **注意**: このプロジェクトは開発用に Python 3.14、ビルド用に Python 3.13 を使用します。
+
+### Setup
+
+```bash
+# 1. Clone
+git clone https://github.com/Start-to-Finish/FTIV.git
+cd FTIV
+
+# 2. Setup Dev Env (Python 3.14)
+py -3.14 -m venv .venv314
+.venv314\Scripts\activate
+pip install -r requirements.txt
+
+# 3. Run
+python main.py
+```
+
+### Build (Release)
+
+```bash
+# Requires Python 3.13 environment
+& '.venv313\Scripts\python.exe' build_release.py
+```
+
+For detailed rules and contributing guide, please see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+(c) 2026 Antigravity (Start-to-Finish). All rights reserved.

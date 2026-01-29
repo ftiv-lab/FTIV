@@ -32,6 +32,12 @@ NUITKA_CORE_CMD = [
     "--follow-imports",
     f"--output-dir={DIST_DIR}",
     "--clean-cache=ccache",
+    # Metadata for False Positive Reduction
+    "--windows-company-name=Antigravity",
+    "--windows-product-name=FTIV",
+    "--windows-file-version=1.0.0.0",
+    "--windows-product-version=1.0.0.0",
+    "--windows-file-description=Floating Text Image Viewer",
 ]
 
 # ランチャーのビルド設定: Onefile (ファイル1つ・中身空っぽなのですぐ起動)
@@ -44,6 +50,12 @@ NUITKA_LAUNCHER_CMD = [
     f"--windows-icon-from-ico={ICON_FILE}",
     f"--output-dir={DIST_DIR}",
     "--clean-cache=ccache",
+    # Metadata
+    "--windows-company-name=Antigravity",
+    "--windows-product-name=FTIV Launcher",
+    "--windows-file-version=1.0.0.0",
+    "--windows-product-version=1.0.0.0",
+    "--windows-file-description=FTIV Launcher",
 ]
 
 
@@ -60,34 +72,25 @@ def write_file(path, content):
 def build_package(edition_name="FTIV"):
     """
     標準パッケージをビルドし、フォルダ構成を整える関数
+    (False Positive回避のため、Onefileをやめてディレクトリ形式で配布する)
     """
     print("=" * 60)
-    print(f"Building Package: {edition_name}")
+    print(f"Building Package: {edition_name} (Standalone Folder Mode)")
     print("=" * 60)
 
-    # 1. 本体 (Core) のビルド -> FTIV_Core.exe
-    # output-filename を FTIV_Core.exe にする
-    core_exe_name = "FTIV_Core.exe"
-    cmd_core = NUITKA_CORE_CMD + [f"--output-filename={core_exe_name}", MAIN_SCRIPT]
+    # 1. 本体 (Core) のビルド -> FTIV.exe (これが直接実行ファイルになる)
+    # output-filename を FTIV.exe にする
+    exe_name = "FTIV.exe"
 
-    print(f"1. Building Core ({core_exe_name})...")
+    # コマンド作成 (build_release.py の NUITKA_CORE_CMD を使うが、出力ファイル名だけ変える)
+    cmd_core = NUITKA_CORE_CMD + [f"--output-filename={exe_name}", MAIN_SCRIPT]
+
+    print(f"1. Building Core as Main Executable ({exe_name})...")
     subprocess.run(cmd_core, check=True)
 
     # Nuitka standalone は {output_dir}/{script_name}.dist に出力される
     # main.py -> dist/main.dist
-    core_dist_src = os.path.join(DIST_DIR, "main.dist")
-
-    # 2. ランチャーのビルド -> FTIV.exe
-    # output-filename を FTIV.exe にする (これがユーザーが叩くファイル)
-    launcher_exe_name = "FTIV.exe"
-
-    cmd_launcher = NUITKA_LAUNCHER_CMD + [f"--output-filename={launcher_exe_name}", LAUNCHER_SCRIPT]
-
-    print(f"2. Building Launcher ({launcher_exe_name})...")
-    subprocess.run(cmd_launcher, check=True)
-
-    # 生成されたランチャー (dist/FTIV.exe)
-    launcher_src = os.path.join(DIST_DIR, launcher_exe_name)
+    dist_src = os.path.join(DIST_DIR, "main.dist")
 
     # 3. フォルダ整理
     # 最終的なフォルダ: dist/FTIV/
@@ -95,23 +98,17 @@ def build_package(edition_name="FTIV"):
 
     if os.path.exists(final_dir):
         shutil.rmtree(final_dir)
-    os.makedirs(final_dir)
 
-    # binフォルダを作成
-    bin_dir = os.path.join(final_dir, "bin")
-
-    # コア(main.dist)の中身を bin に移動
-    shutil.move(core_dist_src, bin_dir)
-
-    # ランチャーをルートに移動
-    shutil.move(launcher_src, os.path.join(final_dir, launcher_exe_name))
+    # dist/main.dist を dist/FTIV にリネーム移動するのが一番早い
+    # (shutil.move でフォルダ名変更)
+    shutil.move(dist_src, final_dir)
 
     # Readme作成
     readme_path = os.path.join(final_dir, "Readme.txt")
     with open(readme_path, "w", encoding="utf-8") as f:
         f.write("【FTIV】\n\n")
-        f.write(f"{launcher_exe_name} をダブルクリックして起動してください。\n")
-        f.write("bin フォルダ内のファイルは削除しないでください。\n")
+        f.write(f"{exe_name} をダブルクリックして起動してください。\n")
+        f.write("このフォルダ内のファイルは削除しないでください。\n")
 
     print(f"Done! Package created at: {final_dir}")
 
