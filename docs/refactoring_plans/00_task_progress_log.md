@@ -109,3 +109,7 @@ Phase 6 でビジネスロジックの分離が完了しました。Phase 7 で�
 - [x] 実行: `feature/mindmap_v1` への退避と `master` のクリーンアップ
 - [x] 検証: V1.0 テストスイートの通過 (Stabilized)
 - [x] 成果: [ポストモーテム文書](22_v1_release_postmortem.md) の作成
+
+# Phase 23: Udemy Online Course Planning
+- [x] 計画: 3つの視点（Senior Engineer, Udemy Expert, AI Specialist）による構想策定
+- [x] 成果: `docs/online_course_plan/` に企画書群を作成
