@@ -21,23 +21,66 @@
 
 ---
 
-## ✨ Features / 主な機能
+## 🚀 Why FTIV? / どんなソフト？
 
-*   **Overlay Mode / オーバーレイモード**
-    *   Place text and images anywhere on your screen with transparent backgrounds.
-    *   画面のあらゆる場所に、背景透過でテキストや画像を配置できます。
+FTIV is not just a viewer; it's a **"High-End Desktop Workspace Tool"**.
+Think of it as **"Sticky Notes on Steroids"** or an **"Infinite Canvas over your Desktop"**.
 
-*   **Visual Connections / ビジュアルコネクション**
-    *   Link windows with customizable lines (Shift+Drag).
-    *   Shift+ドラッグで、ウィンドウ同士を線で繋ぐことができます。
+FTIVは、単なるビューワーではありません。**「デスクトップ付箋ソフトの究極進化形」** です。
+画面全体を「透明なキャンバス」として使い、テキストや画像を自由自在に配置・接続・整理できます。
 
-*   **High Customization / 高度なカスタマイズ**
-    *   Adjust fonts, colors, opacity, and animations per window.
-    *   ウィンドウごとにフォント、色、不透明度、アニメーションを細かく調整可能。
+---
 
-*   **Modern UI / モダンUI**
-    *   Sleek dark theme with smooth animations.
-    *   流れるようなアニメーションを備えた、洗練されたダークテーマ。
+## ✨ Key Features / 強力な機能
+
+### 1. 🎨 Ultimate Overlay Engine / 究極のオーバーレイ
+*   **Total Freedom**: Place text, images, and GIFs anywhere on your screen.
+    *   テキストも画像も、デスクトップの好きな場所に配置。
+*   **Transparency Control**: Adjust opacity from 0% (invisible) to 100% (solid).
+    *   ウィンドウの透明度を0%～100%まで自由に調整可能。作業の邪魔になりません。
+*   **Always on Top**: Keep references visible while you work in other apps.
+    *   常に最前面に表示し、資料を見ながらの作業や配信に最適です。
+
+### 2. 📝 Rich Text & Vertical Writing / リッチテキスト＆縦書き
+*   **Typography**: Customize fonts, sizes, colors, outlines, and shadows.
+    *   フォント、色、縁取り（アウトライン）、影（シャドウ）など、Photoshopのようなリッチな文字装飾が可能。
+*   **Vertical Support**: Full support for Tategaki (Vertical writing), perfect for Japanese content.
+    *   **「縦書き」** に完全対応。小説の執筆や、和風な配信素材にも最適です。
+
+### 3. 🎬 Dynamic Media Support / 動画・アニメーション
+*   **Motion Graphics**: Supports **APNG** and **GIF** animations.
+    *   静止画だけでなく、**APNG** や **GIF** アニメーションも再生可能。
+*   **Custom Animations**: Create simple floating/fading animations for any text or image without video editing software.
+    *   ソフト内で「ふわふわ浮く」「フェードイン・アウト」などの簡易アニメーションをテキストや画像に付与できます。
+
+### 4. 🧠 Visual Thinking / 思考の可視化
+*   **Connect the Dots**: Link items with customizable lines (Shift+Drag) to create mind maps or relationship charts directly on your desktop.
+    *   Shift+ドラッグでウィンドウ同士を **「線」** で接続。デスクトップ上でそのままマインドマップや相関図を作れます。
+
+### 5. ⚙️ Pro-Level Customization / プロ級のカスタマイズ
+*   **Deep Control**: Every aspect (Window style, Border, Background) is tweakable via Property Panel or Right-click menu.
+    *   右クリックメニューやプロパティパネルから、すべての要素（枠線、背景色、角丸など）を細かく設定可能。
+*   **Preset System**: Save your favorite layouts and styles.
+    *   お気に入りのスタイルや配置を保存・復元できます。
+
+---
+
+## 👥 Use Cases / こんな人にオススメ
+
+*   **📺 For Streamers / 配信者の方へ**
+    *   Show current song playing, comments, or discord images as overlays.
+    *   Create dynamic "Now Loading" screens using GIFs and text.
+    *   配信画面に「現在の曲名」や「コメント」、「立ち絵」を透過で配置。
+
+*   **🎨 For Creators / クリエイターの方へ**
+    *   Keep reference images floating while modeling in Blender or drawing in Photoshop.
+    *   Build mood boards directly on your screen.
+    *   BlenderやPhotoshopで作業中、参考資料（リファレンス）を常に横に置いておくのに最適。
+
+*   **✒️ For Writers / 物書きの方へ**
+    *   Keep plot notes or character names visible.
+    *   Use "Vertical Text" for hauling traditional Japanese aesthetics.
+    *   プロットやキャラ設定をデスクトップに貼り付け。縦書きで美しいメモを常駐。
 
 ---
 
