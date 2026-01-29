@@ -1,0 +1,45 @@
+{
+    "font_family": "Segoe UI",
+    "font_size": 20,
+    "font_color": "#ffffff",
+    "background_color": "#3c3c5c",
+    "border_color": "#5c5c8c",
+    "text_opacity": 100,
+    "background_opacity": 100,
+    "shadow_enabled": false,
+    "shadow_color": "#000000",
+    "shadow_opacity": 100,
+    "shadow_blur": 0,
+    "shadow_offset_x": 0.1,
+    "shadow_offset_y": 0.1,
+    "outline_enabled": false,
+    "outline_color": "#000000",
+    "outline_opacity": 100,
+    "outline_width": 3.0,
+    "outline_blur": 0,
+    "text_gradient_enabled": false,
+    "text_gradient": [
+        [
+            0.0,
+            "#ffffff"
+        ],
+        [
+            1.0,
+            "#6c9fff"
+        ]
+    ],
+    "text_gradient_angle": 0,
+    "background_gradient_enabled": false,
+    "background_gradient": [
+        [
+            0.0,
+            "#3c3c5c"
+        ],
+        [
+            1.0,
+            "#5c5c8c"
+        ]
+    ],
+    "background_gradient_angle": 0,
+    "background_corner_ratio": 0.3
+}
