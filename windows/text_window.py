@@ -22,13 +22,14 @@ from ui.dialogs import (
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
+from .mixins.inline_editor_mixin import InlineEditorMixin
 from .text_renderer import TextRenderer
 
 # ロガーの取得
 logger = logging.getLogger(__name__)
 
 
-class TextWindow(BaseOverlayWindow):
+class TextWindow(InlineEditorMixin, BaseOverlayWindow):
     """テキストを表示・制御するためのオーバーレイウィンドウクラス。
 
     テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
@@ -42,7 +43,8 @@ class TextWindow(BaseOverlayWindow):
             text (str): 初期表示テキスト。
             pos (QPoint): 表示位置。
         """
-        super().__init__(main_window, config_class=TextWindowConfig)
+        BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
+        InlineEditorMixin.__init__(self)
 
         try:
             self.renderer: TextRenderer = TextRenderer()
@@ -730,18 +732,22 @@ class TextWindow(BaseOverlayWindow):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event: Any) -> None:
-        if event.modifiers() & Qt.ControlModifier:
-            super().mouseDoubleClickEvent(event)
-            return
-
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.change_text()
-
-    def _restore_render_debounce_ms_after_wheel(self) -> None:
-        """ホイール操作後に描画デバウンス値を標準へ戻す。"""
+        """ログに記録しながらダブルクリックイベントを処理します。"""
         try:
-            self._render_debounce_ms = 25
-        except Exception:
+            if event.modifiers() & Qt.ControlModifier:
+                super().mouseDoubleClickEvent(event)
+                return
+
+            if event.button() == Qt.MouseButton.LeftButton:
+                # インライン編集を開始
+                self._start_inline_edit()
+                event.accept()
+            else:
+                super().mouseDoubleClickEvent(event)
+        except Exception as e:
+            logger.error(f"Error in mouseDoubleClickEvent: {e}")
+            # Fallback to old behavior or just log and pass
+            self.change_text()  # This line was in the original snippet, keeping it as a fallback
             pass
 
     def wheelEvent(self, event: Any) -> None:
@@ -749,6 +755,10 @@ class TextWindow(BaseOverlayWindow):
 
         ロック中は誤操作防止のため無効化する。
         """
+        # インライン編集中はスクロール（リサイズ）を無効化
+        if self._is_editing:
+            return
+
         try:
             if bool(getattr(self, "is_locked", False)):
                 event.accept()
@@ -784,6 +794,13 @@ class TextWindow(BaseOverlayWindow):
 
         except Exception:
             traceback.print_exc()
+
+    def _restore_render_debounce_ms_after_wheel(self) -> None:
+        """ホイール操作後に描画デバウンス値を標準へ戻す。"""
+        try:
+            self._render_debounce_ms = 25
+        except Exception:
+            pass
 
     def toggle_text_visibility(self) -> None:
         if self.text_opacity > 0:

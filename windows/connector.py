@@ -30,12 +30,13 @@ from ui.dialogs import (
 )
 from utils.translator import tr
 from windows.base_window import BaseOverlayWindow
+from windows.mixins.inline_editor_mixin import InlineEditorMixin
 from windows.text_renderer import TextRenderer
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectorLabel(BaseOverlayWindow):
+class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
     """
     接続線の上に表示されるラベル専用のウィンドウ
     TextWindowとほぼ同じ機能を持つが、位置はConnectorLineによって管理される
@@ -50,7 +51,8 @@ class ConnectorLabel(BaseOverlayWindow):
             text (str): 初期テキスト。
         """
         # TextWindowConfigを使用して初期化
-        super().__init__(main_window, config_class=TextWindowConfig)
+        BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
+        InlineEditorMixin.__init__(self)
 
         self.connector: Any = connector
 
@@ -640,7 +642,8 @@ class ConnectorLabel(BaseOverlayWindow):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self.edit_text_realtime()
+            # InlineEditorMixin start
+            self._start_inline_edit()
             event.accept()
         else:
             super().mouseDoubleClickEvent(event)
@@ -894,6 +897,9 @@ class ConnectorLabel(BaseOverlayWindow):
         Args:
             event (Any): QWheelEvent
         """
+        if self._is_editing:
+            return
+
         try:
             delta: int = int(event.angleDelta().y())
             if delta == 0:
