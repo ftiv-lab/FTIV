@@ -131,3 +131,7 @@ nul
 
 # Internal Documentation (Industry Standard: Exclude dev logs & business plans)
 docs/
+
+# Agent & System Configs
+.agent/
+.claude/
