@@ -1695,9 +1695,19 @@ class AlignImagesRealtimeDialog(BaseTranslatableDialog):
 class TextBrowserDialog(BaseTranslatableDialog):
     """HTMLテキストを読み取り専用で表示する汎用ダイアログ（説明書・ライセンス用）。"""
 
-    def __init__(self, title: str, html_content: str, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        title: str,
+        html_content: str,
+        parent: Optional[QWidget] = None,
+        allow_independence: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
+
+        if allow_independence:
+            self.setWindowFlags(Qt.Window)
+
         self.resize(600, 500)
 
         layout = QVBoxLayout(self)

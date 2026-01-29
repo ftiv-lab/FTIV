@@ -401,10 +401,6 @@ ABOUT_TEXT_TEMPLATE = """
             <td><b>{version}</b></td>
         </tr>
         <tr>
-            <td align="right" style="color:#888;">Edition:</td>
-            <td><b>{edition}</b></td>
-        </tr>
-        <tr>
             <td align="right" style="color:#888;">Data Format:</td>
             <td>v{data_format}</td>
         </tr>

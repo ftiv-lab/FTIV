@@ -28,10 +28,7 @@ class AboutTab(QWidget):
         edition_layout = QGridLayout(self.edition_group)
 
         # 現在のエディション表示
-        from utils.edition import get_edition
-
-        current_ed = get_edition(self.mw, getattr(self.mw, "base_directory", None))
-        self.label_current_edition = QLabel(tr("label_current_edition").format(edition=current_ed.value.upper()))
+        self.label_current_edition = QLabel(tr("label_current_edition").format(edition="STANDARD"))
         self.label_current_edition.setStyleSheet("font-weight: bold; color: #aaa; font-size: 14px;")
 
         # ショップボタン
@@ -204,11 +201,7 @@ class AboutTab(QWidget):
         """多言語対応のためのテキスト更新"""
         # エディション・ライセンス
         self.edition_group.setTitle(tr("grp_edition"))
-
-        from utils.edition import get_edition
-
-        ed = get_edition(self.mw, getattr(self.mw, "base_directory", None))
-        self.label_current_edition.setText(tr("label_current_edition").format(edition=ed.value.upper()))
+        self.label_current_edition.setText(tr("label_current_edition").format(edition="STANDARD"))
 
         self.btn_open_shop.setText(tr("btn_open_shop"))
         self.btn_copy_shop_url.setText(tr("btn_copy_url"))

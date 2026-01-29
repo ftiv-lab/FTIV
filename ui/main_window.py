@@ -370,7 +370,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def _init_property_panel(self) -> None:
         """プロパティパネルの初期化（Undo/Redo action の取り込み含む）。"""
-        self.property_panel = PropertyPanel(self)
+        self.property_panel = PropertyPanel(parent=None)
 
         if hasattr(self, "undo_action"):
             self.property_panel.addAction(self.undo_action)
@@ -1392,6 +1392,13 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def show_manual_dialog(self) -> None:
         """説明書ダイアログを表示する。"""
+        # 既に表示中なら最前面へ
+        if hasattr(self, "manual_dialog") and self.manual_dialog is not None:
+            if self.manual_dialog.isVisible():
+                self.manual_dialog.activateWindow()
+                self.manual_dialog.raise_()
+                return
+
         from ui.dialogs import TextBrowserDialog
         from utils.docs import MANUAL_TEXT_EN, MANUAL_TEXT_JP
 
@@ -1399,8 +1406,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         lang = get_lang()
         text = MANUAL_TEXT_EN if lang == "en" else MANUAL_TEXT_JP
 
-        dialog = TextBrowserDialog(tr("btn_manual"), text, self)
-        dialog.exec()
+        self.manual_dialog = TextBrowserDialog(tr("btn_manual"), text, parent=None, allow_independence=True)
+        # 独立ウィンドウにもメインと同じスタイルを適用
+        self.manual_dialog.setStyleSheet(self._get_stylesheet())
+        self.manual_dialog.show()
 
     def show_license_dialog(self) -> None:
         """ライセンスダイアログを表示する。"""

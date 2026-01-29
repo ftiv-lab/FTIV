@@ -15,13 +15,12 @@ from utils.translator import tr
 class Edition(str, Enum):
     """アプリのエディション種別。"""
 
-    FREE = "free"
-    PRO = "pro"
+    STANDARD = "standard"
 
 
 @dataclass(frozen=True)
 class Limits:
-    """エディション別の制限値。"""
+    """エディション別の制限値（v1.0以降は実質無制限）。"""
 
     max_text_windows: int
     max_image_windows: int
@@ -40,44 +39,24 @@ def _get_settings_path(base_directory: str) -> str:
 
 
 def get_edition(parent: Optional[Any] = None, base_directory: Optional[str] = None) -> Edition:
-    """現在のエディションを返す（開発用：固定）。
-
-    開発段階では「ここを1行変える」方式が最も直感的なので固定にする。
-    販売段階でライセンス導入する場合は、この関数内部を差し替える。
-
-    Args:
-        parent (Optional[Any]): 将来用（未使用）。
-        base_directory (Optional[str]): 将来用（未使用）。
+    """現在のエディションを返す。
 
     Returns:
-        Edition: 現在のエディション。
+        Edition: 常時 STANDARD を返す。
     """
-    # ★開発用切替：ここを FREE / PRO に変えるだけ
-    return Edition.PRO
+    return Edition.STANDARD
 
 
 def get_limits(edition: Optional[Edition] = None) -> Limits:
     """エディションに応じた制限値を返す。
 
-    Args:
-        edition (Optional[Edition]): 指定がなければ PRO を仮定する（呼び出し側が get_edition して渡す推奨）。
-
-    Returns:
-        Limits: 制限値。
+    v1.0からは全ユーザー無制限。
     """
-    ed: Edition = edition or Edition.PRO
-
-    if ed == Edition.PRO:
-        return Limits(
-            max_text_windows=10**9,
-            max_image_windows=10**9,
-            max_save_slots=10**9,
-        )
-
+    # 実質無限
     return Limits(
-        max_text_windows=5,
-        max_image_windows=5,
-        max_save_slots=5,
+        max_text_windows=10**9,
+        max_image_windows=10**9,
+        max_save_slots=10**9,
     )
 
 

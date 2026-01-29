@@ -7,7 +7,6 @@ if sys.version_info >= (3, 14):
     sys.exit(1)
 
 import os
-import re
 import shutil
 import subprocess
 
@@ -58,22 +57,9 @@ def write_file(path, content):
         f.write(content)
 
 
-def set_edition_in_code(mode_str):
-    content = read_file(EDITION_FILE)
-    pattern = r"(return\s+Edition\.)(FREE|PRO)"
-    replacement = f"\\g<1>{mode_str}"
-    new_content, count = re.subn(pattern, replacement, content)
-    if count == 0:
-        print(f"Error: Could not find edition return in {EDITION_FILE}")
-        sys.exit(1)
-    write_file(EDITION_FILE, new_content)
-    print(f"Set edition to: {mode_str}")
-
-
-def build_package(edition_name):
+def build_package(edition_name="FTIV"):
     """
-    1つのエディションをビルドし、フォルダ構成を整える関数
-    edition_name: "FTIV_Free" or "FTIV_Pro"
+    標準パッケージをビルドし、フォルダ構成を整える関数
     """
     print("=" * 60)
     print(f"Building Package: {edition_name}")
@@ -104,7 +90,7 @@ def build_package(edition_name):
     launcher_src = os.path.join(DIST_DIR, launcher_exe_name)
 
     # 3. フォルダ整理
-    # 最終的なフォルダ: dist/FTIV_Free/
+    # 最終的なフォルダ: dist/FTIV/
     final_dir = os.path.join(DIST_DIR, edition_name)
 
     if os.path.exists(final_dir):
@@ -123,7 +109,7 @@ def build_package(edition_name):
     # Readme作成
     readme_path = os.path.join(final_dir, "Readme.txt")
     with open(readme_path, "w", encoding="utf-8") as f:
-        f.write(f"【{edition_name}】\n\n")
+        f.write("【FTIV】\n\n")
         f.write(f"{launcher_exe_name} をダブルクリックして起動してください。\n")
         f.write("bin フォルダ内のファイルは削除しないでください。\n")
 
@@ -135,34 +121,21 @@ def main():
         print("Error: Edition file not found.")
         return
 
-    # バックアップ
-    shutil.copy(EDITION_FILE, EDITION_FILE + ".bak")
-
     # Clean DIST_DIR to avoid locks from previous runs
     if os.path.exists(DIST_DIR):
         try:
             # Only clean top level dist files that might conflict, or full clear
             # shutil.rmtree(DIST_DIR) # Might be risky if user has other things? No, dist is build output.
-             pass
+            pass
         except Exception:
             pass
 
     try:
-        # FREE
-        set_edition_in_code("FREE")
-        build_package("FTIV_Free")
-
-        # PRO
-        set_edition_in_code("PRO")
-        build_package("FTIV_Pro")
+        # Standard Build
+        build_package("FTIV")
 
     except Exception as e:
         print(f"\nError: {e}")
-    finally:
-        # 復元
-        print("Restoring edition file...")
-        if os.path.exists(EDITION_FILE + ".bak"):
-            shutil.move(EDITION_FILE + ".bak", EDITION_FILE)
 
 
 if __name__ == "__main__":

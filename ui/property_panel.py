@@ -43,7 +43,7 @@ class PropertyPanel(QWidget):
         """
         super().__init__(parent)
         self.setWindowTitle(tr("prop_panel_title"))
-        self.setWindowFlags(Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
         self.resize(300, 600)
 
         self._setup_stylesheet()
