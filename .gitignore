@@ -130,7 +130,17 @@ data/temp/
 nul
 
 # Internal Documentation (Industry Standard: Exclude dev logs & business plans)
-docs/
+# Public: docs/index.html (Website)
+# Private:
+docs/refactoring_plans/
+docs/investigation/
+docs/online_course_plan/
+docs/codebase/
+docs/strategy/
+docs/guides/
+docs/manual/
+docs/distribution_strategy.md
+docs/RULES_AND_STANDARDS.md
 
 # Agent & System Configs
 .agent/

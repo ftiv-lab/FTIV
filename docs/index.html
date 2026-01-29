@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTIV - Focus OS Overlay / High-End Desktop Workspace Tool</title>
+    <meta name="description" content="FTIV is a high-performance overlay viewer for creators and streamers. Use your entire screen as an infinite canvas for text, images, and animations.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --text-color: #c9d1d9;
+            --accent-color: #58a6ff;
+            --card-bg: #161b22;
+            --border-color: #30363d;
+            --hero-gradient: linear-gradient(135deg, #1f2937 0%, #0d1117 100%);
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        header {
+            padding: 2rem 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #fff;
+            text-decoration: none;
+            letter-spacing: -0.05em;
+        }
+        
+        .logo span { color: var(--accent-color); }
+
+        .nav-links a {
+            color: var(--text-color);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 600;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--accent-color); }
+
+        .hero {
+            padding: 6rem 5%;
+            text-align: center;
+            background: var(--hero-gradient);
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 1.5rem;
+            line-height: 1.2;
+        }
+        
+        h1 span {
+            background: linear-gradient(90deg, #58a6ff, #a5d6ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: #8b949e;
+            max-width: 700px;
+            margin: 0 auto 3rem;
+        }
+
+        .cta-button {
+            display: inline-block;
+            background-color: var(--accent-color);
+            color: #fff;
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
+            font-weight: 700;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 14px rgba(88, 166, 255, 0.4);
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(88, 166, 255, 0.6);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            padding: 4rem 5%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .feature-card {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--accent-color);
+        }
+
+        .feature-icon { font-size: 2rem; margin-bottom: 1rem; }
+        .feature-title { font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; }
+
+        footer {
+            text-align: center;
+            padding: 3rem;
+            border-top: 1px solid var(--border-color);
+            color: #8b949e;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5rem; }
+            .hero { padding: 4rem 5%; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <a href="#" class="logo">FTIV <span>Lab</span></a>
+        <nav class="nav-links">
+            <a href="https://github.com/ftiv-lab/FTIV" target="_blank">GitHub</a>
+            <a href="https://github.com/ftiv-lab/FTIV/releases" target="_blank">Releases</a>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <h1>Focus OS <span>Overlay</span></h1>
+        <p class="subtitle">
+            The ultimate desktop workspace tool for creators & streamers.<br>
+            Place text, images, and animations anywhere on your screen.
+            <br><br>
+            クリエイターの「集中」を途切れさせない。<br>
+            世界最高峰のオーバーレイ・ワークスペースツール。
+        </p>
+        <a href="https://github.com/ftiv-lab/FTIV/releases/latest" class="cta-button">Download v1.0.0 (Free)</a>
+    </section>
+
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">🎨</div>
+            <div class="feature-title">Ultimate Overlay</div>
+            <p>Place anything anywhere. Text, Images, GIFs. Adjustable opacity and "Click-through" support.</p>
+            <p>画面のあらゆる場所に素材を配置。透明度も自由自在。</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📝</div>
+            <div class="feature-title">Rich Typography</div>
+            <p>Shadows, Outlines, Gradients. Supports "Vertical Writing" (Tategaki) for Japanese aesthetics.</p>
+            <p>縁取り、影、そして「縦書き」に完全対応。</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🎬</div>
+            <div class="feature-title">Dynamic Media</div>
+            <p>Supports APNG and GIF animations. Create "Now Loading" screens instantly.</p>
+            <p>APNG/GIFアニメーション再生対応。配信画面の構築に。</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🧠</div>
+            <div class="feature-title">Visual Thinking</div>
+            <p>Connect windows with lines (Shift+Drag). Turn your desktop into a mind map.</p>
+            <p>ウィンドウ同士を線で繋いで、思考を可視化しよう。</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <div class="feature-title">High Performance</div>
+            <p>Built with Python 3.13 & Nuitka. Native speed, minimal resource usage.</p>
+            <p>最新技術による高速動作。作業の邪魔をしません。</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🛡️</div>
+            <div class="feature-title">Safe & Secure</div>
+            <p>VirusTotal Checked. False positive mitigation applied for peace of mind.</p>
+            <p>誤検知対策済み。安心してご利用いただけます。</p>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 FTIV Lab. All rights reserved.</p>
+        <p>Powered by Antigravity Technology.</p>
+    </footer>
+
+</body>
+</html>
