@@ -11,7 +11,7 @@
 
 ## 📥 Download / ダウンロード
 
-**[Get the latest version (v1.0.0) from Releases](https://github.com/Start-to-Finish/FTIV/releases)**
+**[Get the latest version (v1.0.0) from Releases](https://github.com/ftiv-lab/FTIV/releases/latest)**
 
 1.  Download `FTIV.zip`.
 2.  Extract the zip file.
