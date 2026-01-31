@@ -100,7 +100,7 @@ FTIVは、単なるビューワーではありません。**「デスクトッ�
 
 ```bash
 # 1. Clone
-git clone https://github.com/Start-to-Finish/FTIV.git
+git clone https://github.com/ftiv-lab/FTIV.git
 cd FTIV
 
 # 2. Setup Dev Env (Python 3.14)
