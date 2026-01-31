@@ -123,4 +123,4 @@ For detailed rules and contributing guide, please see [CONTRIBUTING.md](CONTRIBU
 
 ---
 
-(c) 2026 Antigravity (Start-to-Finish). All rights reserved.
+(c) 2026 FTIV Lab. All rights reserved.
