@@ -35,8 +35,8 @@ NUITKA_CORE_CMD = [
     # Metadata for False Positive Reduction
     "--windows-company-name=Antigravity",
     "--windows-product-name=FTIV",
-    "--windows-file-version=1.0.0.0",
-    "--windows-product-version=1.0.0.0",
+    "--windows-file-version=1.0.1.0",
+    "--windows-product-version=1.0.1.0",
     "--windows-file-description=Floating Text Image Viewer",
 ]
 
@@ -53,8 +53,8 @@ NUITKA_LAUNCHER_CMD = [
     # Metadata
     "--windows-company-name=Antigravity",
     "--windows-product-name=FTIV Launcher",
-    "--windows-file-version=1.0.0.0",
-    "--windows-product-version=1.0.0.0",
+    "--windows-file-version=1.0.1.0",
+    "--windows-product-version=1.0.1.0",
     "--windows-file-description=FTIV Launcher",
 ]
 

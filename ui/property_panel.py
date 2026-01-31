@@ -1,5 +1,6 @@
 # ui/property_panel.py
 
+import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSlider,
@@ -24,6 +26,8 @@ from PySide6.QtWidgets import (
 
 from models.enums import ArrowStyle
 from utils.translator import tr
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     pass
@@ -787,13 +791,19 @@ class PropertyPanel(QWidget):
         self.btn_text_font = QPushButton(f"{target.font_family} ({target.font_size}pt)")
 
         def change_font():
-            # PySide6 の QFontDialog.getFont は (QFont, bool) を返す
-            font, ok = QFontDialog.getFont(QFont(target.font_family, int(target.font_size)), self)
+            # PySide6 の QFontDialog.getFont は (ok, QFont) を返す（環境により異なる場合があるがエラーログより判断）
+            ok, font = QFontDialog.getFont(QFont(target.font_family, int(target.font_size)), self)
             if ok:
-                target.set_undoable_property("font_family", font.family())
-                target.set_undoable_property("font_size", font.pointSize())
-                target.auto_detect_offset_mode(font)
-                target.update_text()
+                try:
+                    target.set_undoable_property("font_family", font.family())
+                    target.set_undoable_property("font_size", font.pointSize())
+                    target.auto_detect_offset_mode(font)
+                    target.update_text()
+                except Exception as e:
+                    import traceback
+
+                    logger.error(f"Failed to change font: {e}\n{traceback.format_exc()}")
+                    QMessageBox.warning(self, tr("msg_error"), f"Font change failed: {e}")
 
         self.btn_text_font.clicked.connect(change_font)
         t_layout.addRow(tr("prop_font_selector"), self.btn_text_font)

@@ -15,6 +15,6 @@ class AppVersion:
 
 APP_VERSION: AppVersion = AppVersion(
     name="FTIV",
-    version="1.0.0",
+    version="1.0.1",
     data_format_version=1,
 )
