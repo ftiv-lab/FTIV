@@ -145,6 +145,7 @@
     "label_align_space": "間隔 (px):",
     "label_align_screen": "画面選択:",
     "title_text_spacing_settings": "文字間・余白設定",
+    "menu_margin_settings": "余白・文字間設定",
     "grp_char_line_spacing": "文字・行間隔",
     "label_char_spacing_horz": "文字間隔 (横書き):",
     "label_line_spacing_vert": "行間隔 (縦書き):",

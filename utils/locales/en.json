@@ -147,6 +147,7 @@
     "label_align_space": "Space (px):",
     "label_align_screen": "Select Screen:",
     "title_text_spacing_settings": "Text Spacing & Padding Settings",
+    "menu_margin_settings": "Margin & Spacing Settings",
     "grp_char_line_spacing": "Character & Line Spacing",
     "label_char_spacing_horz": "Char Spacing (Horz):",
     "label_line_spacing_vert": "Line Spacing (Vert):",
