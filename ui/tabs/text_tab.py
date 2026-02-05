@@ -317,6 +317,13 @@ class TextTab(QWidget):
         grid_sel.addWidget(self.txt_btn_sel_offset_prop, 1, 1)
         grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 2, 0, 1, 2)
 
+        # ✨ New: Save current as Default
+        self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
+        self.btn_save_default_selected.setObjectName("ActionBtn")
+        self.btn_save_default_selected.setToolTip("選択中のスタイルを今後のデフォルトとして保存します")
+        self.btn_save_default_selected.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
+        grid_sel.addWidget(self.btn_save_default_selected, 3, 0, 1, 2)
+
         layout.addWidget(self.txt_layout_grp_selected)
 
         # --- Bulk ---
@@ -339,15 +346,20 @@ class TextTab(QWidget):
         self.btn_type_b.setObjectName("ActionBtn")
         self.btn_type_b.clicked.connect(self.mw.main_controller.bulk_manager.set_all_offset_mode_b)
 
-        self.btn_def_spacing = QPushButton(tr("btn_set_def_spacing"))
-        self.btn_def_spacing.setObjectName("ActionBtn")
-        self.btn_def_spacing.clicked.connect(self.mw.main_controller.bulk_manager.set_default_text_spacing)
+        self.btn_def_spacing_h = QPushButton(tr("btn_set_def_spacing_h"))
+        self.btn_def_spacing_h.setObjectName("ActionBtn")
+        self.btn_def_spacing_h.clicked.connect(self.mw.main_controller.bulk_manager.set_default_text_spacing)
+
+        self.btn_def_spacing_v = QPushButton(tr("btn_set_def_spacing_v"))
+        self.btn_def_spacing_v.setObjectName("ActionBtn")
+        self.btn_def_spacing_v.clicked.connect(self.mw.main_controller.bulk_manager.set_default_text_spacing_vertical)
 
         grid_bulk.addWidget(self.btn_all_horizontal, 0, 0)
         grid_bulk.addWidget(self.btn_all_vertical, 0, 1)
         grid_bulk.addWidget(self.btn_type_a, 1, 0)
         grid_bulk.addWidget(self.btn_type_b, 1, 1)
-        grid_bulk.addWidget(self.btn_def_spacing, 2, 0, 1, 2)
+        grid_bulk.addWidget(self.btn_def_spacing_h, 2, 0)
+        grid_bulk.addWidget(self.btn_def_spacing_v, 2, 1)
 
         layout.addWidget(self.txt_layout_grp_all)
         layout.addStretch()
@@ -499,7 +511,8 @@ class TextTab(QWidget):
         self.txt_layout_grp_all.setTitle(tr("anim_target_all_text"))
         self.btn_all_horizontal.setText(tr("btn_set_all_horizontal"))
         self.btn_all_vertical.setText(tr("btn_set_all_vertical"))
-        self.btn_def_spacing.setText(tr("btn_set_def_spacing"))
+        self.btn_def_spacing_h.setText(tr("btn_set_def_spacing_h"))
+        self.btn_def_spacing_v.setText(tr("btn_set_def_spacing_v"))
 
         # Style
         self.style_group.setTitle(tr("grp_bulk_style"))

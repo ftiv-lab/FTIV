@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from utils.error_reporter import ErrorNotifyState, report_unexpected_error
+from utils.translator import tr
+
+logger = logging.getLogger(__name__)
 
 
 class TextActions:
@@ -282,6 +286,44 @@ class TextActions:
 
         except Exception as e:
             report_unexpected_error(self.mw, "Unexpected error in text visibility action.", e, self._err_state)
+
+    def save_as_default(self) -> None:
+        """選択中のウィンドウのスタイル（外見設定）をグローバルデフォルト（Archetype）として保存する。"""
+        w: Optional[Any] = self._get_selected_obj()
+        if w is None or not self._is_text_like(w):
+            return
+
+        try:
+            # Pydanticモデルからシリアライズ
+            # 除外リスト: インスタンス固有のデータ
+            exclude = {
+                "uuid",
+                "parent_uuid",
+                "position",
+                "text",
+                "text_visible",
+                "is_hidden",
+                "is_locked",
+                "connected_lines",
+            }
+
+            # config からデータを抽出
+            if hasattr(w, "config"):
+                config_data = w.config.model_dump(mode="json", exclude=exclude)
+            else:
+                return
+
+            # SettingsManager 経由で保存
+            if hasattr(self.mw, "settings_manager"):
+                success = self.mw.settings_manager.save_text_archetype(config_data)
+                if success:
+                    if hasattr(self.mw, "show_status_message"):
+                        self.mw.show_status_message(tr("msg_settings_saved_applied"))
+                    else:
+                        # フォールバック
+                        logger.info("Default archetype saved successfully.")
+        except Exception as e:
+            report_unexpected_error(self.mw, "Failed to save style as default.", e, self._err_state)
 
     def run_selected_layout_action(self, action: str, checked: Optional[bool] = None) -> None:
         """

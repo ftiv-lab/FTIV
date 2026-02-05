@@ -197,7 +197,12 @@ class TextRenderer:
         font = QFont(window.font_family, int(window.font_size))
         fm = QFontMetrics(font)
 
-        margin = int(window.font_size * window.horizontal_margin_ratio)
+        # Spacing Split: Horizontal
+        # margin (char spacing)
+        margin = int(window.font_size * getattr(window, "char_spacing_h", window.horizontal_margin_ratio))
+        # line spacing (extra space between lines)
+        line_spacing = int(window.font_size * getattr(window, "line_spacing_h", 0.0))
+
         shadow_offset_x = int(window.font_size * window.shadow_offset_x)
         shadow_offset_y = int(window.font_size * window.shadow_offset_y)
 
@@ -213,7 +218,7 @@ class TextRenderer:
             max_line_width = max(max_line_width, line_width)
 
         line_height = fm.height()
-        total_height = line_height * len(lines)
+        total_height = (line_height + line_spacing) * len(lines)
 
         outline_width = max(
             window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0, 1
@@ -245,6 +250,7 @@ class TextRenderer:
                 m_top,
                 margin,
                 outline_width,
+                line_spacing=line_spacing,
             )
         finally:
             painter.restore()
@@ -259,7 +265,13 @@ class TextRenderer:
     ) -> QSize:
         """縦書きテキストを直接描画する。"""
         font = QFont(window.font_family, int(window.font_size))
-        margin = int(window.font_size * window.vertical_margin_ratio)
+
+        # Spacing Split: Vertical
+        # margin (char spacing within a column)
+        char_spacing = int(window.font_size * getattr(window, "char_spacing_v", 0.0))
+        # line spacing (gap between columns)
+        # 1.0 + ratio implies ratio is the GAP. Standard vertical_margin_ratio was ~0.2 (gap).
+        line_spacing_ratio = getattr(window, "line_spacing_v", window.vertical_margin_ratio)
 
         m_top = int(window.font_size * window.margin_top_ratio)
         m_bottom = int(window.font_size * window.margin_bottom_ratio)
@@ -277,11 +289,22 @@ class TextRenderer:
             window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0, 1
         )
 
+        # width: Columns flow from right to left (usually).
+        # Total width = (font_size + gap) * num_lines
+        # Note: Previous logic was (font_size + margin) * num_lines.
+        # Here we use line_spacing_ratio which acts as the 'margin' between columns.
         width = int(
-            (window.font_size + margin) * num_lines + m_left + m_right + abs(shadow_offset_x) + 2 * outline_width
+            (window.font_size * (1.0 + line_spacing_ratio)) * num_lines
+            + m_left
+            + m_right
+            + abs(shadow_offset_x)
+            + 2 * outline_width
         )
+
+        # total_height: Chars flow top to bottom.
+        # Total height = (font_size + char_spacing) * max_chars
         total_height = int(
-            (window.font_size + margin) * max_chars_per_line
+            (window.font_size + char_spacing) * max_chars_per_line
             + m_top
             + m_bottom
             + abs(shadow_offset_y)
@@ -305,11 +328,12 @@ class TextRenderer:
                 canvas_size,
                 lines,
                 m_top,
-                margin,
+                char_spacing,  # Uses char_spacing instead of ambiguous margin
                 m_right,
                 shadow_offset_x,
                 shadow_offset_y,
                 outline_width,
+                line_spacing_ratio=line_spacing_ratio,
             )
         finally:
             painter.restore()
@@ -321,7 +345,12 @@ class TextRenderer:
         font = QFont(window.font_family, int(window.font_size))
         fm = QFontMetrics(font)
 
-        margin = int(window.font_size * window.horizontal_margin_ratio)
+        # Spacing Split: Horizontal
+        # margin (char spacing)
+        margin = int(window.font_size * getattr(window, "char_spacing_h", window.horizontal_margin_ratio))
+        # line spacing (extra space between lines)
+        line_spacing = int(window.font_size * getattr(window, "line_spacing_h", 0.0))
+
         shadow_offset_x = int(window.font_size * window.shadow_offset_x)
         shadow_offset_y = int(window.font_size * window.shadow_offset_y)
 
@@ -337,7 +366,7 @@ class TextRenderer:
             max_line_width = max(max_line_width, line_width)
 
         line_height = fm.height()
-        total_height = line_height * len(lines)
+        total_height = (line_height + line_spacing) * len(lines)
 
         outline_width = max(
             window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0, 1
@@ -349,7 +378,10 @@ class TextRenderer:
         )
 
         window.canvas_size = canvas_size
-        window.setGeometry(QRect(window.pos(), canvas_size))
+
+        # 修正: 編集中は InlineEditorMixin がサイズを管理するため、Rendererによるリサイズを防止する (Flicker対策)
+        if not getattr(window, "_is_editing", False):
+            window.setGeometry(QRect(window.pos(), canvas_size))
 
         pixmap = QPixmap(canvas_size)
         pixmap.fill(Qt.transparent)
@@ -370,6 +402,7 @@ class TextRenderer:
                 m_top,
                 margin,
                 outline_width,
+                line_spacing=line_spacing,
             )
         finally:
             painter.end()
@@ -379,12 +412,17 @@ class TextRenderer:
     def _render_vertical(self, window: Any) -> QPixmap:
         """縦書きテキストをレンダリングします。"""
         font = QFont(window.font_family, int(window.font_size))
-        margin = int(window.font_size * window.vertical_margin_ratio)
 
-        m_top = int(window.font_size * window.margin_top_ratio)
-        m_bottom = int(window.font_size * window.margin_bottom_ratio)
-        m_left = int(window.font_size * window.margin_left_ratio)
-        m_right = int(window.font_size * window.margin_right_ratio)
+        # Spacing Split: Vertical
+        char_spacing = int(window.font_size * getattr(window, "char_spacing_v", 0.0))
+        line_spacing_ratio = getattr(window, "line_spacing_v", window.vertical_margin_ratio)
+
+        # 縦書き専用余白を使用（v_margin_*_ratio プロパティ）
+        # TextWindow に追加された縦書き専用プロパティを直接使用
+        m_top = int(window.font_size * getattr(window, "v_margin_top_ratio", 0.3))
+        m_bottom = int(window.font_size * getattr(window, "v_margin_bottom_ratio", 0.0))
+        m_left = int(window.font_size * getattr(window, "v_margin_left_ratio", 0.0))
+        m_right = int(window.font_size * getattr(window, "v_margin_right_ratio", 0.0))
 
         shadow_offset_x = int(window.font_size * window.shadow_offset_x)
         shadow_offset_y = int(window.font_size * window.shadow_offset_y)
@@ -398,10 +436,14 @@ class TextRenderer:
         )
 
         width = int(
-            (window.font_size + margin) * num_lines + m_left + m_right + abs(shadow_offset_x) + 2 * outline_width
+            (window.font_size * (1.0 + line_spacing_ratio)) * num_lines
+            + m_left
+            + m_right
+            + abs(shadow_offset_x)
+            + 2 * outline_width
         )
         total_height = int(
-            (window.font_size + margin) * max_chars_per_line
+            (window.font_size + char_spacing) * max_chars_per_line
             + m_top
             + m_bottom
             + abs(shadow_offset_y)
@@ -410,7 +452,10 @@ class TextRenderer:
 
         canvas_size = QSize(width, total_height)
         window.canvas_size = canvas_size
-        window.setGeometry(QRect(window.pos(), canvas_size))
+
+        # 修正: 編集中は InlineEditorMixin がサイズを管理するため、Rendererによるリサイズを防止する (Flicker対策)
+        if not getattr(window, "_is_editing", False):
+            window.setGeometry(QRect(window.pos(), canvas_size))
 
         pixmap = QPixmap(canvas_size)
         pixmap.fill(Qt.transparent)
@@ -425,11 +470,12 @@ class TextRenderer:
                 canvas_size,
                 lines,
                 m_top,
-                margin,
+                char_spacing,
                 m_right,
                 shadow_offset_x,
                 shadow_offset_y,
                 outline_width,
+                line_spacing_ratio=line_spacing_ratio,
             )
         finally:
             painter.end()
@@ -552,6 +598,7 @@ class TextRenderer:
         margin_top: int,
         margin: int,
         outline_width: float,
+        line_spacing: int = 0,
     ) -> None:
         t0_total: Optional[float] = None
         if self._active_profile is not None:
@@ -584,6 +631,7 @@ class TextRenderer:
                     start_y,
                     custom_offset=QPointF(shadow_offset_x, shadow_offset_y),
                     shadow_fm=s_fm,
+                    line_spacing=line_spacing,
                 )
                 painter.restore()
             else:
@@ -604,6 +652,7 @@ class TextRenderer:
                     start_y,
                     custom_offset=QPointF(shadow_offset_x, shadow_offset_y),
                     shadow_fm=s_fm,
+                    line_spacing=line_spacing,
                 )
                 s_painter.end()
                 painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(s_pixmap, window.shadow_blur))
@@ -646,7 +695,7 @@ class TextRenderer:
                 # 直接描画 (最高品質)
                 painter.setPen(pen)
                 self._draw_horizontal_text_content(
-                    painter, window, lines, fm, margin, start_x, start_y, is_outline=True
+                    painter, window, lines, fm, margin, start_x, start_y, is_outline=True, line_spacing=line_spacing
                 )
             else:
                 # ブラー付き描画 (QPixmap 経由)
@@ -657,7 +706,7 @@ class TextRenderer:
                 o_painter.setFont(font)
                 o_painter.setPen(pen)
                 self._draw_horizontal_text_content(
-                    o_painter, window, lines, fm, margin, start_x, start_y, is_outline=True
+                    o_painter, window, lines, fm, margin, start_x, start_y, is_outline=True, line_spacing=line_spacing
                 )
                 o_painter.end()
                 painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(o_pixmap, blur))
@@ -667,7 +716,17 @@ class TextRenderer:
         main_color.setAlpha(int(window.text_opacity * 2.55))
         painter.setPen(main_color)
         painter.setBrush(Qt.NoBrush)
-        self._draw_horizontal_text_content(painter, window, lines, fm, margin, start_x, start_y, is_main_text=True)
+        self._draw_horizontal_text_content(
+            painter,
+            window,
+            lines,
+            fm,
+            margin,
+            start_x,
+            start_y,
+            is_main_text=True,
+            line_spacing=line_spacing,
+        )
 
         if t0_total is not None:
             self._prof_add("h_text_elements_total", (time.perf_counter() - t0_total) * 1000.0)
@@ -685,6 +744,7 @@ class TextRenderer:
         is_outline: bool = False,
         custom_offset: QPointF = QPointF(0, 0),
         shadow_fm: Optional[QFontMetrics] = None,
+        line_spacing: int = 0,
     ) -> None:
         """横書きテキストの各文字を実際に描画します（計測＋glyphキャッシュ対応：見た目維持版）。
 
@@ -742,7 +802,7 @@ class TextRenderer:
 
                     curr_x += char_width + margin
 
-                y += fm.height()
+                y += fm.height() + line_spacing
 
         finally:
             if t0_total is not None:
@@ -764,6 +824,7 @@ class TextRenderer:
         shadow_x: int,
         shadow_y: int,
         outline_width: float,
+        line_spacing_ratio: float = 0.5,
     ) -> None:
         t0_total: Optional[float] = None
         if self._active_profile is not None:
@@ -772,7 +833,7 @@ class TextRenderer:
         """縦書き時のテキスト要素を順に描画します。"""
         painter.setRenderHint(QPainter.Antialiasing, True)
         font = painter.font()
-        x_shift = 1.0 + window.vertical_margin_ratio
+        x_shift = 1.0 + line_spacing_ratio
 
         # 1. 影
         if window.shadow_enabled:

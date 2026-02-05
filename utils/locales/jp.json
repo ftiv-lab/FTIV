@@ -33,7 +33,8 @@
     "btn_vert_type_a": "縦書き: 等幅 (Type A)",
     "btn_vert_type_b": "縦書き: プロポ (Type B)",
     "btn_show_list": "テキスト一覧表示",
-    "btn_set_def_spacing": "デフォルト余白設定",
+    "btn_set_def_spacing_h": "横書き余白設定",
+    "btn_set_def_spacing_v": "縦書き余白設定",
     "btn_close_all_text": "全てのテキストウィンドウを閉じる",
     "msg_no_text_windows": "開いているテキストウィンドウはありません。",
     "title_text_list": "テキストウィンドウ一覧",
@@ -560,5 +561,6 @@
     "label_mm_outline_width": "太さ (1-20):",
     "title_mm_shadow_blur": "影のぼかし",
     "label_mm_shadow_blur": "ぼかし量 (0-50):",
-    "msg_default_style_updated": "デフォルトスタイルを更新しました。"
+    "msg_default_style_updated": "デフォルトスタイルを更新しました。",
+    "btn_save_as_default": "デフォルトに設定"
 }

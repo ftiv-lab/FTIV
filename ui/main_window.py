@@ -517,8 +517,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         # --- Text Tab ---
         if hasattr(self, "text_tab"):
             self.text_tab.refresh_ui()
-        if hasattr(self, "btn_def_spacing"):
-            self.btn_def_spacing.setText(tr("btn_set_def_spacing"))
+        if hasattr(self, "btn_def_spacing_h"):
+            self.btn_def_spacing_h.setText(tr("btn_set_def_spacing_h"))
+        if hasattr(self, "btn_def_spacing_v"):
+            self.btn_def_spacing_v.setText(tr("btn_set_def_spacing_v"))
 
         # --- Bulk (Style) ---
         if hasattr(self, "style_group"):

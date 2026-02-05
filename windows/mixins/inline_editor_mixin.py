@@ -25,6 +25,11 @@ class InlineEditorMixin:
         # 縦書き時の横書きエディタ用マージン
         self._vertical_edit_margin: int = 4
 
+        # 案A: 編集開始時のサイズを記録（最小サイズ保持用）
+        self._edit_start_size: Optional[tuple] = None
+        # 案B: 編集開始時の縦書きフラグを記録
+        self._edit_start_is_vertical: bool = False
+
     def _start_inline_edit(self) -> None:
         """インライン編集を開始する。"""
         if self._is_editing:
@@ -33,11 +38,46 @@ class InlineEditorMixin:
         # 既存の状態を保存（キャンセル用）
         self._original_text_for_cancel = getattr(self, "text", "")
 
+        # 編集開始時の縦書きフラグを記録
+        self._edit_start_is_vertical = getattr(self, "is_vertical", False)
+
+        # --- Geometry Expansion Strategy (Parent Resizing) ---
+        # Clipping対策: QPlainTextEditは内部パディングが必要なので、ウィンドウ自体を少し広げる
+        # 縦書き対策: 縦長ウィンドウの場合も、編集用にある程度の横幅を確保する
+        current_w = self.width()
+        current_h = self.height()
+
+        SAFETY_PADDING_W = 40  # 左右の余白+スクロールバーの遊び
+        SAFETY_PADDING_H = 20  # 上下の余白
+
+        min_edit_w = current_w + SAFETY_PADDING_W
+        min_edit_h = current_h + SAFETY_PADDING_H
+
+        if self._edit_start_is_vertical:
+            # 縦書きの場合は強制的に横幅を確保 (例: 250px)
+            min_edit_w = max(min_edit_w, 250)
+
+            # --- Phase 5: Adaptive Reset Strategy ---
+            # 縦書きの「今の高さ」を引き継ぐと、横書き編集時に「巨大な余白」ができてしまう。
+            # そのため、縦書き時は高さを継承せず、最小限の高さ（1行分+余白）にリセットする。
+            # Active Metric Sizing (Phase 3) があるため、入力すれば自動で広がる。
+            min_edit_h = 60  # SAFETY_PADDING_H (20) + 1 line (approx 30-40)
+
+        else:
+            # 横書きの場合も極端に小さいと編集しづらいので最低幅保証
+            min_edit_w = max(min_edit_w, 100)
+            min_edit_h = max(min_edit_h, 40)
+
+        # 最小編集サイズとして記録
+        self._min_edit_size = (min_edit_w, min_edit_h)
+
+        # ウィンドウ自体をリサイズ (TextRendererの描画エリアも広がる)
+        self.resize(min_edit_w, min_edit_h)
+
         # 1. エディタ作成
         try:
             self._inline_editor = QPlainTextEdit(self)
         except TypeError:
-            # self が QWidget 継承でない場合（稀だが）
             logger.error("InlineEditorMixin must be used with a QWidget subclass.")
             return
 
@@ -45,193 +85,227 @@ class InlineEditorMixin:
         self._is_editing = True
 
         # 2. スタイル適用
-        # 設定オブジェクト (self.config) からフォント情報を取得
         cfg = getattr(self, "config", None)
         if cfg:
             font = QFont(cfg.font, int(cfg.font_size))
             editor.setFont(font)
 
-            # テキスト色（背景は透過か、ウィンドウ背景に合わせる）
-            # ここではシンプルに「ウィンドウと同じ背景色（不透明）」にする
-            # 理由: 透明にすると元のテキスト（縦書きなど）が透けて見えて邪魔になるため
             txt_color = str(cfg.font_color)
             bg_color = str(cfg.background_color)
 
-            # スタイルシートで設定（枠線なし、背景色、文字色）
-            # selection-background-color も設定すると良いが、一旦デフォルト
+            # 3. Padding & Spacing Calculation (Match TextRenderer)
+            font_size = float(getattr(self, "font_size", 12))
+
+            # Outline width
+            outline_width = 1.0  # Min width
+            if getattr(self, "background_outline_enabled", False):
+                ratio = float(getattr(self, "background_outline_width_ratio", 0.05))
+                calc_width = font_size * ratio
+                outline_width = max(calc_width, 1.0)
+
+            # Margins (Ratios -> Pixels)
+            m_top = int(font_size * float(getattr(self, "margin_top_ratio", 0.0)))
+            m_bottom = int(font_size * float(getattr(self, "margin_bottom_ratio", 0.0)))
+            m_left = int(font_size * float(getattr(self, "margin_left_ratio", 0.3)))
+            m_right = int(font_size * float(getattr(self, "margin_right_ratio", 0.0)))
+
+            # Padding = Margin + Outline
+            pad_top = int(m_top + outline_width)
+            pad_bottom = int(m_bottom + outline_width)
+            pad_left = int(m_left + outline_width)
+            pad_right = int(m_right + outline_width)
+
+            # Character Spacing
+            char_spacing_ratio = float(getattr(self, "horizontal_margin_ratio", 0.0))
+            if char_spacing_ratio > 0:
+                char_spacing_px = font_size * char_spacing_ratio
+                font.setLetterSpacing(QFont.AbsoluteSpacing, char_spacing_px)
+                editor.setFont(font)
+
+            # Style Application
             editor.setStyleSheet(f"""
                 QPlainTextEdit {{
                     background-color: {bg_color};
                     color: {txt_color};
                     border: none;
                     margin: 0px;
-                    padding: 0px;
+                    padding-top: {pad_top}px;
+                    padding-bottom: {pad_bottom}px;
+                    padding-left: {pad_left}px;
+                    padding-right: {pad_right}px;
                 }}
             """)
 
         # 3. テキストセット
-        # 縦書きの場合でも、エディタは横書きでテキストを表示する（仕様通り）
         editor.setPlainText(self._original_text_for_cancel)
-        editor.selectAll()  # 全選択状態で開始（上書きしやすく）
+        editor.selectAll()
 
         # 4. 配置と挙動
         editor.setFrameShape(QFrame.NoFrame)
-        # スクロールバーは原則出さない（オートリサイズするため）が、画面外に出る場合は出るかもしれない
         editor.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         editor.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
+        # --- Phase 2: No-Wrap Mode ---
+        # 縦書き編集時の構造を明確にし、かつ勝手な折り返しを防ぐ
+        editor.setLineWrapMode(QPlainTextEdit.NoWrap)
+
         # エディタの初期サイズ・位置合わせ
-        self._update_editor_geometry()
+        self._on_inline_text_changed()  # 初期サイズ計算のため一度呼ぶ
 
         editor.show()
         editor.setFocus()
 
-        # 5. イベントフィルタ (Shift+Enter, Esc)
+        # 5. イベントフィルタ
         editor.installEventFilter(self)
 
         # 6. テキスト変更シグナル
         editor.textChanged.connect(self._on_inline_text_changed)
 
-        # 7. 元の描画を隠すためのフラグが必要なら設定
-        # ただし、エディタが不透明背景(background_color)を持っていれば
-        # 上に被さるので元のテキストは見えなくなるはず。
-        # 透過背景(opacity < 100)の場合は混ざるが、編集中だけ opacity 100 にする手もある。
-        # いったんそのまま（エディタが上に被さる）で進める。
-        # 半透明ウィンドウの場合はエディタも半透明になる（親のOpacity継承）点に注意。
-
     def _update_editor_geometry(self):
         """エディタのサイズと位置をウィンドウに合わせる"""
         if not self._inline_editor:
             return
-
-        # 親ウィンドウのクライアント領域全体を使う
-        # 余白 (padding) は TextRenderer が計算しているが、
-        # QPlainTextEdit 自体の margin/padding と整合させるのは難しい。
-        # ここでは「全体を覆う」アプローチをとる。
-
-        rect = self.rect()
-
-        # 若干のマージンを持たせる（枠線などがある場合）
-        # TextRenderer の outline_width 分くらいは内側が良いかもしれないが、
-        # 厳密すぎると文字が切れるので、広めに取る。
-        self._inline_editor.setGeometry(rect)
+        self._inline_editor.setGeometry(self.rect())
 
     def _on_inline_text_changed(self) -> None:
-        """テキスト変更時の自動リサイズ処理"""
+        """テキスト変更時の自動リサイズ処理（Editor-Driven Sizing）"""
         if not self._inline_editor:
             return
 
         new_text = self._inline_editor.toPlainText()
 
-        # 現在のテキストを仮適用して、TextRenderer にサイズ計算させる
-        # ただし、描画は更新したくない（チラつくので）
-        # でも resize() を呼ぶには TextRenderer の計算が必要...
-        # 解決策: self.config.text を書き換えて、TextRenderer.render() を呼び、
-        # QPixmapは捨てるが、side effectとして self.canvas_size が更新され、self.resize() されるのを期待する。
+        # 縦書きモード中は一時的に横書きとして背景更新
+        original_is_vertical = getattr(self, "is_vertical", False)
+        temporarily_switched = False
 
-        # 縦書きモードの場合は「横書きエディタ」の入力内容を「縦書きレイアウト」で計算すると
-        # 縦長になりすぎる（編集中は横書きで見せたいのにウィンドウが縦に伸びる）問題があるか？
-        # -> はい、あります。
+        if original_is_vertical:
+            try:
+                if hasattr(self, "config"):
+                    self.config.is_vertical = False
+                    temporarily_switched = True
+            except Exception:
+                pass
 
-        is_vert = getattr(self, "is_vertical", False)
-
-        if is_vert:
-            # 縦書きモード中の編集:
-            # 文面は "横書き" でエディタに出ている。
-            # しかしウィンドウサイズは "縦書き" の最終形態に合わせてリサイズすると、
-            # エディタの表示領域（横長）と合わなくなる可能性がある。
-            #
-            # 解法: 編集中は「ウィンドウサイズをエディタの内容（横書き）に合わせて広げる」か？
-            # -> それはウィンドウの位置(x,y)や回転などを破壊する恐れがある。
-            #
-            # MVPアプローチ:
-            # 編集中はウィンドウのリサイズを行わない（スクロールさせる）、
-            # もしくは「縦書きレンダリング結果」のサイズに合わせてウィンドウ枠を広げる（既存ロジック）。
-            # ユーザーは「確定後」に正しいレイアウトを見る。
-            #
-            # ただし、行が増えたときに枠が広がらないと入力文字が見えない。
-            # なので、やはり「テキスト更新 -> ジオメトリ更新」は必要。
-            pass
-
-        # 仮更新（Undoスタックには積まない）
-        # 直接代入 (setter経由だと再描画が走る可能性があるが、update_text()を呼ばなければ軽い？)
-        # TextWindow.text setter は config.text = val するだけ。
+        # 仮更新
         setattr(self, "text", new_text)
 
-        # サイズ計算だけ行いたい。
-        # TextRenderer.render() を呼ぶと resize() までやってくれる。
-        # 編集中なのでパフォーマンスは気にせず都度呼ぶ。
-        # ただし Undoable Property として登録してしまうと履歴が汚れるので、
-        # ここでは「プロパティとしての変更」ではなく「内部状態の一時変更」とする。
-
         try:
-            # レンダリング実行（リサイズ含む）
-            # ConnectorLabel / TextWindow 共に _update_text_immediate 等を持っている
+            # 1. レンダリング実行 (背景更新)
+            # 注: ここで一時的にウィンドウサイズがRenderer計算値にリサイズされる可能性があるが、
+            # 直後に上書きするので問題ない。
             if hasattr(self, "_update_text_immediate"):
                 self._update_text_immediate()
             elif hasattr(self, "update_text"):
                 self.update_text()
 
-            # エディタのサイズも追従させる
+            # 2. Editor-Driven Resizing (エディタサイズ優先)
+            # エディタのドキュメントサイズを取得（NoWrapなので全幅が取れる）
+            doc = self._inline_editor.document()
+
+            # ドキュメントサイズを正確に反映させるため調整
+            doc.adjustSize()
+            doc_size = doc.size()
+
+            # --- Phase 3: Active Metric Sizing ---
+            # Enterキー直後の「空行」はドキュメントサイズに反映されにくい（Qt仕様）ため
+            # 明示的に行数から必要な高さを計算する (Active Metric)
+            # これにより、Enterを押した瞬間にウィンドウが物理的に広がり、スクロールを防ぐ
+
+            fm = self._inline_editor.fontMetrics()
+            line_height_px = fm.lineSpacing()
+            block_count = self._inline_editor.blockCount()
+
+            # 論理的な必要高さ (行数 * 行の高さ + 少々の遊び)
+            metric_h = (block_count * line_height_px) + fm.descent() + 10
+
+            # padding情報を取得 (Safetyマージン)
+            SAFETY_PADDING_W = 50
+            SAFETY_PADDING_H = 30
+
+            req_w = int(doc_size.width()) + SAFETY_PADDING_W
+
+            # ドキュメントサイズと論理計算、大きい方を採用 (Safety Paddingもしっかり加算)
+            raw_h = max(int(doc_size.height()), int(metric_h))
+            req_h = raw_h + SAFETY_PADDING_H
+
+            # 最小サイズの適用
+            min_w, min_h = getattr(self, "_min_edit_size", (0, 0))
+
+            final_w = max(req_w, min_w)
+            final_h = max(req_h, min_h)
+
+            current_w = self.width()
+            current_h = self.height()
+
+            # 3. 強制リサイズ (TextRendererの結果を上書き)
+            if final_w != current_w or final_h != current_h:
+                self.resize(final_w, final_h)
+
+            # 4. エディタ追従
             self._update_editor_geometry()
 
-            # エディタにフォーカスを戻す（念のため）
-            self._inline_editor.setFocus()
+            # カーソルが見える位置へスクロール（ウィンドウサイズが十分なら不要だが念のため）
+            self._inline_editor.ensureCursorVisible()
 
         except Exception as e:
             logger.error(f"Inline edit resize failed: {e}")
 
+        finally:
+            # 縦書きフラグを元に戻す
+            if temporarily_switched:
+                try:
+                    if hasattr(self, "config"):
+                        self.config.is_vertical = True
+                except Exception:
+                    pass
+
     def _finish_inline_edit(self, commit: bool) -> None:
         """編集を終了する。"""
-        # 二重呼び出しガード: _is_editing が False なら即リターン
         if not self._is_editing:
             return
 
-        # フラグを下ろす（再入防止）
         self._is_editing = False
-
         editor = self._inline_editor
         if not editor:
             return
 
         final_text = editor.toPlainText()
 
-        # エディタの非表示・フォーカス解除を確実に行う
         try:
             editor.setFocusPolicy(Qt.NoFocus)  # type: ignore
             editor.hide()
-        except Exception:
-            pass
-
-        # エディタ破棄スケジュール
-        try:
             editor.deleteLater()
         except Exception:
             pass
         self._inline_editor = None
 
-        if commit:
-            # 変更があれば Undoable Property として確定
-            if final_text != self._original_text_for_cancel:
-                # 一旦元のテキストに戻してから、正規の手順（Undoable）でセットする
-                setattr(self, "text", self._original_text_for_cancel)
+        # 縦書きフラグ復元（念のため）
+        if self._edit_start_is_vertical:
+            try:
+                if hasattr(self, "config"):
+                    self.config.is_vertical = True
+            except Exception:
+                pass
 
+        self._min_edit_size = None
+
+        if commit:
+            if final_text != self._original_text_for_cancel:
+                # 一旦戻してからUndoableでセット
+                setattr(self, "text", self._original_text_for_cancel)
                 if hasattr(self, "set_undoable_property"):
                     try:
                         self.set_undoable_property("text", final_text, "update_text")
-                    except Exception as e:
-                        logger.error(f"Failed to commit inline edit: {e}")
-                        # Fallback to direct set if undo failed
+                    except Exception:
                         setattr(self, "text", final_text)
                         if hasattr(self, "update_text"):
                             self.update_text()
                 else:
-                    # fallback
                     setattr(self, "text", final_text)
                     if hasattr(self, "update_text"):
                         self.update_text()
             else:
-                # 変更なし：状態としてはリセット不要だが、念のため再描画
+                # 変更なしでも再描画（縦書きレイアウトに戻るため必須）
                 if hasattr(self, "update_text"):
                     self.update_text()
         else:

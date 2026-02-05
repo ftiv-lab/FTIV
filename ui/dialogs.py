@@ -1189,7 +1189,11 @@ class CornerRatioDialog(QDialog):
 
 
 class TextSpacingDialog(QDialog):
-    """文字間隔、行間隔、ウィンドウ内余白を一括設定するダイアログ。"""
+    """文字間隔、行間隔、ウィンドウ内余白を一括設定するダイアログ。
+
+    横書き/縦書きモードに応じて適切なラベルを表示し、
+    SpacingSettingsオブジェクトとの変換もサポートする。
+    """
 
     def __init__(
         self,
@@ -1200,11 +1204,21 @@ class TextSpacingDialog(QDialog):
         left: float,
         right: float,
         parent: Optional[QWidget] = None,
+        is_vertical: bool = False,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(tr("title_text_spacing_settings"))
+        self._is_vertical = is_vertical
+
+        # タイトルにモード表示を追加
+        mode_suffix = " (縦書き)" if is_vertical else " (横書き)"
+        self.setWindowTitle(tr("title_text_spacing_settings") + mode_suffix)
         self.setFixedWidth(450)
         layout = QVBoxLayout(self)
+
+        # モード表示ラベル
+        mode_label = QLabel(f"現在のモード: {'縦書き' if is_vertical else '横書き'}")
+        mode_label.setStyleSheet("font-weight: bold; color: #666;")
+        layout.addWidget(mode_label)
 
         # 文字・行間隔グループ
         group_spacing = QGroupBox(tr("grp_char_line_spacing"))
@@ -1228,9 +1242,14 @@ class TextSpacingDialog(QDialog):
             return spin, slider, container
 
         self.h_spin, _, h_layout = create_slider_row(h_ratio, -0.5, 5.0)
-        form_spacing.addRow(tr("label_char_spacing_horz"), h_layout)
+        # ラベルの切り替え
+        label_char = tr("label_char_spacing_horz") + (" (縦)" if is_vertical else " (横)")
+        form_spacing.addRow(label_char, h_layout)
+
         self.v_spin, _, v_layout = create_slider_row(v_ratio, 0.0, 5.0)
-        form_spacing.addRow(tr("label_line_spacing_vert"), v_layout)
+        label_line = tr("label_line_spacing_vert") + (" (縦)" if is_vertical else " (横)")
+        form_spacing.addRow(label_line, v_layout)
+
         group_spacing.setLayout(form_spacing)
         layout.addWidget(group_spacing)
 
@@ -1254,7 +1273,7 @@ class TextSpacingDialog(QDialog):
         layout.addWidget(buttons)
 
     def get_values(self) -> Tuple[float, float, float, float, float, float]:
-        """設定されたすべての数値を返す。"""
+        """設定されたすべての数値を返す（後方互換性のため維持）。"""
         return (
             self.h_spin.value(),
             self.v_spin.value(),
@@ -1263,6 +1282,46 @@ class TextSpacingDialog(QDialog):
             self.left_spin.value(),
             self.right_spin.value(),
         )
+
+    def get_values_dict(self) -> Dict[str, float]:
+        """設定値を辞書形式で返す（推奨）。
+
+        Returns:
+            横書きモードの場合:
+                char_spacing_h, line_spacing_h, margin_*_ratio
+            縦書きモードの場合:
+                char_spacing_v, line_spacing_v, v_margin_*_ratio
+        """
+        if self._is_vertical:
+            return {
+                "char_spacing_v": self.h_spin.value(),
+                "line_spacing_v": self.v_spin.value(),
+                # Fallback for old vertical_margin usage if needed, but we prefer explicit
+                # "vertical_margin_ratio": self.v_spin.value(),
+                "v_margin_top_ratio": self.top_spin.value(),
+                "v_margin_bottom_ratio": self.bottom_spin.value(),
+                "v_margin_left_ratio": self.left_spin.value(),
+                "v_margin_right_ratio": self.right_spin.value(),
+            }
+        else:
+            return {
+                "char_spacing_h": self.h_spin.value(),
+                "line_spacing_h": self.v_spin.value(),
+                # Fallback updates for legacy properties (optional but safer for mixins?)
+                "horizontal_margin_ratio": self.h_spin.value(),
+                # "vertical_margin_ratio" is ambiguous, so we might skip it or map it to line_spacing?
+                # For safety, let's update it too since getters reference it if char_spacing_h is missing?
+                # Actually getter prefers char_spacing_h.
+                "margin_top_ratio": self.top_spin.value(),
+                "margin_bottom_ratio": self.bottom_spin.value(),
+                "margin_left_ratio": self.left_spin.value(),
+                "margin_right_ratio": self.right_spin.value(),
+            }
+
+    @property
+    def is_vertical(self) -> bool:
+        """現在編集中のモードを返す。"""
+        return self._is_vertical
 
 
 class StyleGalleryDialog(BaseTranslatableDialog):

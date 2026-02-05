@@ -525,6 +525,40 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
     def margin_right_ratio(self, v):
         self.config.margin_right = float(v)
 
+    # --- 縦書きモード専用マージン ---
+
+    @property
+    def v_margin_top_ratio(self):
+        return self.config.v_margin_top if self.config.v_margin_top is not None else 0.3
+
+    @v_margin_top_ratio.setter
+    def v_margin_top_ratio(self, v):
+        self.config.v_margin_top = float(v)
+
+    @property
+    def v_margin_bottom_ratio(self):
+        return self.config.v_margin_bottom if self.config.v_margin_bottom is not None else 0.0
+
+    @v_margin_bottom_ratio.setter
+    def v_margin_bottom_ratio(self, v):
+        self.config.v_margin_bottom = float(v)
+
+    @property
+    def v_margin_left_ratio(self):
+        return self.config.v_margin_left if self.config.v_margin_left is not None else 0.0
+
+    @v_margin_left_ratio.setter
+    def v_margin_left_ratio(self, v):
+        self.config.v_margin_left = float(v)
+
+    @property
+    def v_margin_right_ratio(self):
+        return self.config.v_margin_right if self.config.v_margin_right is not None else 0.0
+
+    @v_margin_right_ratio.setter
+    def v_margin_right_ratio(self, v):
+        self.config.v_margin_right = float(v)
+
     @property
     def background_corner_ratio(self):
         return self.config.background_corner_ratio
@@ -748,27 +782,41 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
 
     def open_spacing_settings(self):
         """余白・文字間隔の一括設定ダイアログを開く"""
-        dialog = TextSpacingDialog(
-            self.horizontal_margin_ratio,
-            self.vertical_margin_ratio,
-            self.margin_top_ratio,
-            self.margin_bottom_ratio,
-            self.margin_left_ratio,
-            self.margin_right_ratio,
-            self,
-        )
-        if dialog.exec() == QDialog.Accepted:
-            (h_val, v_val, top_val, btm_val, left_val, right_val) = dialog.get_values()
+        # 縦書き/横書きに応じた値でダイアログを初期化
+        if self.is_vertical:
+            dialog = TextSpacingDialog(
+                self.horizontal_margin_ratio,
+                self.vertical_margin_ratio,
+                self.v_margin_top_ratio,
+                self.v_margin_bottom_ratio,
+                self.v_margin_left_ratio,
+                self.v_margin_right_ratio,
+                self,
+                is_vertical=True,
+            )
+        else:
+            dialog = TextSpacingDialog(
+                self.horizontal_margin_ratio,
+                self.vertical_margin_ratio,
+                self.margin_top_ratio,
+                self.margin_bottom_ratio,
+                self.margin_left_ratio,
+                self.margin_right_ratio,
+                self,
+                is_vertical=False,
+            )
 
+        if dialog.exec() == QDialog.Accepted:
+            values_dict = dialog.get_values_dict()
             if hasattr(self.main_window, "undo_stack"):
                 self.main_window.undo_stack.beginMacro("Change Label Spacing")
 
-            self.set_undoable_property("horizontal_margin_ratio", h_val, None)
-            self.set_undoable_property("vertical_margin_ratio", v_val, None)
-            self.set_undoable_property("margin_top_ratio", top_val, None)
-            self.set_undoable_property("margin_bottom_ratio", btm_val, None)
-            self.set_undoable_property("margin_left_ratio", left_val, None)
-            self.set_undoable_property("margin_right_ratio", right_val, "update_text")
+            # 辞書の最後のキー以外は update_text を None に
+            keys = list(values_dict.keys())
+            for key in keys[:-1]:
+                self.set_undoable_property(key, values_dict[key], None)
+            # 最後のキーで update_text を呼ぶ
+            self.set_undoable_property(keys[-1], values_dict[keys[-1]], "update_text")
 
             if hasattr(self.main_window, "undo_stack"):
                 self.main_window.undo_stack.endMacro()

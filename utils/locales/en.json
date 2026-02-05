@@ -34,7 +34,8 @@
     "btn_vert_type_a": "Vert: Type A (Mono)",
     "btn_vert_type_b": "Vert: Type B (Prop)",
     "btn_show_list": "Show Text List",
-    "btn_set_def_spacing": "Set Default Spacing",
+    "btn_set_def_spacing_h": "Horizontal Spacing",
+    "btn_set_def_spacing_v": "Vertical Spacing",
     "btn_close_all_text": "Close All Text Windows",
     "msg_no_text_windows": "No TextWindows are open.",
     "title_text_list": "TextWindow List",
@@ -560,5 +561,6 @@
     "label_mm_outline_width": "Width (1-20):",
     "title_mm_shadow_blur": "Shadow Blur",
     "label_mm_shadow_blur": "Blur amount (0-50):",
-    "msg_default_style_updated": "Default style updated."
+    "msg_default_style_updated": "Default style updated.",
+    "btn_save_as_default": "Set as Default"
 }

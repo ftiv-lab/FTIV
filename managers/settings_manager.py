@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+import json
 import logging
 import os
 from typing import TYPE_CHECKING, Optional
@@ -38,6 +38,30 @@ class SettingsManager:
     def save_overlay_settings(self) -> None:
         if self.overlay_settings:
             save_overlay_settings(self.mw, self.base_directory, self.overlay_settings)
+
+    def load_text_archetype(self) -> dict:
+        """TextWindowの初期スタイル（Archetype）を取得する。"""
+        path = os.path.join(self.base_directory, "json", "text_archetype.json")
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load text archetype: {e}")
+            return {}
+
+    def save_text_archetype(self, data: dict) -> bool:
+        """TextWindowのデフォルトスタイルを保存する。"""
+        path = os.path.join(self.base_directory, "json", "text_archetype.json")
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save text archetype: {e}")
+            return False
 
     def init_window_settings(self) -> None:
         """初回のウィンドウ設定（タイトル、アイコン、最前面フラグ等）を適用する。"""

@@ -127,6 +127,9 @@ class BulkOperationManager:
                 text_window.set_undoable_property("font_size", selected_font.pointSize(), None)
 
                 # 2. フォントの種類（等幅かプロポーショナルか）に応じて縦書きモードを更新
+                # Note: auto_detect_offset_mode is specific to TextWindow, strictly we should add it to protocol
+                # or keep hasattr if it's optional feature. For now, we keep hasattr for specific mixin methods,
+                # but STRICTLY enforce set_undoable_property.
                 if hasattr(text_window, "auto_detect_offset_mode"):
                     text_window.auto_detect_offset_mode(selected_font)
 
@@ -165,8 +168,12 @@ class BulkOperationManager:
             window.set_offset_mode_b()
 
     def set_default_text_spacing(self) -> None:
-        """デフォルトおよび現在のテキストウィンドウの余白設定を一括適用。"""
-        # 遅延インポート (循環参照回避のため)
+        """デフォルトおよび現在のテキストウィンドウの余白設定を一括適用。
+
+        Note:
+            一括設定は横書きモードの設定を全ウィンドウに適用する。
+            個別ウィンドウの縦書き設定は各ウィンドウのコンテキストメニューから行う。
+        """
         from ui.dialogs import TextSpacingDialog
 
         json_path = os.path.join(self.mw.json_directory, "text_defaults.json")
@@ -186,14 +193,36 @@ class BulkOperationManager:
             except Exception as e:
                 logger.warning(f"Failed to load text defaults from {json_path}: {e}")
 
-        dialog = TextSpacingDialog(*defaults.values(), self.mw)
+        # 横書きモードとしてダイアログを表示（一括設定は横書き基準）
+        dialog = TextSpacingDialog(
+            defaults["h_margin"],
+            defaults["v_margin"],
+            defaults["margin_top"],
+            defaults["margin_bottom"],
+            defaults["margin_left"],
+            defaults["margin_right"],
+            self.mw,
+            is_vertical=False,
+        )
+
         if dialog.exec() == QDialog.Accepted:
-            new_values = dialog.get_values()
+            # 新しい get_values_dict() メソッドを使用
+            values_dict = dialog.get_values_dict()
+
+            # 保存用の形式に変換（後方互換性）
+            save_values = {
+                "h_margin": values_dict.get("horizontal_margin_ratio", 0.0),
+                "v_margin": values_dict.get("vertical_margin_ratio", 0.2),
+                "margin_top": values_dict.get("margin_top_ratio", 0.3),
+                "margin_bottom": values_dict.get("margin_bottom_ratio", 0.3),
+                "margin_left": values_dict.get("margin_left_ratio", 0.3),
+                "margin_right": values_dict.get("margin_right_ratio", 0.0),
+            }
 
             # 1. 保存
             try:
                 with open(json_path, "w") as f:
-                    json.dump(new_values, f, indent=4)
+                    json.dump(save_values, f, indent=4)
             except Exception as e:
                 logger.error(f"Failed to save text defaults: {e}")
 
@@ -201,20 +230,82 @@ class BulkOperationManager:
             if hasattr(self.mw, "undo_stack"):
                 self.mw.undo_stack.beginMacro("Apply Spacing to All")
 
+            # 辞書から直接プロパティ名と値を取得
+            prop_items = list(values_dict.items())
             for w in self.mw.text_windows:
-                # 変更があればUndo登録
-                #  (すべてを一発で変えるメソッドがあればよいが、set_undoable_propertyを個別に呼ぶ)
-                #  ここでは簡略化のため直接属性セット＋update_text呼び出しの形にするか、
-                #  あるいは set_undoable_property をループで呼ぶ。
+                for prop_name, value in prop_items[:-1]:
+                    w.set_undoable_property(prop_name, value, None)
+                # 最後のプロパティで update_text を呼ぶ
+                last_prop, last_val = prop_items[-1]
+                w.set_undoable_property(last_prop, last_val, "update_text")
 
-                # ここでは既存ロジックを尊重しつつ、undo対応プロパティとしてセットする
-                w.set_undoable_property("h_margin", new_values["h_margin"], None)
-                w.set_undoable_property("v_margin", new_values["v_margin"], None)
-                w.set_undoable_property("margin_top", new_values["margin_top"], None)
-                w.set_undoable_property("margin_bottom", new_values["margin_bottom"], None)
-                w.set_undoable_property("margin_left", new_values["margin_left"], None)
-                w.set_undoable_property("margin_right", new_values["margin_right"], None)
-                w.update_text()
+            if hasattr(self.mw, "undo_stack"):
+                self.mw.undo_stack.endMacro()
+
+            QMessageBox.information(self.mw, tr("msg_info"), tr("msg_settings_saved_applied"))
+
+    def set_default_text_spacing_vertical(self) -> None:
+        """縦書きモードのデフォルト余白設定を一括適用。"""
+        from ui.dialogs import TextSpacingDialog
+
+        json_path = os.path.join(self.mw.json_directory, "text_defaults_vertical.json")
+        defaults = {
+            "v_margin_top": 0.3,
+            "v_margin_bottom": 0.0,
+            "v_margin_left": 0.0,
+            "v_margin_right": 0.0,
+        }
+
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, "r") as f:
+                    defaults.update(json.load(f))
+            except Exception as e:
+                logger.warning(f"Failed to load vertical text defaults from {json_path}: {e}")
+
+        # 縦書きモードとしてダイアログを表示
+        dialog = TextSpacingDialog(
+            0.0,  # h_ratio (縦書きでは文字間隔として使用)
+            0.2,  # v_ratio (縦書きでは行間隔として使用)
+            defaults["v_margin_top"],
+            defaults["v_margin_bottom"],
+            defaults["v_margin_left"],
+            defaults["v_margin_right"],
+            self.mw,
+            is_vertical=True,
+        )
+
+        if dialog.exec() == QDialog.Accepted:
+            values_dict = dialog.get_values_dict()
+
+            # 保存用の形式
+            save_values = {
+                "v_margin_top": values_dict.get("v_margin_top_ratio", 0.3),
+                "v_margin_bottom": values_dict.get("v_margin_bottom_ratio", 0.0),
+                "v_margin_left": values_dict.get("v_margin_left_ratio", 0.0),
+                "v_margin_right": values_dict.get("v_margin_right_ratio", 0.0),
+            }
+
+            # 1. 保存
+            try:
+                with open(json_path, "w") as f:
+                    json.dump(save_values, f, indent=4)
+            except Exception as e:
+                logger.error(f"Failed to save vertical text defaults: {e}")
+
+            # 2. 現在の縦書きウィンドウに適用
+            if hasattr(self.mw, "undo_stack"):
+                self.mw.undo_stack.beginMacro("Apply Vertical Spacing to All")
+
+            # 縦書き専用プロパティのみ適用
+            prop_items = list(values_dict.items())
+            for w in self.mw.text_windows:
+                # 縦書きウィンドウのみに適用
+                if getattr(w, "is_vertical", False):
+                    for prop_name, value in prop_items[:-1]:
+                        w.set_undoable_property(prop_name, value, None)
+                    last_prop, last_val = prop_items[-1]
+                    w.set_undoable_property(last_prop, last_val, "update_text")
 
             if hasattr(self.mw, "undo_stack"):
                 self.mw.undo_stack.endMacro()

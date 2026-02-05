@@ -46,6 +46,7 @@ class PropertyPanel(QWidget):
             parent (Optional[QWidget]): 親ウィジェット。通常はMainWindow。
         """
         super().__init__(parent)
+        self.mw = parent  # Main Window reference
         self.setWindowTitle(tr("prop_panel_title"))
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
         self.resize(300, 600)
@@ -829,6 +830,13 @@ class PropertyPanel(QWidget):
             t_layout, tr("label_opacity"), target.text_opacity, 0, 100, commit, prev
         )
 
+        # Archetype Save Button for Text
+        btn_save_text_def = QPushButton("💾 " + tr("btn_save_as_default"))
+        btn_save_text_def.setToolTip("現在のテキストスタイルをデフォルトに設定")
+        if self.mw and hasattr(self.mw, "main_controller"):
+            btn_save_text_def.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
+        t_layout.addRow("", btn_save_text_def)
+
         # 背景
         bg_layout = self.create_group(tr("menu_bg_settings"))
         self.btn_bg_color = self.add_color_button(
@@ -847,6 +855,13 @@ class PropertyPanel(QWidget):
         self.spin_bg_corner, self.slider_bg_corner = self.add_slider_spin(
             bg_layout, tr("label_ratio"), target.background_corner_ratio, 0.0, 2.0, commit, prev, 100.0
         )
+
+        # Archetype Save Button for Background
+        btn_save_bg_def = QPushButton("💾 " + tr("btn_save_as_default"))
+        btn_save_bg_def.setToolTip("現在のバックスタイルをデフォルトに設定")
+        if self.mw and hasattr(self.mw, "main_controller"):
+            btn_save_bg_def.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
+        bg_layout.addRow("", btn_save_bg_def)
 
         for i in range(1, 4):
             self.add_outline_settings(target, i)

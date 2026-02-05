@@ -122,14 +122,30 @@ class TextWindowConfig(WindowConfigBase):
     background_gradient_angle: int = 0
     background_gradient_opacity: int = 100
 
-    # マージン・角丸
+    # マージン（比率） - 後方互換性のため維持
     horizontal_margin_ratio: float = 0.0
-    vertical_margin_ratio: float = 0.2
+    vertical_margin_ratio: float = 0.5  # 行間
+
+    # --- Spacing Split (Vertical/Horizontal De-coupling) ---
+    # 横書き用
+    char_spacing_h: float = 0.0
+    line_spacing_h: float = 0.5
+    # 縦書き用
+    char_spacing_v: float = 0.0
+    line_spacing_v: float = 0.5
+
+    # ウィンドウ内余白（比率）
     margin_top: float = 0.0
     margin_bottom: float = 0.0
     margin_left: float = 0.3
     margin_right: float = 0.0
     background_corner_ratio: float = 0.2
+
+    # 縦書きモード専用マージン（Noneの場合は横書き設定を流用）
+    v_margin_top: Optional[float] = 0.3
+    v_margin_bottom: Optional[float] = 0.0
+    v_margin_left: Optional[float] = 0.0
+    v_margin_right: Optional[float] = 0.0
 
 
 class ImageWindowConfig(WindowConfigBase):

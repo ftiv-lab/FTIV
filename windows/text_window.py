@@ -521,6 +521,74 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
     def margin_right_ratio(self, v: float):
         self.config.margin_right = float(v)
 
+    # --- Spacing Split Properties ---
+
+    @property
+    def char_spacing_h(self) -> float:
+        return getattr(self.config, "char_spacing_h", self.config.horizontal_margin_ratio)
+
+    @char_spacing_h.setter
+    def char_spacing_h(self, v: float):
+        self.config.char_spacing_h = float(v)
+
+    @property
+    def line_spacing_h(self) -> float:
+        return getattr(self.config, "line_spacing_h", 0.0)
+
+    @line_spacing_h.setter
+    def line_spacing_h(self, v: float):
+        self.config.line_spacing_h = float(v)
+
+    @property
+    def char_spacing_v(self) -> float:
+        return getattr(self.config, "char_spacing_v", 0.0)
+
+    @char_spacing_v.setter
+    def char_spacing_v(self, v: float):
+        self.config.char_spacing_v = float(v)
+
+    @property
+    def line_spacing_v(self) -> float:
+        return getattr(self.config, "line_spacing_v", self.config.vertical_margin_ratio)
+
+    @line_spacing_v.setter
+    def line_spacing_v(self, v: float):
+        self.config.line_spacing_v = float(v)
+
+    # --- 縦書きモード専用マージン ---
+
+    @property
+    def v_margin_top_ratio(self) -> float:
+        return self.config.v_margin_top if self.config.v_margin_top is not None else 0.3
+
+    @v_margin_top_ratio.setter
+    def v_margin_top_ratio(self, v: float):
+        self.config.v_margin_top = float(v)
+
+    @property
+    def v_margin_bottom_ratio(self) -> float:
+        return self.config.v_margin_bottom if self.config.v_margin_bottom is not None else 0.0
+
+    @v_margin_bottom_ratio.setter
+    def v_margin_bottom_ratio(self, v: float):
+        self.config.v_margin_bottom = float(v)
+
+    @property
+    def v_margin_left_ratio(self) -> float:
+        return self.config.v_margin_left if self.config.v_margin_left is not None else 0.0
+
+    @v_margin_left_ratio.setter
+    def v_margin_left_ratio(self, v: float):
+        self.config.v_margin_left = float(v)
+
+    @property
+    def v_margin_right_ratio(self) -> float:
+        return self.config.v_margin_right if self.config.v_margin_right is not None else 0.0
+
+    @v_margin_right_ratio.setter
+    def v_margin_right_ratio(self, v: float):
+        self.config.v_margin_right = float(v)
+
     @property
     def background_corner_ratio(self) -> float:
         return self.config.background_corner_ratio
@@ -1354,49 +1422,90 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             OffsetMode.MONO if fm.horizontalAdvance("i") == fm.horizontalAdvance("W") else OffsetMode.PROP
         )
 
-    def load_text_defaults(self) -> Dict[str, float]:
-        json_path = os.path.join(self.main_window.json_directory, "text_defaults.json")
-        default_settings = {
+    def load_text_defaults(self) -> Dict[str, Any]:
+        """各種デフォルト設定ファイルからスタイルを読み込む。"""
+        # 1. 基礎（ハードコード）
+        defaults = {
             "h_margin": 0.0,
             "v_margin": 0.2,
             "margin_top": 0.3,
             "margin_bottom": 0.3,
             "margin_left": 0.3,
             "margin_right": 0.0,
+            "v_margin_top": 0.3,
+            "v_margin_bottom": 0.0,
+            "v_margin_left": 0.0,
+            "v_margin_right": 0.0,
         }
-        if os.path.exists(json_path):
+
+        # 2. レガシー：横書き余白
+        h_path = os.path.join(self.main_window.json_directory, "text_defaults.json")
+        if os.path.exists(h_path):
             try:
-                with open(json_path, "r") as f:
-                    default_settings.update(json.load(f))
+                with open(h_path, "r") as f:
+                    defaults.update(json.load(f))
             except Exception as e:
-                logger.warning(f"Failed to load text defaults from {json_path}: {e}")
-        return default_settings
+                logger.warning(f"Failed to load text defaults: {e}")
+
+        # 3. レガシー：縦書き余白 (BUG FIX: これがロードされていなかった)
+        v_path = os.path.join(self.main_window.json_directory, "text_defaults_vertical.json")
+        if os.path.exists(v_path):
+            try:
+                with open(v_path, "r") as f:
+                    defaults.update(json.load(f))
+            except Exception as e:
+                logger.warning(f"Failed to load vertical text defaults: {e}")
+
+        # 4. モダン：Archetype (すべてのスタイル)
+        if hasattr(self.main_window, "settings_manager"):
+            archetype = self.main_window.settings_manager.load_text_archetype()
+            if archetype:
+                # Archetype のキー名が config 準拠 (horizontal_margin_ratio 等) なのでマッピング
+                # load_text_defaults は従来辞書を返し、__init__ で直接属性に代入されている
+                defaults.update(archetype)
+
+        return defaults
 
     def open_spacing_settings(self) -> None:
-        dialog = TextSpacingDialog(
-            self.horizontal_margin_ratio,
-            self.vertical_margin_ratio,
-            self.margin_top_ratio,
-            self.margin_bottom_ratio,
-            self.margin_left_ratio,
-            self.margin_right_ratio,
-            self,
-        )
+        # 縦書き/横書きに応じた値でダイアログを初期化
+        if self.is_vertical:
+            # Vertical Mode: h_ratio=char_spacing, v_ratio=line_spacing
+            dialog = TextSpacingDialog(
+                self.char_spacing_v,
+                self.line_spacing_v,
+                self.v_margin_top_ratio,
+                self.v_margin_bottom_ratio,
+                self.v_margin_left_ratio,
+                self.v_margin_right_ratio,
+                self,
+                is_vertical=True,
+            )
+        else:
+            # Horizontal Mode: h_ratio=char_spacing, v_ratio=line_spacing
+            dialog = TextSpacingDialog(
+                self.char_spacing_h,
+                self.line_spacing_h,
+                self.margin_top_ratio,
+                self.margin_bottom_ratio,
+                self.margin_left_ratio,
+                self.margin_right_ratio,
+                self,
+                is_vertical=False,
+            )
+
         if dialog.exec() == QDialog.Accepted:
-            vals = dialog.get_values()
+            values_dict = dialog.get_values_dict()
             if hasattr(self.main_window, "undo_stack"):
                 self.main_window.undo_stack.beginMacro("Change Spacing")
-            attrs = [
-                "horizontal_margin_ratio",
-                "vertical_margin_ratio",
-                "margin_top_ratio",
-                "margin_bottom_ratio",
-                "margin_left_ratio",
-                "margin_right_ratio",
-            ]
-            for i, attr in enumerate(attrs[:-1]):
-                self.set_undoable_property(attr, vals[i], None)
-            self.set_undoable_property(attrs[-1], vals[-1], "update_text")
+
+            # 辞書の最後のキー以外は update_text を None に
+            keys = list(values_dict.keys())
+            for key in keys[:-1]:
+                self.set_undoable_property(key, values_dict[key], None)
+            # 最後のキーで update_text を呼ぶ
+            if keys:
+                self.set_undoable_property(keys[-1], values_dict[keys[-1]], "update_text")
+
             if hasattr(self.main_window, "undo_stack"):
                 self.main_window.undo_stack.endMacro()
 

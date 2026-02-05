@@ -149,6 +149,27 @@ class WindowManager(QObject):
 
         window = TextWindow(self.main_window, text, pos)
 
+        # --- Archetype (Default Styles) Application ---
+        try:
+            if hasattr(self.main_window, "settings_manager"):
+                archetype = self.main_window.settings_manager.load_text_archetype()
+                if archetype:
+                    # Apply all settings from archetype to window config
+                    # WindowConfigBase inherits from Pydantic BaseModel, so we can use model_validate
+                    # but we want to MERGE with existing instance-specific data (uuid, position, text)
+                    for key, value in archetype.items():
+                        if hasattr(window.config, key) and key not in ("uuid", "position", "text"):
+                            try:
+                                setattr(window.config, key, value)
+                            except Exception as e:
+                                logger.debug(f"Failed to apply archetype key {key}: {e}")
+
+                    # Update window state from config
+                    if hasattr(window, "update_text"):
+                        window.update_text()
+        except Exception as e:
+            logger.warning(f"Failed to apply text archetype during creation: {e}")
+
         self._setup_window_connections(window)
 
         self.text_windows.append(window)
