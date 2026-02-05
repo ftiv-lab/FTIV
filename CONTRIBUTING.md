@@ -93,6 +93,10 @@ We use **uv** for blazing fast, reliable dependency management.
     ```powershell
     .\verify_all.bat
     ```
+*   **Reset Defaults (Factory Settings)**:
+    ```powershell
+    uv run scripts/reset_defaults.py
+    ```
 
 ### Dual Environment Strategy (Legacy Build)
 
