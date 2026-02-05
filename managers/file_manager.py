@@ -96,7 +96,7 @@ class FileManager:
 
             # それでもダメなら、Qt.PenStyle(...) 経由で値を取りにいく
             try:
-                return int(Qt.PenStyle(pen_style))  # type: ignore[arg-type]
+                return int(Qt.PenStyle(pen_style).value)
             except Exception:
                 pass
 

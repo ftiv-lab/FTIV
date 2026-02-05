@@ -1,9 +1,14 @@
+import os
+import sys
 from unittest.mock import MagicMock
 
 import pytest
 from PySide6.QtCore import QPoint, QSize
 from PySide6.QtGui import QAction, QFont, QFontMetrics
 from PySide6.QtWidgets import QApplication
+
+# Ensure project root is in path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from windows.text_window import TextWindow
 
@@ -226,3 +231,57 @@ class TestSpacingSplit:
             assert y_positions[i + 1] > y_positions[i], (
                 f"Vertical Char {i + 1} is not below Char {i} (Translate Y: {y_positions})"
             )
+
+    def test_vertical_spacing_metrics(self, setup_window):
+        """Metric Accuracy Test: Verify that vertical step uses QFontMetrics.height() not just font_size."""
+        tw = setup_window
+        tw.is_vertical = True
+        tw.text = "AB"
+        font_size = 50
+        tw.font_size = font_size
+        tw.char_spacing_v = 0.0
+
+        # Determine strict expected step (Refined: Ascent + Descent, no leading)
+        font = QFont("Arial", font_size)
+        fm = QFontMetrics(font)
+        # expected_step = fm.height() # Old logic (too wide)
+        expected_step = fm.ascent() + fm.descent()  # New refined logic
+
+        # Mock dependencies
+        mock_painter = MagicMock()
+        mock_painter.font.return_value = font
+
+        # Call low-level render content directly for precision
+        lines = ["AB"]
+        canvas_size = QSize(200, 500)
+
+        tw.renderer._draw_vertical_text_content(
+            mock_painter,
+            tw,
+            lines,
+            x_shift=0.0,
+            top_margin=0,
+            margin=0,  # char_spacing_v
+            right_margin=0,
+            shadow_x=0,
+            outline_width=0,
+            canvas_size=canvas_size,
+            is_main_text=True,
+            custom_offset=QPoint(0, 0),
+        )
+
+        translate_calls = mock_painter.translate.call_args_list
+        # Extract Y changes (translate cy)
+        y_positions = [call.args[1] for call in translate_calls]
+
+        assert len(y_positions) >= 2, "Need at least 2 chars to test spacing"
+
+        actual_step = y_positions[1] - y_positions[0]
+
+        # The key assertion: step should be roughly valid metric height
+        # Allow small float tolerance
+        msg = f"Vertical step {actual_step} is smaller than QFontMetrics.height() {expected_step}. This causes overlap!"
+
+        # Currently, code uses font_size (50). QFontMetrics.height() for Arial 50 is likely ~58+
+        # So this assertion will FAIL if current code is used.
+        assert actual_step >= expected_step * 0.95, msg

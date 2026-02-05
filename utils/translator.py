@@ -113,7 +113,7 @@ class Translator(QObject):
         """
         return self.current_lang
 
-    def tr(self, key: str) -> str:
+    def tr(self, key: str) -> str:  # type: ignore[override]
         """指定されたキーに対応する翻訳文字列を返す。"""
         # 現在の言語から取得を試みる
         lang_dict = self.translations.get(self.current_lang, {})

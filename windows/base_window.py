@@ -3,7 +3,7 @@
 import logging
 import traceback
 import uuid
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type
 
 import shiboken6
 from PySide6.QtCore import (
@@ -770,7 +770,7 @@ class BaseOverlayWindow(QLabel):
         if self.fade_out_only_loop_enabled:
             self._run_fade_animation(1.0, 0.0, self.start_fade_out_only_with_pause)
 
-    def _run_fade_animation(self, start_val: float, end_val: float, on_finished: callable):
+    def _run_fade_animation(self, start_val: float, end_val: float, on_finished: Callable):
         self.fade_animation = QPropertyAnimation(self, b"windowOpacity")
         self.fade_animation.setDuration(self.fade_speed)
         self.fade_animation.setStartValue(start_val)
@@ -1103,9 +1103,9 @@ class BaseOverlayWindow(QLabel):
         """
         if not hasattr(self.config, "move_offset"):
             # 古いConfig互換用（通常はWindowConfigBaseに追加される想定）
-            self.config.move_offset = {"x": 0, "y": 0}  # type: ignore[attr-defined]
+            self.config.move_offset = {"x": 0, "y": 0}
 
-        self.config.move_offset = {"x": int(offset.x()), "y": int(offset.y())}  # type: ignore[attr-defined]
+        self.config.move_offset = {"x": int(offset.x()), "y": int(offset.y())}
 
     def _is_zero_offset(self, offset: QPoint) -> bool:
         return offset.x() == 0 and offset.y() == 0
@@ -1128,7 +1128,7 @@ class BaseOverlayWindow(QLabel):
             if not ok:
                 return
 
-            self.config.move_use_relative = True  # type: ignore[attr-defined]
+            self.config.move_use_relative = True
             self.set_move_offset(QPoint(dx, dy))
             self._emit_status_warning(
                 "msg_relative_move_offset_set", fallback_text=f"Relative move offset set: dx={dx}, dy={dy}"
@@ -1153,7 +1153,7 @@ class BaseOverlayWindow(QLabel):
         相対移動の基準位置を記録する（次に「現在位置を終点として記録」でoffset確定）。
         """
         self._ensure_relative_move_state()
-        self._rel_record_base_pos = self.pos()  # type: ignore[attr-defined]
+        self._rel_record_base_pos = self.pos()
         self._emit_status_warning(
             "msg_relative_move_base_recorded",
             fallback_text="Base position recorded. Move the window, then record current position as end.",
@@ -1165,7 +1165,7 @@ class BaseOverlayWindow(QLabel):
         move_use_relative は True にする。
         """
         self._ensure_relative_move_state()
-        base = self._rel_record_base_pos  # type: ignore[attr-defined]
+        base = self._rel_record_base_pos
         if base is None:
             self._emit_status_warning(
                 "msg_relative_move_base_not_set", fallback_text="Base position is not recorded yet."
@@ -1173,9 +1173,9 @@ class BaseOverlayWindow(QLabel):
             return
 
         offset = self.pos() - base
-        self.config.move_use_relative = True  # type: ignore[attr-defined]
+        self.config.move_use_relative = True
         self.set_move_offset(offset)
-        self._rel_record_base_pos = None  # type: ignore[attr-defined]
+        self._rel_record_base_pos = None
 
         self._emit_status_warning(
             "msg_relative_move_offset_set", fallback_text=f"Relative move offset set: dx={offset.x()}, dy={offset.y()}"
@@ -1185,7 +1185,7 @@ class BaseOverlayWindow(QLabel):
         """
         相対移動オフセットを(0,0)に戻す。
         """
-        self.config.move_use_relative = True  # type: ignore[attr-defined]
+        self.config.move_use_relative = True
         self.set_move_offset(QPoint(0, 0))
         self._emit_status_warning("msg_relative_move_offset_cleared", fallback_text="Relative move offset cleared.")
 

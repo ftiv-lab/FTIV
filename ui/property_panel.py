@@ -1,6 +1,7 @@
 # ui/property_panel.py
 
 import logging
+import typing
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -798,7 +799,6 @@ class PropertyPanel(QWidget):
                 try:
                     target.set_undoable_property("font_family", font.family())
                     target.set_undoable_property("font_size", font.pointSize())
-                    target.auto_detect_offset_mode(font)
                     target.update_text()
                 except Exception as e:
                     import traceback
@@ -807,7 +807,7 @@ class PropertyPanel(QWidget):
                     QMessageBox.warning(self, tr("msg_error"), f"Font change failed: {e}")
 
         self.btn_text_font.clicked.connect(change_font)
-        t_layout.addRow(tr("prop_font_selector"), self.btn_text_font)
+        t_layout.addRow(tr("prop_font_selector"), typing.cast(QWidget, self.btn_text_font))
 
         self.spin_text_font_size = self.add_spinbox(
             t_layout,
@@ -835,7 +835,7 @@ class PropertyPanel(QWidget):
         btn_save_text_def.setToolTip("現在のテキストスタイルをデフォルトに設定")
         if self.mw and hasattr(self.mw, "main_controller"):
             btn_save_text_def.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
-        t_layout.addRow("", btn_save_text_def)
+        t_layout.addRow("", typing.cast(QWidget, btn_save_text_def))
 
         # 背景
         bg_layout = self.create_group(tr("menu_bg_settings"))
@@ -861,7 +861,7 @@ class PropertyPanel(QWidget):
         btn_save_bg_def.setToolTip("現在のバックスタイルをデフォルトに設定")
         if self.mw and hasattr(self.mw, "main_controller"):
             btn_save_bg_def.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
-        bg_layout.addRow("", btn_save_bg_def)
+        bg_layout.addRow("", typing.cast(QWidget, btn_save_bg_def))
 
         for i in range(1, 4):
             self.add_outline_settings(target, i)
@@ -874,7 +874,7 @@ class PropertyPanel(QWidget):
         self.btn_shadow_toggle.clicked.connect(
             lambda c: target.set_undoable_property("shadow_enabled", c, "update_text")
         )
-        sh_layout.addRow("", self.btn_shadow_toggle)
+        sh_layout.addRow("", typing.cast(QWidget, self.btn_shadow_toggle))
         self.btn_shadow_color = self.add_color_button(
             sh_layout,
             tr("prop_color"),
@@ -1058,9 +1058,9 @@ class PropertyPanel(QWidget):
             layout,
             tr("prop_label_text"),
             text,
-            lambda t: target.label_window.set_undoable_property("text", t, "update_text")
-            if target.label_window
-            else None,
+            lambda t: (
+                target.label_window.set_undoable_property("text", t, "update_text") if target.label_window else None
+            ),
         )
 
         if hasattr(target, "label_window") and target.label_window:

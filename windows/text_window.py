@@ -5,10 +5,9 @@ import traceback
 from typing import Any, Dict, Optional, Union
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import QColorDialog, QDialog, QFileDialog, QFontDialog, QMessageBox
 
-from models.enums import OffsetMode
 from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
 from ui.dialogs import (
@@ -71,8 +70,6 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             self._previous_text_opacity: int = 100
             self._previous_background_opacity: int = 100
 
-            self.auto_detect_offset_mode(QFont(self.font_family, int(self.font_size)))
-
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self.show_context_menu)
 
@@ -104,7 +101,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
 
     # --- Properties ---
 
-    @property
+    @property  # type: ignore[override]
     def text(self) -> str:
         return self.config.text
 
@@ -466,14 +463,6 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
         self.config.is_vertical = v
 
     @property
-    def offset_mode(self) -> OffsetMode:
-        return self.config.offset_mode
-
-    @offset_mode.setter
-    def offset_mode(self, v: OffsetMode):
-        self.config.offset_mode = v
-
-    @property
     def horizontal_margin_ratio(self) -> float:
         return self.config.horizontal_margin_ratio
 
@@ -683,12 +672,6 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             return
 
         super().set_undoable_property(property_name, new_value, update_method_name)
-
-    def set_offset_mode_a(self) -> None:
-        self.set_undoable_property("offset_mode", OffsetMode.MONO, "update_text")
-
-    def set_offset_mode_b(self) -> None:
-        self.set_undoable_property("offset_mode", OffsetMode.PROP, "update_text")
 
     def toggle_outline(self) -> None:
         self.set_undoable_property("outline_enabled", not self.outline_enabled, "update_text")
@@ -942,7 +925,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
                     self.main_window.undo_stack.beginMacro("Change Font")
                 self.set_undoable_property("font_family", font.family(), None)
                 self.set_undoable_property("font_size", font.pointSize(), None)
-                self.auto_detect_offset_mode(font)
+
                 if hasattr(self.main_window, "undo_stack"):
                     self.main_window.undo_stack.endMacro()
 
@@ -1416,12 +1399,6 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
         if color.isValid():
             self.set_undoable_property("background_outline_color", color, "update_text")
 
-    def auto_detect_offset_mode(self, font: QFont) -> None:
-        fm = QFontMetrics(font)
-        self.offset_mode = (
-            OffsetMode.MONO if fm.horizontalAdvance("i") == fm.horizontalAdvance("W") else OffsetMode.PROP
-        )
-
     def load_text_defaults(self) -> Dict[str, Any]:
         """各種デフォルト設定ファイルからスタイルを読み込む。"""
         # 1. 基礎（ハードコード）
@@ -1524,7 +1501,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
         for child in self.child_windows:
             try:
                 vec = child.geometry().center() - parent_center
-                new_center = parent_center + QPoint(vec.x() * ratio, vec.y() * ratio)
+                new_center = parent_center + QPoint(int(vec.x() * ratio), int(vec.y() * ratio))
                 if hasattr(child, "font_size"):
                     child.font_size *= ratio
                     child.update_text()
@@ -1695,21 +1672,6 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             # 縦書き設定
             builder.add_action(
                 "menu_toggle_vertical", self.toggle_vertical_text, checkable=True, checked=self.is_vertical
-            )
-            vert_menu = builder.add_submenu("menu_vertical_font_type")
-            builder.add_action(
-                "menu_mono_font",
-                self.set_offset_mode_a,
-                checkable=True,
-                checked=(self.offset_mode == OffsetMode.MONO),
-                parent_menu=vert_menu,
-            )
-            builder.add_action(
-                "menu_prop_font",
-                self.set_offset_mode_b,
-                checkable=True,
-                checked=(self.offset_mode == OffsetMode.PROP),
-                parent_menu=vert_menu,
             )
 
             builder.add_separator()

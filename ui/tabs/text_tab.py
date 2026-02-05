@@ -2,7 +2,6 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QGridLayout,
     QGroupBox,
     QLabel,
@@ -199,7 +198,7 @@ class TextTab(QWidget):
             lambda checked: self.mw.main_controller.txt_actions.run_selected_visibility_action("frontmost", checked)
         )
 
-        self.txt_btn_sel_click_through = QPushButton(tr("menu_click_through"))
+        self.txt_btn_sel_click_through = QPushButton(tr("menu_toggle_click_through"))
         self.txt_btn_sel_click_through.setObjectName("ActionBtn")
         self.txt_btn_sel_click_through.setCheckable(True)
         self.txt_btn_sel_click_through.toggled.connect(
@@ -286,26 +285,6 @@ class TextTab(QWidget):
             lambda checked: self.mw.main_controller.txt_actions.run_selected_layout_action("set_vertical", checked)
         )
 
-        self.txt_btn_sel_offset_mono = QPushButton(tr("menu_mono_font"))
-        self.txt_btn_sel_offset_mono.setObjectName("ActionBtn")
-        self.txt_btn_sel_offset_mono.setCheckable(True)
-        self.txt_btn_sel_offset_mono.clicked.connect(
-            lambda: self.mw.main_controller.txt_actions.run_selected_layout_action("set_offset_mode_mono")
-        )
-
-        self.txt_btn_sel_offset_prop = QPushButton(tr("menu_prop_font"))
-        self.txt_btn_sel_offset_prop.setObjectName("ActionBtn")
-        self.txt_btn_sel_offset_prop.setCheckable(True)
-        self.txt_btn_sel_offset_prop.clicked.connect(
-            lambda: self.mw.main_controller.txt_actions.run_selected_layout_action("set_offset_mode_prop")
-        )
-
-        # 排他化
-        self.txt_offset_mode_group = QButtonGroup(tab)
-        self.txt_offset_mode_group.setExclusive(True)
-        self.txt_offset_mode_group.addButton(self.txt_btn_sel_offset_mono)
-        self.txt_offset_mode_group.addButton(self.txt_btn_sel_offset_prop)
-
         self.txt_btn_sel_spacing_settings = QPushButton(tr("menu_margin_settings"))
         self.txt_btn_sel_spacing_settings.setObjectName("ActionBtn")
         self.txt_btn_sel_spacing_settings.clicked.connect(
@@ -313,9 +292,7 @@ class TextTab(QWidget):
         )
 
         grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 0, 0, 1, 2)
-        grid_sel.addWidget(self.txt_btn_sel_offset_mono, 1, 0)
-        grid_sel.addWidget(self.txt_btn_sel_offset_prop, 1, 1)
-        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 2, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 1, 0, 1, 2)
 
         # ✨ New: Save current as Default
         self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
@@ -338,14 +315,6 @@ class TextTab(QWidget):
         self.btn_all_vertical.setObjectName("ActionBtn")
         self.btn_all_vertical.clicked.connect(self.mw.main_controller.bulk_manager.set_all_text_vertical)
 
-        self.btn_type_a = QPushButton(tr("btn_vert_type_a"))
-        self.btn_type_a.setObjectName("ActionBtn")
-        self.btn_type_a.clicked.connect(self.mw.main_controller.bulk_manager.set_all_offset_mode_a)
-
-        self.btn_type_b = QPushButton(tr("btn_vert_type_b"))
-        self.btn_type_b.setObjectName("ActionBtn")
-        self.btn_type_b.clicked.connect(self.mw.main_controller.bulk_manager.set_all_offset_mode_b)
-
         self.btn_def_spacing_h = QPushButton(tr("btn_set_def_spacing_h"))
         self.btn_def_spacing_h.setObjectName("ActionBtn")
         self.btn_def_spacing_h.clicked.connect(self.mw.main_controller.bulk_manager.set_default_text_spacing)
@@ -356,10 +325,8 @@ class TextTab(QWidget):
 
         grid_bulk.addWidget(self.btn_all_horizontal, 0, 0)
         grid_bulk.addWidget(self.btn_all_vertical, 0, 1)
-        grid_bulk.addWidget(self.btn_type_a, 1, 0)
-        grid_bulk.addWidget(self.btn_type_b, 1, 1)
-        grid_bulk.addWidget(self.btn_def_spacing_h, 2, 0)
-        grid_bulk.addWidget(self.btn_def_spacing_v, 2, 1)
+        grid_bulk.addWidget(self.btn_def_spacing_h, 1, 0)
+        grid_bulk.addWidget(self.btn_def_spacing_v, 1, 1)
 
         layout.addWidget(self.txt_layout_grp_all)
         layout.addStretch()
@@ -413,19 +380,11 @@ class TextTab(QWidget):
             self.txt_btn_sel_frontmost,
             self.txt_btn_sel_click_through,
             self.txt_btn_sel_toggle_vertical,
-            self.txt_btn_sel_offset_mono,
-            self.txt_btn_sel_offset_prop,
         ]
         for btn in buttons:
             btn.blockSignals(True)
             btn.setChecked(False)
             btn.blockSignals(False)
-
-        # Exclusive group のリセット
-        if self.txt_offset_mode_group.checkedButton():
-            self.txt_offset_mode_group.setExclusive(False)
-            self.txt_offset_mode_group.checkedButton().setChecked(False)
-            self.txt_offset_mode_group.setExclusive(True)
 
     def _sync_check_states(self, obj: Any) -> None:
         # Frontmost
@@ -445,19 +404,6 @@ class TextTab(QWidget):
         self.txt_btn_sel_toggle_vertical.blockSignals(True)
         self.txt_btn_sel_toggle_vertical.setChecked(bool(is_vert))
         self.txt_btn_sel_toggle_vertical.blockSignals(False)
-
-        # Offset Mode
-        mode = getattr(obj, "offset_mode", "proportional")
-        self.txt_btn_sel_offset_mono.blockSignals(True)
-        self.txt_btn_sel_offset_prop.blockSignals(True)
-
-        if mode == "monospace":
-            self.txt_btn_sel_offset_mono.setChecked(True)
-        else:
-            self.txt_btn_sel_offset_prop.setChecked(True)
-
-        self.txt_btn_sel_offset_mono.blockSignals(False)
-        self.txt_btn_sel_offset_prop.blockSignals(False)
 
     def refresh_ui(self) -> None:
         """UI文言更新"""
@@ -504,8 +450,7 @@ class TextTab(QWidget):
         # Layout
         self.txt_layout_grp_selected.setTitle(tr("anim_target_selected"))
         self.txt_btn_sel_toggle_vertical.setText(tr("menu_toggle_vertical"))
-        self.txt_btn_sel_offset_mono.setText(tr("menu_mono_font"))
-        self.txt_btn_sel_offset_prop.setText(tr("menu_prop_font"))
+
         self.txt_btn_sel_spacing_settings.setText(tr("menu_margin_settings"))
 
         self.txt_layout_grp_all.setTitle(tr("anim_target_all_text"))

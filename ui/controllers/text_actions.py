@@ -333,8 +333,7 @@ class TextActions:
         Args:
             action (str):
                 - "set_vertical"（checked必須）
-                - "set_offset_mode_mono"
-                - "set_offset_mode_prop"
+
                 - "open_spacing_settings"
             checked (Optional[bool]): "set_vertical" のときに必須。
         """
@@ -355,27 +354,6 @@ class TextActions:
                             w.update_text()
                 except Exception as e:
                     report_unexpected_error(self.mw, "Failed to set vertical mode.", e, self._err_state)
-
-            elif action in ("set_offset_mode_mono", "set_offset_mode_prop"):
-                try:
-                    from models.enums import OffsetMode
-
-                    target_mode = OffsetMode.MONO if action == "set_offset_mode_mono" else OffsetMode.PROP
-
-                    # 既存の正式ルートがあるなら優先
-                    if target_mode == OffsetMode.MONO and hasattr(w, "set_offset_mode_a"):
-                        w.set_offset_mode_a()
-                    elif target_mode == OffsetMode.PROP and hasattr(w, "set_offset_mode_b"):
-                        w.set_offset_mode_b()
-                    else:
-                        if hasattr(w, "set_undoable_property"):
-                            w.set_undoable_property("offset_mode", target_mode, "update_text")
-                        else:
-                            setattr(w, "offset_mode", target_mode)
-                            if hasattr(w, "update_text"):
-                                w.update_text()
-                except Exception as e:
-                    report_unexpected_error(self.mw, "Failed to set offset mode.", e, self._err_state)
 
             elif action == "open_spacing_settings":
                 try:

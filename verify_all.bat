@@ -2,22 +2,14 @@
 setlocal
 chcp 65001 >nul
 
-set VENV_PYTHON=.venv314\Scripts\python.exe
-
-if not exist "%VENV_PYTHON%" (
-    echo [ERROR] Virtual Environment .venv314 not found!
-    echo Please make sure you are in the correct directory.
-    pause
-    exit /b 1
-)
-
 echo ========================================================
-echo  Antigravity One-Click Verification (Python 3.14.2)
+echo  Antigravity One-Click Verification (Powered by UV)
 echo ========================================================
 
 echo.
 echo [1/6] Running Ruff Linter...
-"%VENV_PYTHON%" -m ruff check .
+echo [1/6] Running Ruff Linter...
+uv run ruff check .
 if %errorlevel% neq 0 (
     echo [ERROR] Ruff found issues.
     goto :FAIL
@@ -25,7 +17,8 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [2/6] Running UI Reference Audit...
-"%VENV_PYTHON%" tools/check_ui_refs.py
+echo [2/6] Running UI Reference Audit...
+uv run tools/check_ui_refs.py
 if %errorlevel% neq 0 (
     echo [ERROR] UI Reference Audit failed.
     goto :FAIL
@@ -33,9 +26,19 @@ if %errorlevel% neq 0 (
 
 
 echo.
+echo [3/6] Running Type Checks (Mypy)...
+uv run mypy ui managers windows models
+if %errorlevel% neq 0 (
+    echo [ERROR] Mypy found type errors.
+    goto :FAIL
+)
+
+
+echo.
+echo [4/6] Running Tests: Group 1 (Core Logic)...
 echo [3/6] Running Tests: Group 1 (Core Logic)...
 echo [3/6] Running Tests: Group 1 (Core Logic)...
-"%VENV_PYTHON%" -m pytest tests/ -k "not mindmap and not interactive and not chaos and not stress and not inline"
+uv run pytest tests/ -k "not mindmap and not interactive and not chaos and not stress and not inline" --maxfail=1 --showlocals -v
 if %errorlevel% neq 0 (
     echo [ERROR] Core Tests failed.
     goto :FAIL
@@ -43,7 +46,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [4/6] Running Tests: Group 2 (Inline Editing)...
-"%VENV_PYTHON%" -m pytest tests/test_inline_edit.py
+uv run python -m pytest tests/test_inline_edit.py --maxfail=1 --showlocals -v
 if %errorlevel% neq 0 (
     echo [ERROR] Inline Editing Tests failed.
     goto :FAIL
@@ -51,7 +54,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [5/6] Running Tests: Group 3 (Interactive)...
-"%VENV_PYTHON%" -m pytest tests/test_interactive/
+uv run python -m pytest tests/test_interactive/ --maxfail=1 --showlocals -v
 if %errorlevel% neq 0 (
     echo [ERROR] Interactive Tests failed.
     goto :FAIL
@@ -59,7 +62,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo [6/6] Running Tests: Group 4 (Chaos and Stress)...
-"%VENV_PYTHON%" -m pytest tests/test_chaos/ tests/test_stress/
+uv run python -m pytest tests/test_chaos/ tests/test_stress/ --maxfail=1 --showlocals -v
 if %errorlevel% neq 0 (
     echo [ERROR] Chaos/Stress Tests failed.
     goto :FAIL

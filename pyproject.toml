@@ -5,10 +5,11 @@ description = "Fast Text & Image Viewer for Overlay"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "PySide6>=6.8.0",
+    "pyside6>=6.8.0",
     "shiboken6>=6.8.0",
     "pillow>=10.0.0",
-    "python-osc>=1.8.0"
+    "python-osc>=1.8.0",
+    "pydantic>=2.0.0",
 ]
 
 [tool.ruff]
@@ -73,3 +74,34 @@ skip-magic-trailing-comma = false
 
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
+
+[tool.mypy]
+files = ["ui", "managers", "windows", "models"]
+ignore_missing_imports = true
+check_untyped_defs = true
+strict_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = false
+disable_error_code = [
+    "attr-defined",
+    "import-untyped",
+    "union-attr",
+    "has-type",
+    "return-value",
+    "arg-type",
+    "assignment",
+    "operator",
+    "index",
+    "func-returns-value",
+    "var-annotated"
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.0.0",
+    "pre-commit>=4.5.1",
+    "pytest>=8.0",
+    "ruff>=0.9.0",
+    "types-pyside6>=6.10.1.1",
+]

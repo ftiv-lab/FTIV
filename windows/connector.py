@@ -9,7 +9,6 @@ from PySide6.QtCore import QPoint, QPointF, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
-    QFontMetrics,
     QPainter,
     QPainterPath,
     QPainterPathStroker,
@@ -19,7 +18,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QColorDialog, QDialog, QFontDialog, QInputDialog, QWidget
 
-from models.enums import AnchorPosition, ArrowStyle, OffsetMode
+from models.enums import AnchorPosition, ArrowStyle
 from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
 from ui.dialogs import (
@@ -470,14 +469,6 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
         self.config.is_vertical = v
 
     @property
-    def offset_mode(self):
-        return self.config.offset_mode
-
-    @offset_mode.setter
-    def offset_mode(self, v):
-        self.config.offset_mode = v
-
-    @property
     def horizontal_margin_ratio(self):
         return self.config.horizontal_margin_ratio
 
@@ -664,15 +655,6 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
                 event.accept()
             except Exception:
                 pass
-
-    def auto_detect_offset_mode(self, font):
-        fm = QFontMetrics(font)
-        width_i = fm.horizontalAdvance("i")
-        width_w = fm.horizontalAdvance("W")
-        if width_i == width_w:
-            self.offset_mode = OffsetMode.MONO
-        else:
-            self.offset_mode = OffsetMode.PROP
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -865,30 +847,6 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
                 checked=self.is_vertical,
             )
 
-            vert_menu = builder.add_submenu("menu_vertical_font_type")
-
-            builder.add_action(
-                "menu_mono_font",
-                lambda checked=False: self._apply_label_layout_change(
-                    lambda: self.set_undoable_property("offset_mode", OffsetMode.MONO, "update_text"),
-                    "Set Label Offset Mode",
-                ),
-                checkable=True,
-                checked=(self.offset_mode == OffsetMode.MONO),
-                parent_menu=vert_menu,
-            )
-
-            builder.add_action(
-                "menu_prop_font",
-                lambda checked=False: self._apply_label_layout_change(
-                    lambda: self.set_undoable_property("offset_mode", OffsetMode.PROP, "update_text"),
-                    "Set Label Offset Mode",
-                ),
-                checkable=True,
-                checked=(self.offset_mode == OffsetMode.PROP),
-                parent_menu=vert_menu,
-            )
-
             builder.add_separator()
 
             # --- 5) 余白 ---
@@ -1066,10 +1024,6 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
             def _apply() -> None:
                 self.set_undoable_property("font_family", font.family(), None)
                 self.set_undoable_property("font_size", int(font.pointSize()), "update_text")
-                try:
-                    self.auto_detect_offset_mode(font)
-                except Exception:
-                    pass
 
             self._apply_label_layout_change(_apply, "Change Label Font")
         except Exception:

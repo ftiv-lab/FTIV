@@ -159,14 +159,6 @@ class BulkOperationManager:
         if hasattr(self.mw, "undo_stack"):
             self.mw.undo_stack.endMacro()
 
-    def set_all_offset_mode_a(self) -> None:
-        for window in self.mw.text_windows:
-            window.set_offset_mode_a()
-
-    def set_all_offset_mode_b(self) -> None:
-        for window in self.mw.text_windows:
-            window.set_offset_mode_b()
-
     def set_default_text_spacing(self) -> None:
         """デフォルトおよび現在のテキストウィンドウの余白設定を一括適用。
 

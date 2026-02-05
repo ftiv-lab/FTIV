@@ -117,10 +117,6 @@ class _TextRenderDummy:
         return bool(self.config.is_vertical)
 
     @property
-    def offset_mode(self) -> Any:
-        return self.config.offset_mode
-
-    @property
     def horizontal_margin_ratio(self) -> float:
         return float(self.config.horizontal_margin_ratio)
 
@@ -318,7 +314,6 @@ class StyleManager:
             "background_gradient_opacity",
             # 縦書き・配置モード
             "is_vertical",
-            "offset_mode",
         ]
 
     def get_presets_directory(self):
@@ -539,7 +534,7 @@ class StyleManager:
     def _apply_data_to_window(self, window, style_data):
         """
         単一のウィンドウにスタイルデータを適用するヘルパー
-        ★ font_size に加え、is_vertical と offset_mode も除外する制御を追加
+        ★ font_size に加え、is_vertical も除外する制御を追加
         """
         for field in self.text_style_fields:
             if field in style_data:
@@ -549,7 +544,7 @@ class StyleManager:
 
                 # ★追加: 縦書き・横書き設定、およびオフセットモードはスタイル適用から除外する
                 # これにより、プリセット読み込み時に勝手に縦書きになったりするのを防ぐ
-                if field in ["is_vertical", "offset_mode"]:
+                if field in ["is_vertical"]:
                     continue
 
                 prop_name = field

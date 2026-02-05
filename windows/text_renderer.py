@@ -8,11 +8,9 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, List, Optional, Tuple
 
-from PySide6.QtCore import QPointF, QRect, QSize, Qt
+from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
-
-from models.enums import OffsetMode
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +91,30 @@ class TextRenderer:
             p.inc(name, int(n))
         except Exception as e:
             logger.debug(f"Profile inc error: {e}")
+
+    def _get_blur_radius_px(self, window: Any) -> float:
+        """ぼかし半径（ピクセル）を計算します。Same logic as _apply_blur_to_pixmap"""
+        if not window.shadow_enabled:
+            return 0.0
+        return float(window.shadow_blur) * 20.0 / 100.0
+
+    def _calculate_shadow_padding(self, window: Any) -> Tuple[int, int, int, int]:
+        """影とぼかしによる追加パディングを計算します (left, top, right, bottom)。"""
+        if not window.shadow_enabled:
+            return 0, 0, 0, 0
+
+        font_size = window.font_size
+        sx = font_size * window.shadow_offset_x
+        sy = font_size * window.shadow_offset_y
+        blur_px = self._get_blur_radius_px(window)
+
+        # ぼかしの影響範囲
+        pad_left = int(max(0, -(sx - blur_px)))
+        pad_top = int(max(0, -(sy - blur_px)))
+        pad_right = int(max(0, (sx + blur_px)))
+        pad_bottom = int(max(0, (sy + blur_px)))
+
+        return pad_left, pad_top, pad_right, pad_bottom
 
     def render(self, window: Any) -> QPixmap:
         """ウィンドウの状態を読み取り、描画結果を生成します（分解プロファイル対応）。"""
@@ -301,10 +323,21 @@ class TextRenderer:
             + 2 * outline_width
         )
 
+        # Refinement: Sync Sizing with Rendering (Use Ascent+Descent)
+        # Using fm from font created at line 265
+        fm = QFontMetrics(font)
+        vertical_step = fm.ascent() + fm.descent()
+
+        # Refinement: Adaptive Column Width (Vertical Width Cutoff Fix)
+        max_char_width = 0
+        if window.text:
+            max_char_width = max(fm.horizontalAdvance(c) for c in window.text)
+        col_width = max(float(window.font_size), float(max_char_width))
+
         # total_height: Chars flow top to bottom.
-        # Total height = (font_size + char_spacing) * max_chars
+        # Total height = (step + char_spacing) * max_chars
         total_height = int(
-            (window.font_size + char_spacing) * max_chars_per_line
+            (vertical_step + char_spacing) * max_chars_per_line
             + m_top
             + m_bottom
             + abs(shadow_offset_y)
@@ -334,6 +367,7 @@ class TextRenderer:
                 shadow_offset_y,
                 outline_width,
                 line_spacing_ratio=line_spacing_ratio,
+                col_width=col_width,
             )
         finally:
             painter.restore()
@@ -359,6 +393,13 @@ class TextRenderer:
         m_left = int(window.font_size * window.margin_left_ratio)
         m_right = int(window.font_size * window.margin_right_ratio)
 
+        # Refinement: Add Shadow Padding to prevent clipping
+        pad_left, pad_top, pad_right, pad_bottom = self._calculate_shadow_padding(window)
+        m_left += pad_left
+        m_top += pad_top
+        m_right += pad_right
+        m_bottom += pad_bottom
+
         lines = window.text.split("\n")
         max_line_width = 0
         for line in lines:
@@ -372,9 +413,10 @@ class TextRenderer:
             window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0, 1
         )
 
+        # Note: shadow_offset is now handled by padding
         canvas_size = QSize(
-            int(max_line_width + max(shadow_offset_x, 0) + m_left + m_right + 2 * outline_width),
-            int(total_height + max(shadow_offset_y, 0) + m_top + m_bottom + 2 * outline_width),
+            int(max_line_width + m_left + m_right + 2 * outline_width),
+            int(total_height + m_top + m_bottom + 2 * outline_width),
         )
 
         window.canvas_size = canvas_size
@@ -424,6 +466,13 @@ class TextRenderer:
         m_left = int(window.font_size * getattr(window, "v_margin_left_ratio", 0.0))
         m_right = int(window.font_size * getattr(window, "v_margin_right_ratio", 0.0))
 
+        # Refinement: Add Shadow Padding to prevent clipping (Vertical)
+        pad_left, pad_top, pad_right, pad_bottom = self._calculate_shadow_padding(window)
+        m_left += pad_left
+        m_top += pad_top
+        m_right += pad_right
+        m_bottom += pad_bottom
+
         shadow_offset_x = int(window.font_size * window.shadow_offset_x)
         shadow_offset_y = int(window.font_size * window.shadow_offset_y)
 
@@ -435,20 +484,21 @@ class TextRenderer:
             window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0, 1
         )
 
-        width = int(
-            (window.font_size * (1.0 + line_spacing_ratio)) * num_lines
-            + m_left
-            + m_right
-            + abs(shadow_offset_x)
-            + 2 * outline_width
-        )
-        total_height = int(
-            (window.font_size + char_spacing) * max_chars_per_line
-            + m_top
-            + m_bottom
-            + abs(shadow_offset_y)
-            + 2 * outline_width
-        )
+        # Refinement: Use QFontMetrics for sizing to match rendering logic exactly (Sync)
+        fm = QFontMetrics(font)
+        vertical_step = fm.ascent() + fm.descent()
+
+        # Refinement: Adaptive Column Width (Vertical Width Cutoff Fix)
+        # Calculate max char width in the text to determine column width.
+        # Fallback to font_size if text is empty or chars are narrow.
+        max_char_width = 0
+        if window.text:
+            max_char_width = max(fm.horizontalAdvance(c) for c in window.text)
+
+        col_width = max(float(window.font_size), float(max_char_width))
+
+        width = int((col_width * (1.0 + line_spacing_ratio)) * num_lines + m_left + m_right + 2 * outline_width)
+        total_height = int((vertical_step + char_spacing) * max_chars_per_line + m_top + m_bottom + 2 * outline_width)
 
         canvas_size = QSize(width, total_height)
         window.canvas_size = canvas_size
@@ -476,6 +526,7 @@ class TextRenderer:
                 shadow_offset_y,
                 outline_width,
                 line_spacing_ratio=line_spacing_ratio,
+                col_width=col_width,
             )
         finally:
             painter.end()
@@ -825,6 +876,7 @@ class TextRenderer:
         shadow_y: int,
         outline_width: float,
         line_spacing_ratio: float = 0.5,
+        col_width: Optional[float] = None,
     ) -> None:
         t0_total: Optional[float] = None
         if self._active_profile is not None:
@@ -858,6 +910,8 @@ class TextRenderer:
                     outline_width,
                     canvas_size,
                     custom_offset=QPointF(shadow_x, shadow_y),
+                    col_width=col_width,
+                    layout_font=font,  # Lock layout to main text
                 )
                 painter.restore()
             else:
@@ -880,6 +934,8 @@ class TextRenderer:
                     outline_width,
                     canvas_size,
                     custom_offset=QPointF(shadow_x, shadow_y),
+                    col_width=col_width,
+                    layout_font=font,  # Lock layout to main text
                 )
                 s_painter.end()
                 painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(s_pixmap, window.shadow_blur))
@@ -932,6 +988,7 @@ class TextRenderer:
                     outline_width,
                     canvas_size,
                     is_outline=True,
+                    col_width=col_width,
                 )
             else:
                 # ブラー付き描画 (QPixmap 経由)
@@ -953,6 +1010,8 @@ class TextRenderer:
                     outline_width,
                     canvas_size,
                     is_outline=True,
+                    col_width=col_width,
+                    layout_font=font,  # Lock layout to main text
                 )
                 o_painter.end()
                 painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(o_pixmap, blur))
@@ -973,6 +1032,7 @@ class TextRenderer:
             outline_width,
             canvas_size,
             is_main_text=True,
+            col_width=col_width,
         )
 
         if t0_total is not None:
@@ -993,6 +1053,8 @@ class TextRenderer:
         is_main_text: bool = False,
         is_outline: bool = False,
         custom_offset: QPointF = QPointF(0, 0),
+        col_width: Optional[float] = None,
+        layout_font: Optional[QFont] = None,
     ) -> None:
         """縦書きテキストの各文字を座標変換を用いて描画します（計測＋glyphキャッシュ対応：見た目維持版）。
 
@@ -1001,23 +1063,54 @@ class TextRenderer:
             - glyphは (font, char) 単位でキャッシュ
             - 描画は painter.translate(cx, cy) + rotate(rot) の後、
               glyph0.translated(dx, dy) を draw/fill する（位置ズレを減らす）
+
+            - **Layout Locking**: layout_font が指定された場合、配置計算（グリッド・回転）はそのフォントで行い、
+              描画のみ painter.font() を使用します。これにより影や縁取りがメインテキストと完全に同期します。
+
+        Args:
+            col_width (float, optional): 列の幅。指定がない場合は window.font_size を使用します。
+            layout_font (QFont, optional): レイアウト計算に使用するフォント。Noneの場合は painter.font() を使用。
         """
         t0_total: Optional[float] = None
         if self._active_profile is not None:
             t0_total = time.perf_counter()
 
         try:
-            font: QFont = painter.font()
-            curr_x = canvas_size.width() - window.font_size - margin - right_margin - shadow_x - outline_width
+            # Layout Locking: Use layout_font for metrics if provided, else current painter font
+            calc_font: QFont = layout_font if layout_font is not None else painter.font()
+            fm = QFontMetrics(calc_font)
+
+            # Drawing Font (for glyphs)
+            draw_font: QFont = painter.font()
+
+            # Refinement: Adaptive Column Width
+            # Use provided col_width or fallback to calc_font size
+            # Note: window.font_size might differ from calc_font size if calc_font is scaled (e.g. shadow)
+            # But here we want the Layout's column width.
+            # If layout_font is passed (Main Text), we should use its metrics or window.font_size.
+            # Using calc_font.pointSize() is safer if window.font_size is not reliable in this context?
+            # Actually, window.font_size is the Main Text size.
+            cw = float(col_width) if col_width is not None else float(window.font_size)
+
+            # Fix: Vertical Positioning (Double Compensation)
+            # Removed '- shadow_x' because shadow padding is already added to 'right_margin'
+            # and 'canvas_size'. Subtracting it again here causes the text to shift out of view.
+            curr_x = canvas_size.width() - cw - margin - right_margin - outline_width
             y_start = top_margin + outline_width
+
+            # Fix: First Character Cutoff (Vertical Centering)
+            # Use Ascent + Descent (Solid Height) for centering calculation.
+            step = fm.ascent() + fm.descent()
 
             for line in lines:
                 y = y_start
                 for char in line:
-                    rot, dx, dy = self._get_vertical_char_transform(window, char, font)
+                    # Use calc_font for layout transform
+                    rot, dx, dy = self._get_vertical_char_transform(window, char, calc_font)
 
-                    cx = float(curr_x) + float(window.font_size) / 2.0
-                    cy = float(y) + float(window.font_size) / 2.0
+                    cx = float(curr_x) + float(cw) / 2.0
+                    # Use 'step' (Solid Height) for vertical centering
+                    cy = float(y) + float(step) / 2.0
 
                     painter.save()
                     try:
@@ -1025,7 +1118,8 @@ class TextRenderer:
                         if rot != 0:
                             painter.rotate(rot)
 
-                        glyph0 = self._get_glyph_path(font, char)
+                        # Use draw_font for actual Glyph generation
+                        glyph0 = self._get_glyph_path(draw_font, char)
 
                         # dx,dy は「文字を中心に置くための補正」なので translated で適用
                         placed = glyph0.translated(float(dx), float(dy))
@@ -1056,9 +1150,13 @@ class TextRenderer:
                     finally:
                         painter.restore()
 
-                    y += window.font_size + margin
+                    # Refinement: Use Ascent + Descent (Solid Height) instead of full Height (Leading included)
+                    # This prevents "too wide" spacing in vertical text.
+                    # Standard height = Ascent + Descent + Leading.
+                    # step is calculated above.
+                    y += step + margin
 
-                curr_x -= window.font_size * x_shift
+                curr_x -= cw * x_shift
 
         finally:
             if t0_total is not None:
@@ -1069,23 +1167,63 @@ class TextRenderer:
                     pass
 
     def _get_vertical_char_transform(self, window: Any, char: str, font: QFont) -> Tuple[float, float, float]:
-        """縦書き時の文字ごとの回転角と描画オフセットを計算します。"""
+        """縦書き時の文字ごとの回転角と描画オフセットを計算します。
+
+        Strategy:
+            1. Rotated Chars (ー, 括弧 etc.): 90度回転 + Visual Center (boundingRect) or Em-box
+            2. Punctuation (、。): Quadrant Mapping (横書き左下 -> 縦書き右上へ移動)
+            3. Standard Chars: Em-box Alignment (フォントの仮想ボディ基準で配置)
+        """
         fm = QFontMetrics(font)
+        # Em-box dimensions
+        advance = fm.horizontalAdvance(char)
+        ascent = fm.ascent()
+        descent = fm.descent()
+        height = ascent + descent  # Solid height
+
+        # 1. Rotated Chars (Including Brackets/Long Vowels)
+        # これらは回転した上で「視覚的な中心」に配置するのが自然。
+        # 特に「ー」は中央、「（」はラインに沿わせたいが、既存実装では簡易的にboundingRect中心を使用していた。
+        # ここでは既存の安定動作（boundingRect中心）を維持しつつ、リストを整理。
         if char in r"[]ー～()（）＜＞「」-=\<>『』〔〕｛｝〈〉《》＝…:;‐":
             path = QPainterPath()
             path.addText(0, 0, font, char)
             rect = path.boundingRect()
+            # 90度回転。原点は矩形の中心。
             return 90, -(rect.x() + rect.width() / 2), -(rect.y() + rect.height() / 2)
 
+        # 2. Punctuation (、。) - Quadrant Shift
         if char in "、。":
-            base_x, base_y = -window.font_size / 2, window.font_size / 2
-            if window.offset_mode == OffsetMode.MONO:
-                ox, oy = window.font_size * 0.75, window.font_size * -0.55
-            else:
-                ox, oy = window.font_size * 0.3, window.font_size * -0.5
-            return 0, base_x + ox, base_y + oy
+            # Standard Alignment (Em-box center)
+            # Baseline (0,0) -> Em-box Center shift
+            dx_std = -advance / 2
+            dy_std = (ascent - descent) / 2
 
-        return 0, -fm.horizontalAdvance(char) / 2, -window.font_size / 2 + fm.ascent()
+            # Quadrant Shift: Move to Top-Right
+            # 多くのフォントで「、」は左下にある。これを右上に持っていく。
+            # X: +0.6em (Right)
+            # Y: -0.6em (Up) - Note: Y is down-positive, so negative is Up.
+            # 調整値はヒューリスティックだが、0.5~0.6程度が一般的。
+            shift_x = advance * 0.6
+            shift_y = -height * 0.6
+
+            return 0, dx_std + shift_x, dy_std + shift_y
+
+        # 3. Standard Chars (Kanji, Kana, Alpha) - Em-box Alignment
+        # フォントの仮想ボディの中心を、セルの中心に合わせる。
+        # Glyph Origin is at Baseline (0,0).
+        # Em-box Center relative to Baseline is:
+        #   X = advance / 2
+        #   Y = -ascent + (height / 2) = (-ascent + ascent + descent) / 2 = (-ascent + descent) / 2 = -(ascent - descent)/2
+        # We need to shift Glyph so that Em-box Center becomes (0,0).
+        # So we subtract the Em-box Center vector.
+        #   dx = - (advance / 2)
+        #   dy = - (-(ascent - descent)/2) = (ascent - descent) / 2
+
+        dx = -advance / 2
+        dy = (ascent - descent) / 2
+
+        return 0, dx, dy
 
     def _apply_blur_to_pixmap(self, pixmap: QPixmap, blur_val: float) -> QPixmap:
         """QPixmapにぼかしエフェクトを適用します（計測対応）。"""
@@ -1109,7 +1247,9 @@ class TextRenderer:
             res.fill(Qt.transparent)
             p = QPainter(res)
             try:
-                scene.render(p)
+                # Fix: Lock source and target to original rect to prevent shift
+                rect = QRectF(pixmap.rect())
+                scene.render(p, target=rect, source=rect)
             finally:
                 p.end()
             return res

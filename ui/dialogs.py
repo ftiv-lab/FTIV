@@ -5,7 +5,7 @@ import os
 import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QSignalBlocker, QSize, Qt
+from PySide6.QtCore import QEvent, QPoint, QSignalBlocker, QSize, Qt
 from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -190,7 +190,7 @@ class SliderSpinDialog(QDialog):
         real_val = val / self.multiplier
         with QSignalBlocker(self.spinbox):
             self.spinbox.setValue(real_val)
-        if self.callback:
+        if self.callback is not None:
             self.callback(real_val)
 
     def on_spinbox_changed(self, val: float) -> None:
@@ -198,12 +198,12 @@ class SliderSpinDialog(QDialog):
         slider_val = int(val * self.multiplier)
         with QSignalBlocker(self.slider):
             self.slider.setValue(slider_val)
-        if self.callback:
+        if self.callback is not None:
             self.callback(val)
 
     def reject(self) -> None:
         """キャンセル時は値を初期値に戻して終了する。"""
-        if self.callback:
+        if self.callback is not None:
             self.callback(self.initial_val)
         super().reject()
 
@@ -1430,11 +1430,11 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         except Exception:
             pass
 
-    def show_context_menu(self, pos: QSize) -> None:
+    def show_context_menu(self, pos: QPoint) -> None:
         """アイテムに対する右クリックメニュー（名前変更・削除）を表示。
 
         Args:
-            pos (QSize): クリック位置（Qtの型は実際には QPoint のはずだが既存互換で受ける）。
+            pos (QPoint): クリック位置（Qtの型は実際には QPoint のはずだが既存互換で受ける）。
         """
         item = self.list_widget.itemAt(pos)
         if not item:

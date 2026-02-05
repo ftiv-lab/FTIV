@@ -33,9 +33,6 @@ class MenuManager:
                 t_list.addAction(f"{i + 1}: {lbl}").triggered.connect(partial(self.mw.show_text_window_menu, tw, pos))
 
             menu.addAction(tr("menu_change_all_font")).triggered.connect(self.mw.change_all_fonts)
-            v_menu = menu.addMenu(tr("menu_vertical_font_type"))
-            v_menu.addAction(tr("menu_mono_font")).triggered.connect(self.mw.set_all_offset_mode_a)
-            v_menu.addAction(tr("menu_prop_font")).triggered.connect(self.mw.set_all_offset_mode_b)
 
             menu.addSeparator()
             menu.addAction(tr("menu_save_json")).triggered.connect(self.mw.file_manager.save_scene_to_json)

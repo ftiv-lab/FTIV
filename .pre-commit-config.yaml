@@ -1,0 +1,21 @@
+repos:
+-   repo: local
+    hooks:
+    -   id: ruff-check
+        name: Ruff Linter
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        require_serial: true
+    -   id: ruff-format
+        name: Ruff Formatter
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        require_serial: true
+    -   id: mypy
+        name: Mypy Type Check
+        entry: uv run mypy ui managers windows models
+        language: system
+        types: [python]
+        pass_filenames: false

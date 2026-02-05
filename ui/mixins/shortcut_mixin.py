@@ -40,21 +40,21 @@ class ShortcutMixin:
 
         try:
             # 1) 全クリック透過解除
-            act_rescue_ct = QAction(self)
+            act_rescue_ct = QAction(self)  # type: ignore[call-overload]
             act_rescue_ct.setShortcut(QKeySequence("Ctrl+Alt+Shift+R"))
             act_rescue_ct.setShortcutContext(Qt.ApplicationShortcut)
             act_rescue_ct.triggered.connect(self.emergency_disable_all_click_through)
             self.addAction(act_rescue_ct)
 
             # 2) MainWindow を前面に出す
-            act_raise = QAction(self)
+            act_raise = QAction(self)  # type: ignore[call-overload]
             act_raise.setShortcut(QKeySequence("Ctrl+Alt+Shift+M"))
             act_raise.setShortcutContext(Qt.ApplicationShortcut)
             act_raise.triggered.connect(self.emergency_raise_main_window)
             self.addAction(act_raise)
 
             # 3) 全ウィンドウ表示
-            act_show_all = QAction(self)
+            act_show_all = QAction(self)  # type: ignore[call-overload]
             act_show_all.setShortcut(QKeySequence("Ctrl+Alt+Shift+H"))
             act_show_all.setShortcutContext(Qt.ApplicationShortcut)
             act_show_all.triggered.connect(self.emergency_show_all_windows)

@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .enums import AnchorPosition, OffsetMode
+from .enums import AnchorPosition
 
 
 class WindowConfigBase(BaseModel):
@@ -81,8 +81,6 @@ class TextWindowConfig(WindowConfigBase):
 
     # 縦書き・オフセット
     is_vertical: bool = False
-
-    offset_mode: Optional[OffsetMode] = OffsetMode.PROP
 
     # 縁取り 1
     outline_enabled: bool = False

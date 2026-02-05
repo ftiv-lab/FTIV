@@ -1,9 +1,9 @@
 import logging
-from typing import Optional
+from typing import Optional, cast
 
 from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QFont, QKeyEvent
-from PySide6.QtWidgets import QFrame, QPlainTextEdit
+from PySide6.QtWidgets import QFrame, QPlainTextEdit, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class InlineEditorMixin:
 
         # 1. エディタ作成
         try:
-            self._inline_editor = QPlainTextEdit(self)
+            self._inline_editor = QPlainTextEdit(cast(QWidget, self))
         except TypeError:
             logger.error("InlineEditorMixin must be used with a QWidget subclass.")
             return
@@ -272,7 +272,7 @@ class InlineEditorMixin:
         final_text = editor.toPlainText()
 
         try:
-            editor.setFocusPolicy(Qt.NoFocus)  # type: ignore
+            editor.setFocusPolicy(Qt.NoFocus)
             editor.hide()
             editor.deleteLater()
         except Exception:
@@ -339,7 +339,7 @@ class InlineEditorMixin:
                 self._finish_inline_edit(commit=True)
             return False
 
-        return super().eventFilter(obj, event)
+        return super().eventFilter(obj, event)  # type: ignore[misc]
 
 
 # Helper for type checking inside eventFilter if needed
