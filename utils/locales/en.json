@@ -287,6 +287,7 @@
     "menu_close_other_images": "Close All Other ImageWindow",
     "menu_close_image": "Close ImageWindow",
     "menu_click_through": "Click Through (Mouse Pass-through)",
+    "menu_toggle_click_through": "Toggle Click Through",
     "menu_toggle_click_through_all": "Toggle All Click Through",
     "menu_disable_all_click_through": "Disable ALL Click Through (Rescue)",
     "menu_connect_group_ops": "Connection & Grouping",

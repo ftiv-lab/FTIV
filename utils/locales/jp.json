@@ -285,6 +285,7 @@
     "menu_close_other_images": "他をすべて閉じる",
     "menu_close_image": "閉じる",
     "menu_click_through": "クリック透過 (マウススルー)",
+    "menu_toggle_click_through": "クリック透過切替",
     "menu_toggle_click_through_all": "全ウィンドウのクリック透過を切替",
     "menu_toggle_click_through_text": "テキストのクリック透過を切替",
     "menu_toggle_click_through_image": "画像のクリック透過を切替",
