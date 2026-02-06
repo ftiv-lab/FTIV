@@ -46,7 +46,7 @@ class AnimationTab(QWidget):
         self.anim_target_combo.currentIndexChanged.connect(self.refresh_enabled_state)
 
         self.anim_selected_label = QLabel(tr("label_anim_selected_none"))
-        self.anim_selected_label.setStyleSheet("color: #bbb;")
+        self.anim_selected_label.setProperty("class", "dim")
 
         self.anim_label_apply_to = QLabel(tr("label_anim_apply_to"))
         target_layout.addWidget(self.anim_label_apply_to, 0, 0)
@@ -105,17 +105,21 @@ class AnimationTab(QWidget):
         self.anim_btn_abs_start = QPushButton(tr("menu_record_absolute_start"))
         self.anim_btn_abs_start.setObjectName("ActionBtn")
         self.anim_btn_abs_start.clicked.connect(
-            lambda: getattr(self.mw.last_selected_window, "record_absolute_start_pos")()
-            if hasattr(self.mw.last_selected_window, "record_absolute_start_pos")
-            else None
+            lambda: (
+                getattr(self.mw.last_selected_window, "record_absolute_start_pos")()
+                if hasattr(self.mw.last_selected_window, "record_absolute_start_pos")
+                else None
+            )
         )
 
         self.anim_btn_abs_end = QPushButton(tr("menu_record_absolute_end"))
         self.anim_btn_abs_end.setObjectName("ActionBtn")
         self.anim_btn_abs_end.clicked.connect(
-            lambda: getattr(self.mw.last_selected_window, "record_absolute_end_pos")()
-            if hasattr(self.mw.last_selected_window, "record_absolute_end_pos")
-            else None
+            lambda: (
+                getattr(self.mw.last_selected_window, "record_absolute_end_pos")()
+                if hasattr(self.mw.last_selected_window, "record_absolute_end_pos")
+                else None
+            )
         )
 
         self.anim_btn_abs_clear = QPushButton(tr("menu_clear_absolute_settings"))
@@ -208,7 +212,7 @@ class AnimationTab(QWidget):
         self.anim_btn_clear_offset.clicked.connect(self.mw.animation_manager.clear_offset)
 
         self.anim_base_status = QLabel(tr("status_anim_base_not_recorded"))
-        self.anim_base_status.setStyleSheet("color: #888; font-size: 11px;")
+        self.anim_base_status.setProperty("class", "dim small")
 
         rel_layout.addWidget(QLabel("dx"), 0, 0)
         rel_layout.addWidget(self.anim_dx, 0, 1)

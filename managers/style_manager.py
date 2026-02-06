@@ -263,6 +263,17 @@ class StyleManager:
     ウィンドウスタイル（プリセット）の保存と読み込みを管理するクラス
     """
 
+    @staticmethod
+    def apply_theme_to_dialog(dialog: Any) -> None:
+        """ダイアログにテーマを適用する（現在の実装では何もしないが、将来的に拡張可能）。
+
+        Args:
+            dialog: テーマを適用するダイアログインスタンス
+        """
+        # 現在はQSSでグローバルに適用されているため、個別の適用は不要かもしれないが
+        # メソッド自体は存在させておく
+        pass
+
     def __init__(self, main_window):
         self.main_window = main_window
         # スタイルとして保存するプロパティ名のリスト

@@ -43,7 +43,7 @@ class TextTab(QWidget):
         # =========================
         self.btn_add_text_main = QPushButton("+ " + tr("menu_add_text"))
         self.btn_add_text_main.setMinimumHeight(50)
-        self.btn_add_text_main.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.btn_add_text_main.setProperty("class", "large-button")
         self.btn_add_text_main.clicked.connect(self.mw.main_controller.txt_actions.add_new_text_window)
         layout.addWidget(self.btn_add_text_main)
 
@@ -55,7 +55,9 @@ class TextTab(QWidget):
 
         self.txt_selected_label = QLabel("")
         self.txt_selected_label.setWordWrap(True)
-        self.txt_selected_label.setStyleSheet("color: #bbb; font-size: 12px; padding: 4px 2px;")
+        self.txt_selected_label.setProperty("class", "dim small")
+        # Use simple classes
+        self.txt_selected_label.setProperty("class", "info-label")
         layout.addWidget(self.txt_selected_label)
 
         # =========================
@@ -122,7 +124,7 @@ class TextTab(QWidget):
 
         self.txt_btn_manage_add = QPushButton("+ " + tr("menu_add_text"))
         self.txt_btn_manage_add.setMinimumHeight(40)
-        self.txt_btn_manage_add.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.txt_btn_manage_add.setProperty("class", "emphasized")
         self.txt_btn_manage_add.clicked.connect(self.mw.main_controller.txt_actions.add_new_text_window)
 
         self.txt_btn_manage_show_list = QPushButton(tr("btn_show_list"))
@@ -278,7 +280,7 @@ class TextTab(QWidget):
         self.txt_layout_grp_selected = QGroupBox(tr("anim_target_selected"))
         grid_sel = QGridLayout(self.txt_layout_grp_selected)
 
-        self.txt_btn_sel_toggle_vertical = QPushButton(tr("menu_toggle_vertical"))
+        self.txt_btn_sel_toggle_vertical = QPushButton(tr("btn_toggle_orientation"))
         self.txt_btn_sel_toggle_vertical.setObjectName("ActionBtn")
         self.txt_btn_sel_toggle_vertical.setCheckable(True)
         self.txt_btn_sel_toggle_vertical.toggled.connect(
@@ -297,7 +299,7 @@ class TextTab(QWidget):
         # ✨ New: Save current as Default
         self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
         self.btn_save_default_selected.setObjectName("ActionBtn")
-        self.btn_save_default_selected.setToolTip("選択中のスタイルを今後のデフォルトとして保存します")
+        self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
         self.btn_save_default_selected.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
         grid_sel.addWidget(self.btn_save_default_selected, 3, 0, 1, 2)
 
@@ -449,7 +451,9 @@ class TextTab(QWidget):
 
         # Layout
         self.txt_layout_grp_selected.setTitle(tr("anim_target_selected"))
-        self.txt_btn_sel_toggle_vertical.setText(tr("menu_toggle_vertical"))
+        self.txt_btn_sel_toggle_vertical.setText(tr("btn_toggle_orientation"))
+        self.btn_save_default_selected.setText("✨ " + tr("btn_save_as_default"))
+        self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
 
         self.txt_btn_sel_spacing_settings.setText(tr("menu_margin_settings"))
 
@@ -474,11 +478,7 @@ class TextTab(QWidget):
         self.btn_toggle_prop_text.blockSignals(True)
         self.btn_toggle_prop_text.setChecked(is_active)
         self.btn_toggle_prop_text.blockSignals(False)
-
-        style = ""
-        if is_active:
-            style = "QPushButton { background-color: #3a6ea5; border: 2px solid #55aaff; }"
-        self.btn_toggle_prop_text.setStyleSheet(style)
+        # Style handled by QSS
 
     def update_enabled_state(self, selected_obj: Optional[Any]) -> None:
         """

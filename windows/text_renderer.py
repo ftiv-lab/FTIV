@@ -613,15 +613,21 @@ class TextRenderer:
 
         painter.setRenderHint(QPainter.Antialiasing, True)
 
-        if window.background_gradient_enabled and window.background_gradient:
-            gradient = self._create_gradient(
-                rect, window.background_gradient, window.background_gradient_angle, window.background_gradient_opacity
-            )
-            painter.setBrush(gradient)
+        if window.background_visible:
+            if window.background_gradient_enabled and window.background_gradient:
+                gradient = self._create_gradient(
+                    rect,
+                    window.background_gradient,
+                    window.background_gradient_angle,
+                    window.background_gradient_opacity,
+                )
+                painter.setBrush(gradient)
+            else:
+                bg_color = QColor(window.background_color)
+                bg_color.setAlpha(int(window.background_opacity * 2.55))
+                painter.setBrush(bg_color)
         else:
-            bg_color = QColor(window.background_color)
-            bg_color.setAlpha(int(window.background_opacity * 2.55))
-            painter.setBrush(bg_color)
+            painter.setBrush(Qt.NoBrush)
 
         if window.background_outline_enabled:
             outline_color = QColor(window.background_outline_color)
@@ -632,7 +638,9 @@ class TextRenderer:
         else:
             painter.setPen(Qt.NoPen)
 
-        painter.drawPath(path)
+        # 背景が表示されるか、枠線が表示される場合のみ描画
+        if window.background_visible or window.background_outline_enabled:
+            painter.drawPath(path)
         if t0 is not None:
             self._prof_add("bg_total", (time.perf_counter() - t0) * 1000.0)
 

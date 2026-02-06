@@ -1,4 +1,3 @@
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +13,7 @@ from windows.image_window import ImageWindow
 @pytest.fixture(scope="session")
 def qapp():
     return QApplication.instance() or QApplication([])
+
 
 class TestActionsIntegration:
     @pytest.fixture
@@ -35,7 +35,7 @@ class TestActionsIntegration:
 
         mw.add_undo_command = MagicMock(side_effect=execute_command)
         mw.app_settings = MagicMock()
-        mw.undo_stack = MagicMock() # For macros
+        mw.undo_stack = MagicMock()  # For macros
 
         return mw
 
@@ -49,8 +49,8 @@ class TestActionsIntegration:
 
         # Create 2 windows
         # Note: image_path="dummy" triggers placeholder image (200x200)
-        win1 = ImageWindow(mw, image_path="dummy_ref.png", position=QPoint(0, 0)) # Selected
-        win2 = ImageWindow(mw, image_path="dummy_target.png", position=QPoint(100, 0)) # Target
+        win1 = ImageWindow(mw, image_path="dummy_ref.png", position=QPoint(0, 0))  # Selected
+        win2 = ImageWindow(mw, image_path="dummy_target.png", position=QPoint(100, 0))  # Target
 
         # Set different scales
         win1.scale_factor = 2.0  # Ref
@@ -105,8 +105,8 @@ class TestActionsIntegration:
         mw = setup_env
         actions = ImageActions(mw)
 
-        win1 = ImageWindow(mw, image_path="", position=QPoint(0,0))
-        win2 = ImageWindow(mw, image_path="", position=QPoint(0,0))
+        win1 = ImageWindow(mw, image_path="", position=QPoint(0, 0))
+        win2 = ImageWindow(mw, image_path="", position=QPoint(0, 0))
 
         win1.flip_horizontal = True
         win2.flip_vertical = True

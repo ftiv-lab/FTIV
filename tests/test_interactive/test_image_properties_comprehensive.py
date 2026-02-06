@@ -1,4 +1,3 @@
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,6 +12,7 @@ from windows.image_window import ImageWindow
 @pytest.fixture(scope="session")
 def qapp():
     return QApplication.instance() or QApplication([])
+
 
 class TestImagePropertiesComprehensive:
     @pytest.fixture
@@ -39,16 +39,19 @@ class TestImagePropertiesComprehensive:
 
         return mw
 
-    @pytest.mark.parametrize("prop_name, test_value, initial_value, update_method", [
-        ("opacity", 0.5, 1.0, "update_image"),
-        ("rotation_angle", 45.0, 0.0, "update_image"),
-        ("scale_factor", 1.5, 1.0, "update_image"),
-        ("flip_horizontal", True, False, "update_image"),
-        ("flip_vertical", True, False, "update_image"),
-        ("animation_speed_factor", 2.0, 1.0, "_update_animation_timer"),
-        ("is_locked", True, False, None),
-        ("position", {"x": 50, "y": 50}, {"x": 0, "y": 0}, "update_position"),
-    ])
+    @pytest.mark.parametrize(
+        "prop_name, test_value, initial_value, update_method",
+        [
+            ("opacity", 0.5, 1.0, "update_image"),
+            ("rotation_angle", 45.0, 0.0, "update_image"),
+            ("scale_factor", 1.5, 1.0, "update_image"),
+            ("flip_horizontal", True, False, "update_image"),
+            ("flip_vertical", True, False, "update_image"),
+            ("animation_speed_factor", 2.0, 1.0, "_update_animation_timer"),
+            ("is_locked", True, False, None),
+            ("position", {"x": 50, "y": 50}, {"x": 0, "y": 0}, "update_position"),
+        ],
+    )
     def test_set_undoable_property_comprehensive(self, setup_env, prop_name, test_value, initial_value, update_method):
         """
         Verify that set_undoable_property works for ALL standard properties of ImageWindow.
@@ -90,4 +93,3 @@ class TestImagePropertiesComprehensive:
             assert new_val_fetched == test_value
 
         win.close()
-

@@ -1,4 +1,3 @@
-
 import glob
 import json
 import os
@@ -16,6 +15,7 @@ def load_json(path: str) -> Dict[str, str]:
         print(f"Error loading {path}: {e}")
         return {}
 
+
 def scan_python_files(root_dir: str) -> List[str]:
     files = []
     # Using glob to find all python files recursively
@@ -31,14 +31,16 @@ def scan_python_files(root_dir: str) -> List[str]:
     # Remove duplicates and filter out venv/tools/build folders
     unique_files = list(set(files))
     filtered = [
-        f for f in unique_files
+        f
+        for f in unique_files
         if ".venv" not in f
         and "dist" not in f
         and "build" not in f
         and "__pycache__" not in f
-        and "audit_translation.py" not in f # skip self
+        and "audit_translation.py" not in f  # skip self
     ]
     return sorted(filtered)
+
 
 def extract_tr_keys(file_path: str) -> List[Tuple[int, str]]:
     keys = []
@@ -58,6 +60,7 @@ def extract_tr_keys(file_path: str) -> List[Tuple[int, str]]:
         pass
     return keys
 
+
 def extract_potential_hardcodes(file_path: str) -> List[Tuple[int, str, str]]:
     """
     Heuristic check for hardcoded strings in UI calls.
@@ -66,22 +69,47 @@ def extract_potential_hardcodes(file_path: str) -> List[Tuple[int, str, str]]:
     candidates = []
     # Methods that usually take user-visible strings
     ui_methods = [
-        "setText", "setWindowTitle", "setTitle",
-        "QAction", "QPushButton", "QLabel", "QCheckBox",
-        "QRadioButton", "QGroupBox", "QMessageBox.information",
-        "QMessageBox.warning", "QMessageBox.critical", "QMessageBox.question",
-        "setStatusTip", "setToolTip"
+        "setText",
+        "setWindowTitle",
+        "setTitle",
+        "QAction",
+        "QPushButton",
+        "QLabel",
+        "QCheckBox",
+        "QRadioButton",
+        "QGroupBox",
+        "QMessageBox.information",
+        "QMessageBox.warning",
+        "QMessageBox.critical",
+        "QMessageBox.question",
+        "setStatusTip",
+        "setToolTip",
     ]
 
     # Regex to capture Method("String")
     # Captures: MethodName, Quote, Content, Quote
-    pattern_str = r'(' + '|'.join(ui_methods) + r')\(\s*(["\'])(.*?)\2'
+    pattern_str = r"(" + "|".join(ui_methods) + r')\(\s*(["\'])(.*?)\2'
     pattern = re.compile(pattern_str)
 
     ignore_list = [
-        "", " ", "-", ":", "/", ".", "0", "1", "%",
-        "qt_spinbox_lineedit", # Internal Qt object name
-        "utf-8", "r", "w", "wb", "rb", "json", "png", "jpg" # File modes/exts
+        "",
+        " ",
+        "-",
+        ":",
+        "/",
+        ".",
+        "0",
+        "1",
+        "%",
+        "qt_spinbox_lineedit",  # Internal Qt object name
+        "utf-8",
+        "r",
+        "w",
+        "wb",
+        "rb",
+        "json",
+        "png",
+        "jpg",  # File modes/exts
     ]
 
     try:
@@ -98,7 +126,7 @@ def extract_potential_hardcodes(file_path: str) -> List[Tuple[int, str, str]]:
                 method, quote, content = m
                 if content not in ignore_list and len(content) > 1:
                     # Filter out obviously non-text things (identifiers, file paths roughly)
-                    if re.match(r'^[a-zA-Z0-9_]+$', content):
+                    if re.match(r"^[a-zA-Z0-9_]+$", content):
                         continue  # Likely an ID or simple word
                     if "/" in content or "\\" in content:
                         continue  # Path
@@ -107,6 +135,7 @@ def extract_potential_hardcodes(file_path: str) -> List[Tuple[int, str, str]]:
     except Exception:
         pass
     return candidates
+
 
 def main():
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -181,7 +210,7 @@ def main():
     if unused_keys:
         count = 0
         for k in sorted(unused_keys):
-            if count < 20: # Limit output
+            if count < 20:  # Limit output
                 issues.append(f"- `{k}`")
             count += 1
         if count > 20:
@@ -202,8 +231,8 @@ def main():
             file_issues = []
             for line, method, content in candidates:
                 # Stronger filter?
-                if " " in content: # Sentences are high probability
-                     file_issues.append(f"- [ ] `{rel_path}:{line}` : `{method}(\"{content}\")`")
+                if " " in content:  # Sentences are high probability
+                    file_issues.append(f'- [ ] `{rel_path}:{line}` : `{method}("{content}")`')
 
             if file_issues:
                 for fi in file_issues:
@@ -218,6 +247,7 @@ def main():
         f.writelines(issues)
 
     print(f"Audit complete. Report saved to: {report_path}")
+
 
 if __name__ == "__main__":
     main()

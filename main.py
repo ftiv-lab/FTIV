@@ -39,6 +39,11 @@ def run_app():
                 f"Some settings were corrupted and have been reset to defaults:\n\n{report}",
             )
 
+        # 3.8 Theme Loading (Global Style System)
+        from utils.theme_manager import ThemeManager
+
+        ThemeManager.load_theme(app)
+
         # 4. メインウィンドウ起動
         _ = MainWindow()
 

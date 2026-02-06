@@ -64,7 +64,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             self.config.vertical_margin_ratio = defaults.get("v_margin", 0.2)
             self.config.margin_top = defaults.get("margin_top", 0.0)
             self.config.margin_bottom = defaults.get("margin_bottom", 0.0)
-            self.config.margin_left = defaults.get("margin_left", 0.3)
+            self.config.margin_left = defaults.get("margin_left", 0.0)
             self.config.margin_right = defaults.get("margin_right", 0.0)
 
             self._previous_text_opacity: int = 100
@@ -548,7 +548,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
 
     @property
     def v_margin_top_ratio(self) -> float:
-        return self.config.v_margin_top if self.config.v_margin_top is not None else 0.3
+        return self.config.v_margin_top if self.config.v_margin_top is not None else 0.0
 
     @v_margin_top_ratio.setter
     def v_margin_top_ratio(self, v: float):

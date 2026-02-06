@@ -171,10 +171,10 @@ class BulkOperationManager:
         json_path = os.path.join(self.mw.json_directory, "text_defaults.json")
         defaults = {
             "h_margin": 0.0,
-            "v_margin": 0.2,
-            "margin_top": 0.3,
-            "margin_bottom": 0.3,
-            "margin_left": 0.3,
+            "v_margin": 0.0,
+            "margin_top": 0.0,
+            "margin_bottom": 0.0,
+            "margin_left": 0.0,
             "margin_right": 0.0,
         }
 
@@ -204,10 +204,10 @@ class BulkOperationManager:
             # 保存用の形式に変換（後方互換性）
             save_values = {
                 "h_margin": values_dict.get("horizontal_margin_ratio", 0.0),
-                "v_margin": values_dict.get("vertical_margin_ratio", 0.2),
-                "margin_top": values_dict.get("margin_top_ratio", 0.3),
-                "margin_bottom": values_dict.get("margin_bottom_ratio", 0.3),
-                "margin_left": values_dict.get("margin_left_ratio", 0.3),
+                "v_margin": values_dict.get("vertical_margin_ratio", 0.0),
+                "margin_top": values_dict.get("margin_top_ratio", 0.0),
+                "margin_bottom": values_dict.get("margin_bottom_ratio", 0.0),
+                "margin_left": values_dict.get("margin_left_ratio", 0.0),
                 "margin_right": values_dict.get("margin_right_ratio", 0.0),
             }
 
@@ -242,7 +242,7 @@ class BulkOperationManager:
 
         json_path = os.path.join(self.mw.json_directory, "text_defaults_vertical.json")
         defaults = {
-            "v_margin_top": 0.3,
+            "v_margin_top": 0.0,
             "v_margin_bottom": 0.0,
             "v_margin_left": 0.0,
             "v_margin_right": 0.0,
@@ -258,7 +258,7 @@ class BulkOperationManager:
         # 縦書きモードとしてダイアログを表示
         dialog = TextSpacingDialog(
             0.0,  # h_ratio (縦書きでは文字間隔として使用)
-            0.2,  # v_ratio (縦書きでは行間隔として使用)
+            0.0,  # v_ratio (縦書きでは行間隔として使用)
             defaults["v_margin_top"],
             defaults["v_margin_bottom"],
             defaults["v_margin_left"],
@@ -272,7 +272,7 @@ class BulkOperationManager:
 
             # 保存用の形式
             save_values = {
-                "v_margin_top": values_dict.get("v_margin_top_ratio", 0.3),
+                "v_margin_top": values_dict.get("v_margin_top_ratio", 0.0),
                 "v_margin_bottom": values_dict.get("v_margin_bottom_ratio", 0.0),
                 "v_margin_left": values_dict.get("v_margin_left_ratio", 0.0),
                 "v_margin_right": values_dict.get("v_margin_right_ratio", 0.0),

@@ -68,7 +68,7 @@ class SceneTab(QWidget):
 
         # ヒント
         self.scene_hint_label = QLabel(tr("hint_scene_tab_usage"))
-        self.scene_hint_label.setStyleSheet("color: #888; font-size: 11px; margin-top: 5px;")
+        self.scene_hint_label.setProperty("class", "hint")
         self.scene_hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.scene_hint_label)
 

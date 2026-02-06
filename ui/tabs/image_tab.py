@@ -39,7 +39,7 @@ class ImageTab(QWidget):
         # 1) ヘッダー
         self.btn_add_image_main = QPushButton("+ " + tr("menu_add_image"))
         self.btn_add_image_main.setMinimumHeight(50)
-        self.btn_add_image_main.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.btn_add_image_main.setProperty("class", "large-button")
         self.btn_add_image_main.clicked.connect(self.mw.main_controller.image_actions.add_new_image)
         layout.addWidget(self.btn_add_image_main)
 
@@ -51,7 +51,14 @@ class ImageTab(QWidget):
 
         self.img_selected_label = QLabel("")
         self.img_selected_label.setWordWrap(True)
-        self.img_selected_label.setStyleSheet("color: #bbb; font-size: 11px; padding: 2px;")
+        self.img_selected_label.setProperty("class", "dim small")
+        # Note: Qt QSS selector [class~="dim"] support is limited, so we rely on combined class or specific one.
+        # For now, let's assume we might update template for "dim small" or just "small".
+        # Actually simplest is just "small" and let it rely on default text color or "dim".
+        self.img_selected_label.setProperty("class", "dim")  # Use dim for color
+        # Manual font size for now if needed, or rely on template.
+        # Let's use "dim" and I will ensure "dim" includes small size or create "info".
+        self.img_selected_label.setProperty("class", "info-label")
         layout.addWidget(self.img_selected_label)
 
         # 2) サブタブ
@@ -601,11 +608,7 @@ class ImageTab(QWidget):
         self.btn_toggle_prop_image.blockSignals(True)
         self.btn_toggle_prop_image.setChecked(is_active)
         self.btn_toggle_prop_image.blockSignals(False)
-
-        style = ""
-        if is_active:
-            style = "QPushButton { background-color: #3a6ea5; border: 2px solid #55aaff; }"
-        self.btn_toggle_prop_image.setStyleSheet(style)
+        # Style is handled by QSS (QPushButton:checked)
 
     def on_selection_changed(self, window: Optional[Any]) -> None:
         """選択変更時のUI更新"""

@@ -1210,13 +1210,15 @@ class TextSpacingDialog(QDialog):
         self._is_vertical = is_vertical
 
         # タイトルにモード表示を追加
-        mode_suffix = " (縦書き)" if is_vertical else " (横書き)"
-        self.setWindowTitle(tr("title_text_spacing_settings") + mode_suffix)
+        # mode_suffix = " (縦書き)" if is_vertical else " (横書き)"
+        # self.setWindowTitle(tr("title_text_spacing_settings") + mode_suffix)
+        self.setWindowTitle(tr("title_text_spacing_settings"))
         self.setFixedWidth(450)
         layout = QVBoxLayout(self)
 
         # モード表示ラベル
-        mode_label = QLabel(f"現在のモード: {'縦書き' if is_vertical else '横書き'}")
+        mode_text = tr("mode_vertical") if is_vertical else tr("mode_horizontal")
+        mode_label = QLabel(tr("label_current_mode_fmt").format(mode_text))
         mode_label.setStyleSheet("font-weight: bold; color: #666;")
         layout.addWidget(mode_label)
 
@@ -1243,12 +1245,12 @@ class TextSpacingDialog(QDialog):
 
         self.h_spin, _, h_layout = create_slider_row(h_ratio, -0.5, 5.0)
         # ラベルの切り替え
-        label_char = tr("label_char_spacing_horz") + (" (縦)" if is_vertical else " (横)")
-        form_spacing.addRow(label_char, h_layout)
+        # label_char = tr("label_char_spacing_horz") + (" (縦)" if is_vertical else " (横)")
+        form_spacing.addRow(tr("label_spacing_char"), h_layout)
 
         self.v_spin, _, v_layout = create_slider_row(v_ratio, 0.0, 5.0)
-        label_line = tr("label_line_spacing_vert") + (" (縦)" if is_vertical else " (横)")
-        form_spacing.addRow(label_line, v_layout)
+        # label_line = tr("label_line_spacing_vert") + (" (縦)" if is_vertical else " (横)")
+        form_spacing.addRow(tr("label_spacing_line"), v_layout)
 
         group_spacing.setLayout(form_spacing)
         layout.addWidget(group_spacing)

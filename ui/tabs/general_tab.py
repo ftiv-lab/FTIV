@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QRadioButton,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -165,19 +164,45 @@ class GeneralTab(QWidget):
         file_layout.addWidget(self.btn_load_project)
         layout.addWidget(self.file_group)
 
-        # 6. 危険操作
-        self.danger_group = QGroupBox("")
+        # 6. リセットと初期化 (Danger Zone)
+        self.danger_group = QGroupBox(tr("grp_danger_zone"))
         danger_layout = QHBoxLayout(self.danger_group)
+        danger_layout.setSpacing(10)
 
         self.btn_close_all_everything = QPushButton(tr("btn_close_all_everything"))
-        self.btn_close_all_everything.setObjectName("DangerBtn")
+        self.btn_close_all_everything.setObjectName(
+            "ActionBtn"
+        )  # Keep as Action or change to ActionBtn to differentiate
         self.btn_close_all_everything.clicked.connect(self.mw.main_controller.bulk_manager.close_all_everything)
-        self.btn_close_all_everything.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-        danger_layout.addWidget(self.btn_close_all_everything, 1)
+        self.btn_factory_reset = QPushButton(tr("btn_factory_reset"))
+        self.btn_factory_reset.setObjectName("DangerBtn")  # Red button
+        self.btn_factory_reset.clicked.connect(self._on_factory_reset)
+
+        danger_layout.addWidget(self.btn_close_all_everything, 2)
+        danger_layout.addWidget(self.btn_factory_reset, 1)
 
         layout.addWidget(self.danger_group)
         layout.addStretch()
+
+    def _on_factory_reset(self) -> None:
+        """工場出荷状態リセットの呼び出し。"""
+        from PySide6.QtWidgets import QMessageBox
+
+        from ui.reset_confirm_dialog import ResetConfirmDialog
+        from utils.reset_manager import ResetManager
+
+        dialog = ResetConfirmDialog(self)
+        if dialog.exec():
+            # User Confirmed
+            manager = ResetManager(self.mw.base_directory)
+            if manager.perform_factory_reset():
+                QMessageBox.information(self, tr("msg_reset_complete_title"), tr("msg_reset_complete_body"))
+                from PySide6.QtWidgets import QApplication
+
+                QApplication.quit()
+            else:
+                QMessageBox.critical(self, tr("msg_error"), tr("msg_reset_failed"))
 
     def _on_toggle_frontmost(self) -> None:
         """メインウィンドウの最前面表示を切り替える（内部処理）。"""
@@ -258,37 +283,29 @@ class GeneralTab(QWidget):
         self.btn_change_selection_frame_width.setText(tr("btn_change_selection_frame_width"))
 
         # 危険
+        self.danger_group.setTitle(tr("grp_danger_zone"))
         self.btn_close_all_everything.setText(tr("btn_close_all_everything"))
+        self.btn_factory_reset.setText(tr("btn_factory_reset"))
 
     def update_prop_button_state(self, is_active: bool) -> None:
         """プロパティパネルボタンのトグル状態・スタイル更新。"""
         self.btn_toggle_prop.blockSignals(True)
         self.btn_toggle_prop.setChecked(is_active)
         self.btn_toggle_prop.blockSignals(False)
-
-        style = ""
-        if is_active:
-            style = "QPushButton { background-color: #3a6ea5; border: 2px solid #55aaff; }"
-        self.btn_toggle_prop.setStyleSheet(style)
+        # Style handled by QSS
 
     def update_frontmost_button_state(self, is_top: bool) -> None:
         """最前面ボタンの状態更新。"""
         self.btn_main_frontmost.blockSignals(True)
         self.btn_main_frontmost.setChecked(is_top)
         self.btn_main_frontmost.blockSignals(False)
-
-        style = ""
-        if is_top:
-            style = "QPushButton { background-color: #3a6ea5; border: 2px solid #55aaff; }"
-        self.btn_main_frontmost.setStyleSheet(style)
+        # Style handled by QSS
 
     def _update_overlay_button_style(self, enabled: bool) -> None:
         """オーバーレイボタンのスタイル更新。"""
         # 内部用: _on_toggle_overlay から呼ばれる
-        style = ""
-        if enabled:
-            style = "QPushButton { background-color: #3a6ea5; border: 2px solid #55aaff; }"
-        self.btn_toggle_selection_frame.setStyleSheet(style)
+        # QSS handles checked state
+        pass
 
     def update_overlay_button_state(self, enabled: bool) -> None:
         """外部用: オーバーレイボタンの状態更新。"""

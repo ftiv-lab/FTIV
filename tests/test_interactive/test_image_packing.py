@@ -1,4 +1,3 @@
-
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +13,7 @@ from windows.image_window import ImageWindow
 @pytest.fixture(scope="session")
 def qapp():
     return QApplication.instance() or QApplication([])
+
 
 class TestImagePacking:
     @pytest.fixture
@@ -88,7 +88,7 @@ class TestImagePacking:
         mw = setup_env
         actions = ImageActions(mw)
 
-        win1 = ImageWindow(mw, image_path="") # 100x100 default
+        win1 = ImageWindow(mw, image_path="")  # 100x100 default
         mw.window_manager.image_windows = [win1]
 
         mock_screen = MagicMock()

@@ -105,4 +105,3 @@ class MainController:
             self.view.property_panel.activateWindow()
             if hasattr(window, "raise_"):
                 window.raise_()
-
