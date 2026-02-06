@@ -12,6 +12,8 @@ from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
 
+from models.constants import AppDefaults
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +37,7 @@ class TextRenderer:
     ウィンドウの属性に基づき、テキスト、背景、影、縁取りを合成したQPixmapを生成します。
     """
 
-    def __init__(self, blur_cache_size: int = 32) -> None:
+    def __init__(self, blur_cache_size: int = AppDefaults.BLUR_CACHE_SIZE) -> None:
         """TextRenderer を初期化する。
 
         Args:
@@ -43,7 +45,7 @@ class TextRenderer:
         """
         self._blur_cache_size: int = max(0, int(blur_cache_size))
         self._blur_cache: "OrderedDict[tuple[int, int, int, int], QPixmap]" = OrderedDict()
-        self._render_cache_size: int = 32
+        self._render_cache_size: int = AppDefaults.RENDER_CACHE_SIZE
         self._render_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
         # --- profiling (debug) ---
         self._profile_enabled: bool = False
@@ -56,7 +58,7 @@ class TextRenderer:
 
         # --- glyph path cache (LRU) ---
         # addText(QPainterPath) が高コストなので、(font, char) 単位で再利用する
-        self._glyph_cache_size: int = 512
+        self._glyph_cache_size: int = AppDefaults.GLYPH_CACHE_SIZE
         self._glyph_cache: "OrderedDict[tuple[str, int, str], QPainterPath]" = OrderedDict()
 
     def set_profiling(self, enabled: bool, warn_ms: float = 16.0) -> None:
@@ -292,7 +294,7 @@ class TextRenderer:
         # margin (char spacing within a column)
         char_spacing = int(window.font_size * getattr(window, "char_spacing_v", 0.0))
         # line spacing (gap between columns)
-        # 1.0 + ratio implies ratio is the GAP. Standard vertical_margin_ratio was ~0.2 (gap).
+        # 1.0 + ratio implies ratio is the GAP. Standard vertical_margin_ratio was ~0.2 (gap), now 0.0.
         line_spacing_ratio = getattr(window, "line_spacing_v", window.vertical_margin_ratio)
 
         m_top = int(window.font_size * window.margin_top_ratio)

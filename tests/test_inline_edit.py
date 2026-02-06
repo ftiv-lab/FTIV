@@ -35,7 +35,7 @@ def text_window(mock_main_window):
     # TextRenderer をモックしてCI環境でのフォント問題を回避
     from PySide6.QtGui import QColor, QPixmap
 
-    with patch("windows.text_window.TextRenderer") as MockRenderer:
+    with patch("windows.mixins.text_properties_mixin.TextRenderer") as MockRenderer:
         # render メソッドが (pixmap, mask) を返すように設定
         instance = MockRenderer.return_value
 
@@ -58,7 +58,7 @@ def connector_label(mock_main_window):
     from PySide6.QtGui import QBitmap, QPixmap
 
     connector = MagicMock()
-    with patch("windows.connector.TextRenderer") as MockRenderer:
+    with patch("windows.mixins.text_properties_mixin.TextRenderer") as MockRenderer:
         # render メソッドが (pixmap, mask) を返すように設定
         instance = MockRenderer.return_value
         instance.render.return_value = (QPixmap(100, 100), QBitmap(100, 100))

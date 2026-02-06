@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from ui.main_window import MainWindow
     from windows.connector import ConnectorLine
 
+from models.constants import AppDefaults
+
 
 class ConnectorActions:
     """
@@ -100,7 +102,8 @@ class ConnectorActions:
         try:
             from ui.dialogs import PreviewCommitDialog
 
-            old_val: int = int(getattr(line, "line_width", 4))
+            # Default width fallback
+            old_val: int = int(getattr(line, "line_width", AppDefaults.CONNECTOR_WIDTH))
 
             def on_preview(val: float) -> None:
                 try:
@@ -470,7 +473,7 @@ class ConnectorActions:
                     except Exception as e:
                         report_unexpected_error(self.mw, "Failed to apply bulk connector width.", e, self._err_state)
 
-            current = int(getattr(lines[0], "line_width", 4))
+            current = int(getattr(lines[0], "line_width", AppDefaults.CONNECTOR_WIDTH))
             dialog = SliderSpinDialog(
                 tr("title_line_width"),
                 tr("label_line_width"),

@@ -2,12 +2,19 @@ import json
 import logging
 import os
 import traceback
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QColor, QFont, QPainter
-from PySide6.QtWidgets import QColorDialog, QDialog, QFileDialog, QFontDialog, QMessageBox
+from PySide6.QtCore import QPoint, QRect, QSize, Qt
+from PySide6.QtGui import QFont, QPainter
+from PySide6.QtWidgets import (
+    QColorDialog,
+    QDialog,
+    QFileDialog,
+    QFontDialog,
+    QMessageBox,
+)
 
+from models.constants import AppDefaults
 from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
 from ui.dialogs import (
@@ -22,13 +29,13 @@ from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
 from .mixins.inline_editor_mixin import InlineEditorMixin
-from .text_renderer import TextRenderer
+from .mixins.text_properties_mixin import TextPropertiesMixin
 
 # ロガーの取得
 logger = logging.getLogger(__name__)
 
 
-class TextWindow(InlineEditorMixin, BaseOverlayWindow):
+class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # type: ignore
     """テキストを表示・制御するためのオーバーレイウィンドウクラス。
 
     テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
@@ -46,13 +53,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
         InlineEditorMixin.__init__(self)
 
         try:
-            self.renderer: TextRenderer = TextRenderer()
-
-            # --- パフォーマンス設定（キャッシュサイズ）の反映 ---
-            try:
-                self.renderer._glyph_cache_size = int(getattr(main_window.app_settings, "glyph_cache_size", 512))
-            except Exception:
-                pass
+            self._init_text_renderer(main_window)
 
             self.config.text = text
             self.config.position = {"x": pos.x(), "y": pos.y()}
@@ -61,7 +62,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
 
             defaults = self.load_text_defaults()
             self.config.horizontal_margin_ratio = defaults.get("h_margin", 0.0)
-            self.config.vertical_margin_ratio = defaults.get("v_margin", 0.2)
+            self.config.vertical_margin_ratio = defaults.get("v_margin", 0.0)  # Was 0.2
             self.config.margin_top = defaults.get("margin_top", 0.0)
             self.config.margin_bottom = defaults.get("margin_bottom", 0.0)
             self.config.margin_left = defaults.get("margin_left", 0.0)
@@ -73,24 +74,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self.show_context_menu)
 
-            # デバウンス用タイマー
-            self._render_timer: QTimer = QTimer(self)
-            self._render_timer.setSingleShot(True)
-            self._render_timer.timeout.connect(self._update_text_immediate)
-
-            # ホイール操作後のデバウンス復帰用タイマー
-            self._wheel_render_relax_timer: QTimer = QTimer(self)
-            self._wheel_render_relax_timer.setSingleShot(True)
-            self._wheel_render_relax_timer.timeout.connect(self._restore_render_debounce_ms_after_wheel)
-
-            # --- パフォーマンス設定（デバウンス時間）の反映 ---
-            try:
-                self._render_debounce_ms: int = int(getattr(main_window.app_settings, "render_debounce_ms", 50))
-                # ★追加: ホイール用設定も読み込む
-                self._wheel_debounce_setting: int = int(getattr(main_window.app_settings, "wheel_debounce_ms", 80))
-            except Exception:
-                self._render_debounce_ms = 25
-                self._wheel_debounce_setting = 50
+            self._last_loaded_font_path: str = ""
 
             self.update_text()
             logger.info(f"TextWindow initialized: UUID={self.uuid}")
@@ -101,490 +85,8 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
 
     # --- Properties ---
 
-    @property  # type: ignore[override]
-    def text(self) -> str:
-        return self.config.text
-
-    @text.setter
-    def text(self, value: str):
-        self.config.text = value
-
-    @property
-    def font_family(self) -> str:
-        return self.config.font
-
-    @font_family.setter
-    def font_family(self, value: str):
-        self.config.font = value
-
-    @property
-    def font_size(self) -> int:
-        return int(self.config.font_size)
-
-    @font_size.setter
-    def font_size(self, value: Union[int, float]):
-        self.config.font_size = int(value)
-
-    def _get_color(self, hex_str: str) -> QColor:
-        return QColor(hex_str)
-
-    def _set_color(self, target_attr: str, value: Union[QColor, str]) -> None:
-        if isinstance(value, QColor):
-            setattr(self.config, target_attr, value.name(QColor.HexArgb))
-        else:
-            setattr(self.config, target_attr, value)
-
-    @property
-    def font_color(self) -> QColor:
-        return self._get_color(self.config.font_color)
-
-    @font_color.setter
-    def font_color(self, v: Union[QColor, str]):
-        self._set_color("font_color", v)
-
-    @property
-    def background_color(self) -> QColor:
-        return self._get_color(self.config.background_color)
-
-    @background_color.setter
-    def background_color(self, v: Union[QColor, str]):
-        self._set_color("background_color", v)
-
-    @property
-    def text_visible(self) -> bool:
-        return self.config.text_visible
-
-    @text_visible.setter
-    def text_visible(self, v: bool):
-        self.config.text_visible = v
-
-    @property
-    def background_visible(self) -> bool:
-        return self.config.background_visible
-
-    @background_visible.setter
-    def background_visible(self, v: bool):
-        self.config.background_visible = v
-
-    @property
-    def text_opacity(self) -> int:
-        return self.config.text_opacity
-
-    @text_opacity.setter
-    def text_opacity(self, v: int):
-        self.config.text_opacity = int(v)
-
-    @property
-    def background_opacity(self) -> int:
-        return self.config.background_opacity
-
-    @background_opacity.setter
-    def background_opacity(self, v: int):
-        self.config.background_opacity = int(v)
-
-    @property
-    def shadow_enabled(self) -> bool:
-        return self.config.shadow_enabled
-
-    @shadow_enabled.setter
-    def shadow_enabled(self, v: bool):
-        self.config.shadow_enabled = v
-
-    @property
-    def shadow_color(self) -> QColor:
-        return self._get_color(self.config.shadow_color)
-
-    @shadow_color.setter
-    def shadow_color(self, v: Union[QColor, str]):
-        self._set_color("shadow_color", v)
-
-    @property
-    def shadow_opacity(self) -> int:
-        return self.config.shadow_opacity
-
-    @shadow_opacity.setter
-    def shadow_opacity(self, v: int):
-        self.config.shadow_opacity = int(v)
-
-    @property
-    def shadow_blur(self) -> int:
-        return self.config.shadow_blur
-
-    @shadow_blur.setter
-    def shadow_blur(self, v: int):
-        self.config.shadow_blur = int(v)
-
-    @property
-    def shadow_scale(self) -> float:
-        return self.config.shadow_scale
-
-    @shadow_scale.setter
-    def shadow_scale(self, v: float):
-        self.config.shadow_scale = float(v)
-
-    @property
-    def shadow_offset_x(self) -> float:
-        return self.config.shadow_offset_x
-
-    @shadow_offset_x.setter
-    def shadow_offset_x(self, v: float):
-        self.config.shadow_offset_x = float(v)
-
-    @property
-    def shadow_offset_y(self) -> float:
-        return self.config.shadow_offset_y
-
-    @shadow_offset_y.setter
-    def shadow_offset_y(self, v: float):
-        self.config.shadow_offset_y = float(v)
-
-    @property
-    def outline_enabled(self) -> bool:
-        return self.config.outline_enabled
-
-    @outline_enabled.setter
-    def outline_enabled(self, v: bool):
-        self.config.outline_enabled = v
-
-    @property
-    def outline_color(self) -> QColor:
-        return self._get_color(self.config.outline_color)
-
-    @outline_color.setter
-    def outline_color(self, v: Union[QColor, str]):
-        self._set_color("outline_color", v)
-
-    @property
-    def outline_opacity(self) -> int:
-        return self.config.outline_opacity
-
-    @outline_opacity.setter
-    def outline_opacity(self, v: int):
-        self.config.outline_opacity = int(v)
-
-    @property
-    def outline_width(self) -> float:
-        return self.config.outline_width
-
-    @outline_width.setter
-    def outline_width(self, v: float):
-        self.config.outline_width = float(v)
-
-    @property
-    def outline_blur(self) -> int:
-        return self.config.outline_blur
-
-    @outline_blur.setter
-    def outline_blur(self, v: int):
-        self.config.outline_blur = int(v)
-
-    @property
-    def second_outline_enabled(self) -> bool:
-        return self.config.second_outline_enabled
-
-    @second_outline_enabled.setter
-    def second_outline_enabled(self, v: bool):
-        self.config.second_outline_enabled = v
-
-    @property
-    def second_outline_color(self) -> QColor:
-        return self._get_color(self.config.second_outline_color)
-
-    @second_outline_color.setter
-    def second_outline_color(self, v: Union[QColor, str]):
-        self._set_color("second_outline_color", v)
-
-    @property
-    def second_outline_opacity(self) -> int:
-        return self.config.second_outline_opacity
-
-    @second_outline_opacity.setter
-    def second_outline_opacity(self, v: int):
-        self.config.second_outline_opacity = int(v)
-
-    @property
-    def second_outline_width(self) -> float:
-        return self.config.second_outline_width
-
-    @second_outline_width.setter
-    def second_outline_width(self, v: float):
-        self.config.second_outline_width = float(v)
-
-    @property
-    def second_outline_blur(self) -> int:
-        return self.config.second_outline_blur
-
-    @second_outline_blur.setter
-    def second_outline_blur(self, v: int):
-        self.config.second_outline_blur = int(v)
-
-    @property
-    def third_outline_enabled(self) -> bool:
-        return self.config.third_outline_enabled
-
-    @third_outline_enabled.setter
-    def third_outline_enabled(self, v: bool):
-        self.config.third_outline_enabled = v
-
-    @property
-    def third_outline_color(self) -> QColor:
-        return self._get_color(self.config.third_outline_color)
-
-    @third_outline_color.setter
-    def third_outline_color(self, v: Union[QColor, str]):
-        self._set_color("third_outline_color", v)
-
-    @property
-    def third_outline_opacity(self) -> int:
-        return self.config.third_outline_opacity
-
-    @third_outline_opacity.setter
-    def third_outline_opacity(self, v: int):
-        self.config.third_outline_opacity = int(v)
-
-    @property
-    def third_outline_width(self) -> float:
-        return self.config.third_outline_width
-
-    @third_outline_width.setter
-    def third_outline_width(self, v: float):
-        self.config.third_outline_width = float(v)
-
-    @property
-    def third_outline_blur(self) -> int:
-        return self.config.third_outline_blur
-
-    @third_outline_blur.setter
-    def third_outline_blur(self, v: int):
-        self.config.third_outline_blur = int(v)
-
-    @property
-    def background_outline_enabled(self) -> bool:
-        return self.config.background_outline_enabled
-
-    @background_outline_enabled.setter
-    def background_outline_enabled(self, v: bool):
-        self.config.background_outline_enabled = v
-
-    @property
-    def background_outline_color(self) -> QColor:
-        return self._get_color(self.config.background_outline_color)
-
-    @background_outline_color.setter
-    def background_outline_color(self, v: Union[QColor, str]):
-        self._set_color("background_outline_color", v)
-
-    @property
-    def background_outline_opacity(self) -> int:
-        return self.config.background_outline_opacity
-
-    @background_outline_opacity.setter
-    def background_outline_opacity(self, v: int):
-        self.config.background_outline_opacity = int(v)
-
-    @property
-    def background_outline_width_ratio(self) -> float:
-        return self.config.background_outline_width_ratio
-
-    @background_outline_width_ratio.setter
-    def background_outline_width_ratio(self, v: float):
-        self.config.background_outline_width_ratio = float(v)
-
-    @property
-    def text_gradient_enabled(self) -> bool:
-        return self.config.text_gradient_enabled
-
-    @text_gradient_enabled.setter
-    def text_gradient_enabled(self, v: bool):
-        self.config.text_gradient_enabled = v
-
-    @property
-    def text_gradient(self) -> Any:
-        return self.config.text_gradient
-
-    @text_gradient.setter
-    def text_gradient(self, v: Any):
-        self.config.text_gradient = v
-
-    @property
-    def text_gradient_angle(self) -> int:
-        return self.config.text_gradient_angle
-
-    @text_gradient_angle.setter
-    def text_gradient_angle(self, v: int):
-        self.config.text_gradient_angle = int(v)
-
-    @property
-    def text_gradient_opacity(self) -> int:
-        return self.config.text_gradient_opacity
-
-    @text_gradient_opacity.setter
-    def text_gradient_opacity(self, v: int):
-        self.config.text_gradient_opacity = int(v)
-
-    @property
-    def background_gradient_enabled(self) -> bool:
-        return self.config.background_gradient_enabled
-
-    @background_gradient_enabled.setter
-    def background_gradient_enabled(self, v: bool):
-        self.config.background_gradient_enabled = v
-
-    @property
-    def background_gradient(self) -> Any:
-        return self.config.background_gradient
-
-    @background_gradient.setter
-    def background_gradient(self, v: Any):
-        self.config.background_gradient = v
-
-    @property
-    def background_gradient_angle(self) -> int:
-        return self.config.background_gradient_angle
-
-    @background_gradient_angle.setter
-    def background_gradient_angle(self, v: int):
-        self.config.background_gradient_angle = int(v)
-
-    @property
-    def background_gradient_opacity(self) -> int:
-        return self.config.background_gradient_opacity
-
-    @background_gradient_opacity.setter
-    def background_gradient_opacity(self, v: int):
-        self.config.background_gradient_opacity = int(v)
-
-    @property
-    def is_vertical(self) -> bool:
-        return self.config.is_vertical
-
-    @is_vertical.setter
-    def is_vertical(self, v: bool):
-        self.config.is_vertical = v
-
-    @property
-    def horizontal_margin_ratio(self) -> float:
-        return self.config.horizontal_margin_ratio
-
-    @horizontal_margin_ratio.setter
-    def horizontal_margin_ratio(self, v: float):
-        self.config.horizontal_margin_ratio = float(v)
-
-    @property
-    def vertical_margin_ratio(self) -> float:
-        return self.config.vertical_margin_ratio
-
-    @vertical_margin_ratio.setter
-    def vertical_margin_ratio(self, v: float):
-        self.config.vertical_margin_ratio = float(v)
-
-    @property
-    def margin_top_ratio(self) -> float:
-        return self.config.margin_top
-
-    @margin_top_ratio.setter
-    def margin_top_ratio(self, v: float):
-        self.config.margin_top = float(v)
-
-    @property
-    def margin_bottom_ratio(self) -> float:
-        return self.config.margin_bottom
-
-    @margin_bottom_ratio.setter
-    def margin_bottom_ratio(self, v: float):
-        self.config.margin_bottom = float(v)
-
-    @property
-    def margin_left_ratio(self) -> float:
-        return self.config.margin_left
-
-    @margin_left_ratio.setter
-    def margin_left_ratio(self, v: float):
-        self.config.margin_left = float(v)
-
-    @property
-    def margin_right_ratio(self) -> float:
-        return self.config.margin_right
-
-    @margin_right_ratio.setter
-    def margin_right_ratio(self, v: float):
-        self.config.margin_right = float(v)
-
-    # --- Spacing Split Properties ---
-
-    @property
-    def char_spacing_h(self) -> float:
-        return getattr(self.config, "char_spacing_h", self.config.horizontal_margin_ratio)
-
-    @char_spacing_h.setter
-    def char_spacing_h(self, v: float):
-        self.config.char_spacing_h = float(v)
-
-    @property
-    def line_spacing_h(self) -> float:
-        return getattr(self.config, "line_spacing_h", 0.0)
-
-    @line_spacing_h.setter
-    def line_spacing_h(self, v: float):
-        self.config.line_spacing_h = float(v)
-
-    @property
-    def char_spacing_v(self) -> float:
-        return getattr(self.config, "char_spacing_v", 0.0)
-
-    @char_spacing_v.setter
-    def char_spacing_v(self, v: float):
-        self.config.char_spacing_v = float(v)
-
-    @property
-    def line_spacing_v(self) -> float:
-        return getattr(self.config, "line_spacing_v", self.config.vertical_margin_ratio)
-
-    @line_spacing_v.setter
-    def line_spacing_v(self, v: float):
-        self.config.line_spacing_v = float(v)
-
-    # --- 縦書きモード専用マージン ---
-
-    @property
-    def v_margin_top_ratio(self) -> float:
-        return self.config.v_margin_top if self.config.v_margin_top is not None else 0.0
-
-    @v_margin_top_ratio.setter
-    def v_margin_top_ratio(self, v: float):
-        self.config.v_margin_top = float(v)
-
-    @property
-    def v_margin_bottom_ratio(self) -> float:
-        return self.config.v_margin_bottom if self.config.v_margin_bottom is not None else 0.0
-
-    @v_margin_bottom_ratio.setter
-    def v_margin_bottom_ratio(self, v: float):
-        self.config.v_margin_bottom = float(v)
-
-    @property
-    def v_margin_left_ratio(self) -> float:
-        return self.config.v_margin_left if self.config.v_margin_left is not None else 0.0
-
-    @v_margin_left_ratio.setter
-    def v_margin_left_ratio(self, v: float):
-        self.config.v_margin_left = float(v)
-
-    @property
-    def v_margin_right_ratio(self) -> float:
-        return self.config.v_margin_right if self.config.v_margin_right is not None else 0.0
-
-    @v_margin_right_ratio.setter
-    def v_margin_right_ratio(self, v: float):
-        self.config.v_margin_right = float(v)
-
-    @property
-    def background_corner_ratio(self) -> float:
-        return self.config.background_corner_ratio
-
-    @background_corner_ratio.setter
-    def background_corner_ratio(self, v: float):
-        self.config.background_corner_ratio = float(v)
+    # --- Properties ---
+    # Moved to TextPropertiesMixin
 
     # --- Core Logic ---
 
@@ -599,54 +101,8 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
         self.draw_selection_frame(painter)
         painter.end()
 
-    def update_text(self) -> None:
-        """TextRendererの描画をデバウンスして実行する。
-
-        Notes:
-            高負荷なTextRenderer.render()を、連続操作中に毎回走らせないための対策。
-            見た目（最終結果）は同じで、操作中の“無駄な中間レンダ”だけを減らす。
-        """
-        try:
-            if hasattr(self, "_render_timer"):
-                # 連打されても最後の1回だけ描画する
-                self._render_timer.start(int(getattr(self, "_render_debounce_ms", 25)))
-                return
-        except Exception:
-            pass
-
-        # フォールバック：タイマーが使えない場合は即時
-        self._update_text_immediate()
-
-    def update_text_debounced(self) -> None:
-        """描画更新をデバウンス予約する（外部から呼ぶ用）。
-
-        Notes:
-            ホイール等で連打される操作は、Undoは積みつつ描画は最後の1回に寄せる。
-            最終結果（表示）は同じで、無駄な中間レンダを削減する。
-        """
-        try:
-            if hasattr(self, "_render_timer"):
-                self._render_timer.start(int(getattr(self, "_render_debounce_ms", 25)))
-                return
-        except Exception:
-            pass
-
-        self._update_text_immediate()
-
-    def _update_text_immediate(self) -> None:
-        """TextRendererを使用して即時描画する（内部用）。"""
-        try:
-            pixmap = self.renderer.render(self)
-            if pixmap:
-                self.setPixmap(pixmap)
-                try:
-                    self.sig_properties_changed.emit(self)
-                except Exception:
-                    pass
-            else:
-                logger.error(f"Renderer returned empty pixmap for window {self.uuid}")
-        except Exception as e:
-            logger.error(f"Render error in TextWindow {self.uuid}: {e}\n{traceback.format_exc()}")
+    # update_text, update_text_debounced, _update_text_immediate, _restore_render_debounce_ms_after_wheel
+    # Moved to TextPropertiesMixin. _update_text_immediate handles rendering.
 
     def set_undoable_property(
         self,
@@ -835,7 +291,7 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
             # ホイール中だけデバウンスを強めて、フリーズ感をさらに減らす
             try:
                 # 設定値があればそれを使い、なければ80
-                val = getattr(self, "_wheel_debounce_setting", 80)
+                val = getattr(self, "_wheel_debounce_setting", AppDefaults.WHEEL_DEBOUNCE_MS)
                 self._render_debounce_ms = int(val)
                 self._wheel_render_relax_timer.start(150)
             except Exception:
@@ -1402,18 +858,34 @@ class TextWindow(InlineEditorMixin, BaseOverlayWindow):
     def load_text_defaults(self) -> Dict[str, Any]:
         """各種デフォルト設定ファイルからスタイルを読み込む。"""
         # 1. 基礎（ハードコード）
-        defaults = {
-            "h_margin": 0.0,
-            "v_margin": 0.2,
-            "margin_top": 0.3,
-            "margin_bottom": 0.3,
-            "margin_left": 0.3,
-            "margin_right": 0.0,
-            "v_margin_top": 0.3,
-            "v_margin_bottom": 0.0,
-            "v_margin_left": 0.0,
-            "v_margin_right": 0.0,
-        }
+        # 1. 基礎（WindowConfigから正解を取得）
+        # Hardcoded dictionary is REMOVED. We use the Single Source of Truth.
+        base_config = TextWindowConfig()
+        defaults = base_config.model_dump()
+
+        # 旧キー名互換マッピング（必要ならここで変換、あるいはConfig側でAlias対応）
+        # 現在のコードベースでは TextWindow 側で getattr(self, "h_margin", ...) のように
+        # 旧キー名を探す箇所自体がリファクタリング済みであれば不要だが、
+        # load_text_defaults の戻り値が __init__ でどう使われるか確認が必要。
+        # __init__ では self.config へのセットが主なら model_dump でOK。
+        # ただし、__init__ 内で `defaults.get("h_margin", ...)` している箇所があるなら
+        # マッピングが必要。
+        # 今回の調査では TextWindow.__init__ は load_text_defaults の戻り値を
+        # self.config に直接マージする形式ではなく、個別の属性として扱っている可能性がある。
+        # しかし、今回は "Eradication" なので、Configの値を正とする。
+
+        # 簡易マッピング: Configの新しいプロパティ名を旧来のキー名としてもアクセスできるようにする
+        # （もし __init__ が旧キーに依存している場合のため）
+        defaults["h_margin"] = base_config.char_spacing_h
+        defaults["v_margin"] = base_config.line_spacing_v
+        defaults["margin_top"] = base_config.v_margin_top
+        defaults["margin_bottom"] = base_config.v_margin_bottom
+        defaults["margin_left"] = base_config.v_margin_left
+        defaults["margin_right"] = base_config.v_margin_right
+        defaults["v_margin_top"] = base_config.v_margin_top
+        defaults["v_margin_bottom"] = base_config.v_margin_bottom
+        defaults["v_margin_left"] = base_config.v_margin_left
+        defaults["v_margin_right"] = base_config.v_margin_right
 
         # 2. レガシー：横書き余白
         h_path = os.path.join(self.main_window.json_directory, "text_defaults.json")

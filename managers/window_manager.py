@@ -1098,3 +1098,42 @@ class WindowManager(QObject):
 
     def _reselect_image(self, window):
         window.reselect_image()
+
+    def close_all_windows(self) -> None:
+        """アプリ終了時用：管理下の全ウィンドウを強制的に閉じる。
+
+        Notes:
+            MainWindowが閉じられるとき、親子関係がない（Orphan）ウィンドウは
+            道連れにならないため、ここで明示的に close() を呼ぶ必要がある。
+        """
+        # 1. テキスト
+        for w in list(self.text_windows):
+            try:
+                if w is not None:
+                    w.close()
+            except Exception:
+                pass
+
+        # 2. 画像
+        for w in list(self.image_windows):
+            try:
+                if w is not None:
+                    w.close()
+            except Exception:
+                pass
+
+        # 3. コネクタ
+        for c in list(self.connectors):
+            try:
+                if c is not None:
+                    c.close()
+            except Exception:
+                pass
+
+        # 4. ラベル（念のため）
+        for c in list(self.connectors):
+            try:
+                if c and hasattr(c, "label_window") and c.label_window:
+                    c.label_window.close()
+            except Exception:
+                pass

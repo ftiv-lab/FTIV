@@ -1196,6 +1196,11 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         if hasattr(self, "property_panel"):
             self.property_panel.close()
 
+        # Sticky Note Mode (Orphan Windows) Cleanup
+        # 親子関係を切ったウィンドウ達は道連れにならないので、手動で閉じる
+        if hasattr(self, "window_manager"):
+            self.window_manager.close_all_windows()
+
     def show_context_menu(self, pos: QPoint) -> None:
         """メインウィンドウの背景右クリックメニュー構築（MenuManagerに委譲）。"""
         self.menu_manager.show_context_menu(pos)

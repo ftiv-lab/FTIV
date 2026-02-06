@@ -8,6 +8,7 @@ from PySide6.QtCore import QPoint
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QDialog, QFontDialog, QMessageBox
 
+from models.window_config import TextWindowConfig
 from utils.translator import tr
 
 logger = logging.getLogger(__name__)
@@ -169,14 +170,16 @@ class BulkOperationManager:
         from ui.dialogs import TextSpacingDialog
 
         json_path = os.path.join(self.mw.json_directory, "text_defaults.json")
-        defaults = {
-            "h_margin": 0.0,
-            "v_margin": 0.0,
-            "margin_top": 0.0,
-            "margin_bottom": 0.0,
-            "margin_left": 0.0,
-            "margin_right": 0.0,
-        }
+        # Use Single Source of Truth
+        base_config = TextWindowConfig()
+        defaults = base_config.model_dump()
+        # Map Config properties to Dialog expectations (Legacy Keys)
+        defaults["h_margin"] = base_config.char_spacing_h
+        defaults["v_margin"] = base_config.line_spacing_h
+        defaults["margin_top"] = base_config.v_margin_top
+        defaults["margin_bottom"] = base_config.v_margin_bottom
+        defaults["margin_left"] = base_config.v_margin_left
+        defaults["margin_right"] = base_config.v_margin_right
 
         if os.path.exists(json_path):
             try:
@@ -241,12 +244,14 @@ class BulkOperationManager:
         from ui.dialogs import TextSpacingDialog
 
         json_path = os.path.join(self.mw.json_directory, "text_defaults_vertical.json")
-        defaults = {
-            "v_margin_top": 0.0,
-            "v_margin_bottom": 0.0,
-            "v_margin_left": 0.0,
-            "v_margin_right": 0.0,
-        }
+        # Use Single Source of Truth
+        base_config = TextWindowConfig()
+        defaults = base_config.model_dump()
+        # Map Config properties to Dialog expectations
+        defaults["v_margin_top"] = base_config.v_margin_top
+        defaults["v_margin_bottom"] = base_config.v_margin_bottom
+        defaults["v_margin_left"] = base_config.v_margin_left
+        defaults["v_margin_right"] = base_config.v_margin_right
 
         if os.path.exists(json_path):
             try:

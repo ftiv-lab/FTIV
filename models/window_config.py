@@ -122,7 +122,7 @@ class TextWindowConfig(WindowConfigBase):
 
     # マージン（比率） - 後方互換性のため維持
     horizontal_margin_ratio: float = 0.0
-    vertical_margin_ratio: float = 0.0  # 行間
+    vertical_margin_ratio: float = 0.0  # 行間 (Was 0.2)
 
     # --- Spacing Split (Vertical/Horizontal De-coupling) ---
     # 横書き用

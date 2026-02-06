@@ -1,11 +1,10 @@
-# windows/connector.py
-
 import logging
 import math
+import traceback
 from typing import Any, Optional
 
 import shiboken6
-from PySide6.QtCore import QPoint, QPointF, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -18,24 +17,24 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QColorDialog, QDialog, QFontDialog, QInputDialog, QWidget
 
+from models.constants import AppDefaults
 from models.enums import AnchorPosition, ArrowStyle
 from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
 from ui.dialogs import (
-    MarginRatioDialog,
     SliderSpinDialog,
     TextInputDialog,
-    TextSpacingDialog,  # ★追加インポート
+    TextSpacingDialog,
 )
 from utils.translator import tr
 from windows.base_window import BaseOverlayWindow
 from windows.mixins.inline_editor_mixin import InlineEditorMixin
-from windows.text_renderer import TextRenderer
+from windows.mixins.text_properties_mixin import TextPropertiesMixin
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
+class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # type: ignore
     """
     接続線の上に表示されるラベル専用のウィンドウ
     TextWindowとほぼ同じ機能を持つが、位置はConnectorLineによって管理される
@@ -55,33 +54,10 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
 
         self.connector: Any = connector
 
-        # レンダラー初期化
-        self.renderer: TextRenderer = TextRenderer()
-
-        # --- パフォーマンス設定（キャッシュサイズ）の反映 ---
         try:
-            self.renderer._glyph_cache_size = int(getattr(main_window.app_settings, "glyph_cache_size", 512))
+            self._init_text_renderer(main_window)
         except Exception:
             pass
-
-        # デバウンス用（高負荷な render を連打しない）
-        self._render_timer: QTimer = QTimer(self)
-        self._render_timer.setSingleShot(True)
-        self._render_timer.timeout.connect(self._update_text_immediate)
-
-        # ★追加: ホイール操作後のデバウンス復帰用タイマー（TextWindowと揃える）
-        self._wheel_render_relax_timer: QTimer = QTimer(self)
-        self._wheel_render_relax_timer.setSingleShot(True)
-        self._wheel_render_relax_timer.timeout.connect(self._restore_render_debounce_ms_after_wheel)
-
-        # --- パフォーマンス設定（デバウンス時間）の反映 ---
-        try:
-            self._render_debounce_ms: int = int(getattr(main_window.app_settings, "render_debounce_ms", 50))
-            # ★追加
-            self._wheel_debounce_setting: int = int(getattr(main_window.app_settings, "wheel_debounce_ms", 80))
-        except Exception:
-            self._render_debounce_ms = 25
-            self._wheel_debounce_setting = 50
 
         # 初期設定
         self.config.text = str(text or "")
@@ -111,526 +87,36 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
         self._update_text_immediate()
 
     # ==========================================
-    # Property Definitions (TextRenderer互換)
+    # Property Definitions
+    # Moved to TextPropertiesMixin
     # ==========================================
-
-    # --- 基本プロパティ ---
-    @property
-    def text(self):
-        return self.config.text
-
-    @text.setter
-    def text(self, value):
-        self.config.text = value
-
-    @property
-    def font_family(self):
-        return self.config.font
-
-    @font_family.setter
-    def font_family(self, value):
-        self.config.font = value
-
-    @property
-    def font_size(self):
-        return self.config.font_size
-
-    @font_size.setter
-    def font_size(self, value):
-        self.config.font_size = int(value)
-
-    # --- 色ヘルパー ---
-    def _get_color(self, hex_str):
-        return QColor(hex_str)
-
-    def _set_color(self, target_attr, value):
-        if isinstance(value, QColor):
-            setattr(self.config, target_attr, value.name(QColor.HexArgb))
-        elif isinstance(value, str):
-            setattr(self.config, target_attr, value)
-
-    @property
-    def font_color(self):
-        return self._get_color(self.config.font_color)
-
-    @font_color.setter
-    def font_color(self, value):
-        self._set_color("font_color", value)
-
-    @property
-    def background_color(self):
-        return self._get_color(self.config.background_color)
-
-    @background_color.setter
-    def background_color(self, value):
-        self._set_color("background_color", value)
-
-    @property
-    def text_opacity(self):
-        return self.config.text_opacity
-
-    @text_opacity.setter
-    def text_opacity(self, v):
-        self.config.text_opacity = int(v)
-
-    @property
-    def background_opacity(self):
-        return self.config.background_opacity
-
-    @background_opacity.setter
-    def background_opacity(self, v):
-        self.config.background_opacity = int(v)
-
-    # --- 影設定 (Shadow) ---
-    @property
-    def shadow_enabled(self):
-        return self.config.shadow_enabled
-
-    @shadow_enabled.setter
-    def shadow_enabled(self, v):
-        self.config.shadow_enabled = v
-
-    @property
-    def shadow_color(self):
-        return self._get_color(self.config.shadow_color)
-
-    @shadow_color.setter
-    def shadow_color(self, v):
-        self._set_color("shadow_color", v)
-
-    @property
-    def shadow_opacity(self):
-        return self.config.shadow_opacity
-
-    @shadow_opacity.setter
-    def shadow_opacity(self, v):
-        self.config.shadow_opacity = int(v)
-
-    @property
-    def shadow_blur(self):
-        return self.config.shadow_blur
-
-    @shadow_blur.setter
-    def shadow_blur(self, v):
-        self.config.shadow_blur = int(v)
-
-    @property
-    def shadow_scale(self):
-        return self.config.shadow_scale
-
-    @shadow_scale.setter
-    def shadow_scale(self, v):
-        self.config.shadow_scale = float(v)
-
-    @property
-    def shadow_offset_x(self):
-        return self.config.shadow_offset_x
-
-    @shadow_offset_x.setter
-    def shadow_offset_x(self, v):
-        self.config.shadow_offset_x = float(v)
-
-    @property
-    def shadow_offset_y(self):
-        return self.config.shadow_offset_y
-
-    @shadow_offset_y.setter
-    def shadow_offset_y(self, v):
-        self.config.shadow_offset_y = float(v)
-
-    # --- 縁取り (Outline 1) ---
-    @property
-    def outline_enabled(self):
-        return self.config.outline_enabled
-
-    @outline_enabled.setter
-    def outline_enabled(self, v):
-        self.config.outline_enabled = v
-
-    @property
-    def outline_color(self):
-        return self._get_color(self.config.outline_color)
-
-    @outline_color.setter
-    def outline_color(self, v):
-        self._set_color("outline_color", v)
-
-    @property
-    def outline_opacity(self):
-        return self.config.outline_opacity
-
-    @outline_opacity.setter
-    def outline_opacity(self, v):
-        self.config.outline_opacity = int(v)
-
-    @property
-    def outline_width(self):
-        return self.config.outline_width
-
-    @outline_width.setter
-    def outline_width(self, v):
-        self.config.outline_width = float(v)
-
-    @property
-    def outline_blur(self):
-        return self.config.outline_blur
-
-    @outline_blur.setter
-    def outline_blur(self, v):
-        self.config.outline_blur = int(v)
-
-    # --- 縁取り (Outline 2) ---
-    @property
-    def second_outline_enabled(self):
-        return self.config.second_outline_enabled
-
-    @second_outline_enabled.setter
-    def second_outline_enabled(self, v):
-        self.config.second_outline_enabled = v
-
-    @property
-    def second_outline_color(self):
-        return self._get_color(self.config.second_outline_color)
-
-    @second_outline_color.setter
-    def second_outline_color(self, v):
-        self._set_color("second_outline_color", v)
-
-    @property
-    def second_outline_opacity(self):
-        return self.config.second_outline_opacity
-
-    @second_outline_opacity.setter
-    def second_outline_opacity(self, v):
-        self.config.second_outline_opacity = int(v)
-
-    @property
-    def second_outline_width(self):
-        return self.config.second_outline_width
-
-    @second_outline_width.setter
-    def second_outline_width(self, v):
-        self.config.second_outline_width = float(v)
-
-    @property
-    def second_outline_blur(self):
-        return self.config.second_outline_blur
-
-    @second_outline_blur.setter
-    def second_outline_blur(self, v):
-        self.config.second_outline_blur = int(v)
-
-    # --- 縁取り (Outline 3) ---
-    @property
-    def third_outline_enabled(self):
-        return self.config.third_outline_enabled
-
-    @third_outline_enabled.setter
-    def third_outline_enabled(self, v):
-        self.config.third_outline_enabled = v
-
-    @property
-    def third_outline_color(self):
-        return self._get_color(self.config.third_outline_color)
-
-    @third_outline_color.setter
-    def third_outline_color(self, v):
-        self._set_color("third_outline_color", v)
-
-    @property
-    def third_outline_opacity(self):
-        return self.config.third_outline_opacity
-
-    @third_outline_opacity.setter
-    def third_outline_opacity(self, v):
-        self.config.third_outline_opacity = int(v)
-
-    @property
-    def third_outline_width(self):
-        return self.config.third_outline_width
-
-    @third_outline_width.setter
-    def third_outline_width(self, v):
-        self.config.third_outline_width = float(v)
-
-    @property
-    def third_outline_blur(self):
-        return self.config.third_outline_blur
-
-    @third_outline_blur.setter
-    def third_outline_blur(self, v):
-        self.config.third_outline_blur = int(v)
-
-    # --- 背景枠線 ---
-    @property
-    def background_outline_enabled(self):
-        return self.config.background_outline_enabled
-
-    @background_outline_enabled.setter
-    def background_outline_enabled(self, v):
-        self.config.background_outline_enabled = v
-
-    @property
-    def background_outline_color(self):
-        return self._get_color(self.config.background_outline_color)
-
-    @background_outline_color.setter
-    def background_outline_color(self, v):
-        self._set_color("background_outline_color", v)
-
-    @property
-    def background_outline_opacity(self):
-        return self.config.background_outline_opacity
-
-    @background_outline_opacity.setter
-    def background_outline_opacity(self, v):
-        self.config.background_outline_opacity = int(v)
-
-    @property
-    def background_outline_width_ratio(self):
-        return self.config.background_outline_width_ratio
-
-    @background_outline_width_ratio.setter
-    def background_outline_width_ratio(self, v):
-        self.config.background_outline_width_ratio = float(v)
-
-    # --- グラデーション ---
-    @property
-    def text_gradient_enabled(self):
-        return self.config.text_gradient_enabled
-
-    @text_gradient_enabled.setter
-    def text_gradient_enabled(self, v):
-        self.config.text_gradient_enabled = v
-
-    @property
-    def text_gradient(self):
-        return self.config.text_gradient
-
-    @text_gradient.setter
-    def text_gradient(self, v):
-        self.config.text_gradient = v
-
-    @property
-    def text_gradient_angle(self):
-        return self.config.text_gradient_angle
-
-    @text_gradient_angle.setter
-    def text_gradient_angle(self, v):
-        self.config.text_gradient_angle = int(v)
-
-    @property
-    def text_gradient_opacity(self):
-        return self.config.text_gradient_opacity
-
-    @text_gradient_opacity.setter
-    def text_gradient_opacity(self, v):
-        self.config.text_gradient_opacity = int(v)
-
-    @property
-    def background_gradient_enabled(self):
-        return self.config.background_gradient_enabled
-
-    @background_gradient_enabled.setter
-    def background_gradient_enabled(self, v):
-        self.config.background_gradient_enabled = v
-
-    @property
-    def background_gradient(self):
-        return self.config.background_gradient
-
-    @background_gradient.setter
-    def background_gradient(self, v):
-        self.config.background_gradient = v
-
-    @property
-    def background_gradient_angle(self):
-        return self.config.background_gradient_angle
-
-    @background_gradient_angle.setter
-    def background_gradient_angle(self, v):
-        self.config.background_gradient_angle = int(v)
-
-    @property
-    def background_gradient_opacity(self):
-        return self.config.background_gradient_opacity
-
-    @background_gradient_opacity.setter
-    def background_gradient_opacity(self, v):
-        self.config.background_gradient_opacity = int(v)
-
-    # --- レイアウト・マージン (★追加機能) ---
-    @property
-    def is_vertical(self):
-        return self.config.is_vertical
-
-    @is_vertical.setter
-    def is_vertical(self, v):
-        self.config.is_vertical = v
-
-    @property
-    def horizontal_margin_ratio(self):
-        return self.config.horizontal_margin_ratio
-
-    @horizontal_margin_ratio.setter
-    def horizontal_margin_ratio(self, v):
-        self.config.horizontal_margin_ratio = float(v)
-
-    @property
-    def vertical_margin_ratio(self):
-        return self.config.vertical_margin_ratio
-
-    @vertical_margin_ratio.setter
-    def vertical_margin_ratio(self, v):
-        self.config.vertical_margin_ratio = float(v)
-
-    @property
-    def margin_top_ratio(self):
-        return self.config.margin_top
-
-    @margin_top_ratio.setter
-    def margin_top_ratio(self, v):
-        self.config.margin_top = float(v)
-
-    @property
-    def margin_bottom_ratio(self):
-        return self.config.margin_bottom
-
-    @margin_bottom_ratio.setter
-    def margin_bottom_ratio(self, v):
-        self.config.margin_bottom = float(v)
-
-    @property
-    def margin_left_ratio(self):
-        return self.config.margin_left
-
-    @margin_left_ratio.setter
-    def margin_left_ratio(self, v):
-        self.config.margin_left = float(v)
-
-    @property
-    def margin_right_ratio(self):
-        return self.config.margin_right
-
-    @margin_right_ratio.setter
-    def margin_right_ratio(self, v):
-        self.config.margin_right = float(v)
-
-    # --- 縦書きモード専用マージン ---
-
-    @property
-    def v_margin_top_ratio(self):
-        return self.config.v_margin_top if self.config.v_margin_top is not None else 0.3
-
-    @v_margin_top_ratio.setter
-    def v_margin_top_ratio(self, v):
-        self.config.v_margin_top = float(v)
-
-    @property
-    def v_margin_bottom_ratio(self):
-        return self.config.v_margin_bottom if self.config.v_margin_bottom is not None else 0.0
-
-    @v_margin_bottom_ratio.setter
-    def v_margin_bottom_ratio(self, v):
-        self.config.v_margin_bottom = float(v)
-
-    @property
-    def v_margin_left_ratio(self):
-        return self.config.v_margin_left if self.config.v_margin_left is not None else 0.0
-
-    @v_margin_left_ratio.setter
-    def v_margin_left_ratio(self, v):
-        self.config.v_margin_left = float(v)
-
-    @property
-    def v_margin_right_ratio(self):
-        return self.config.v_margin_right if self.config.v_margin_right is not None else 0.0
-
-    @v_margin_right_ratio.setter
-    def v_margin_right_ratio(self, v):
-        self.config.v_margin_right = float(v)
-
-    @property
-    def background_corner_ratio(self):
-        return self.config.background_corner_ratio
-
-    @background_corner_ratio.setter
-    def background_corner_ratio(self, v):
-        self.config.background_corner_ratio = float(v)
 
     # ==========================================
     # Methods
     # ==========================================
 
-    def update_text(self) -> None:
-        """TextRendererを使って描画（デバウンス版）。
-
-        Notes:
-            TextRenderer.render は高負荷になりがちなので、連続操作（ホイール等）では
-            最後の1回だけ実描画する。
-            見た目の最終結果は同一で、中間レンダリングを削減する。
-        """
-        try:
-            if hasattr(self, "_render_timer"):
-                self._render_timer.start(int(getattr(self, "_render_debounce_ms", 25)))
-                return
-        except Exception as e:
-            logger.warning(f"Failed to start render timer: {e}")
-
-        # フォールバック
-        self._update_text_immediate()
-
-    def update_text_debounced(self) -> None:
-        """描画更新をデバウンス予約する（外部から呼ぶ用）。"""
-        try:
-            if hasattr(self, "_render_timer"):
-                self._render_timer.start(int(getattr(self, "_render_debounce_ms", 25)))
-                return
-        except Exception as e:
-            logger.warning(f"Failed to start render timer (debounced): {e}")
-
-        self._update_text_immediate()
-
-    def _restore_render_debounce_ms_after_wheel(self) -> None:
-        """ホイール操作後に描画デバウンス値を設定値に戻す。"""
-        try:
-            # 設定値を再読み込み（なければデフォルト50）
-            mw = getattr(self, "main_window", None)
-            base_val = 50
-            if mw and hasattr(mw, "app_settings"):
-                base_val = int(getattr(mw.app_settings, "render_debounce_ms", 50))
-
-            self._render_debounce_ms = base_val
-        except Exception:
-            self._render_debounce_ms = 50
-
     def _update_text_immediate(self) -> None:
-        """TextRendererを使って即時描画する（内部用）。"""
+        """TextRendererを使用して即時描画する（内部用）。"""
         try:
-            if self.offset_mode is None:
-                try:
-                    self.auto_detect_offset_mode(QFont(self.font_family, int(self.font_size)))
-                except Exception as e:
-                    logger.warning(f"Failed to auto-detect offset mode in ConnectorLabel: {e}")
+            # Mixinの描画処理を呼ぶ（setPixmap, sig_properties_changed）
+            super()._update_text_immediate()
 
-            pixmap = self.renderer.render(self)
-            self.setPixmap(pixmap)
-            self.resize(self.canvas_size)
+            # --- ConnecotrLabel固有の処理 ---
 
+            # CanvasSizeに合わせてリサイズ（当たり判定用）
+            # Note: TextRenderer.render で self.canvas_size が更新されている前提
+            if hasattr(self, "canvas_size") and self.canvas_size:
+                self.resize(self.canvas_size)
+
+            # 親のコネクタ位置も再計算
             if self.connector:
                 try:
                     self.connector.update_position()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"Failed to update connector position from label: {e}")
 
-            try:
-                self.sig_properties_changed.emit(self)
-            except Exception:
-                pass
-
-        except Exception:
-            # ラベル描画で落ちない
-            pass
+        except Exception as e:
+            logger.error(f"Failed to render connector label: {e}\n{traceback.format_exc()}")
 
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
@@ -722,20 +208,6 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
                 pass
 
     # --- 余白設定用メソッド (★追加) ---
-
-    def set_horizontal_margin_ratio(self):
-        dialog = MarginRatioDialog(
-            tr("title_set_h_margin"), tr("label_char_spacing_horz"), self.horizontal_margin_ratio, self
-        )
-        if dialog.exec() == QDialog.Accepted:
-            self.set_undoable_property("horizontal_margin_ratio", dialog.get_value(), "update_text")
-
-    def set_vertical_margin_ratio(self):
-        dialog = MarginRatioDialog(
-            tr("title_set_v_margin"), tr("label_line_spacing_vert"), self.vertical_margin_ratio, self
-        )
-        if dialog.exec() == QDialog.Accepted:
-            self.set_undoable_property("vertical_margin_ratio", dialog.get_value(), "update_text")
 
     def _apply_label_layout_change(self, fn: Any, macro_name: str = "Change Label Layout") -> None:
         """ラベルのレイアウト系変更を Undo マクロでまとめて実行する。
@@ -852,10 +324,6 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
             # --- 5) 余白 ---
             builder.add_action("menu_margin_settings", self.open_spacing_settings)
 
-            margin_menu = builder.add_submenu("menu_margin_settings")
-            builder.add_action("menu_set_h_margin", self.set_horizontal_margin_ratio, parent_menu=margin_menu)
-            builder.add_action("menu_set_v_margin", self.set_vertical_margin_ratio, parent_menu=margin_menu)
-
             builder.add_separator()
 
             # --- 6) スタイルプリセット ---
@@ -916,7 +384,7 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
             try:
                 old_size = float(self.font_size)
             except Exception:
-                old_size = float(getattr(self.config, "font_size", 14))
+                old_size = float(getattr(self.config, "font_size", AppDefaults.CONNECTOR_FONT_SIZE))
 
             # 上回転(delta > 0) -> 縮小、下回転(delta < 0) -> 拡大（既存挙動を維持）
             factor: float = 0.9 if delta > 0 else 1.1
@@ -937,7 +405,7 @@ class ConnectorLabel(InlineEditorMixin, BaseOverlayWindow):
 
             # ホイール中だけデバウンスを強める
             try:
-                val = getattr(self, "_wheel_debounce_setting", 80)
+                val = getattr(self, "_wheel_debounce_setting", AppDefaults.WHEEL_DEBOUNCE_MS)
                 self._render_debounce_ms = int(val)
                 self._wheel_render_relax_timer.start(150)
             except Exception:
@@ -1089,10 +557,11 @@ class ConnectorLine(QWidget):
     sig_connector_selected = Signal(object)
     sig_connector_deleted = Signal(object)
 
-    def __init__(self, start_window, end_window, parent=None, color=None, width=4):
+    def __init__(self, start_window, end_window, parent=None, color=None, width=AppDefaults.CONNECTOR_WIDTH):
         # 親はMainWindow (Overlayのため)
         # しかしConnectorLine自体はQWidgetとして管理される
-        super().__init__(parent)
+        # ★修正: Sticky Note Mode (最小化しても消えないように parent=None で独立させる)
+        super().__init__(None)  # was parent
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -1163,16 +632,18 @@ class ConnectorLine(QWidget):
         try:
             # 接続先のウィンドウが無効または非表示の場合の処理
             if not shiboken6.isValid(self.start_window) or not shiboken6.isValid(self.end_window):
-                self.close()
+                # self.close()  <-- DELETE: この自爆ロジックが原因の可能性大
                 return
 
-            if not self.start_window.isVisible() or not self.end_window.isVisible():
+            # 接続先のウィンドウが「明示的に非表示」にされている場合のみ隠す
+            # (isVisible() だと最小化時にも False になり、復帰時の再描画チラつきの原因になる)
+            if self.start_window.isHidden() or self.end_window.isHidden():
                 self.hide()
                 if self.label_window:
                     self.label_window.hide()
                 return
         except RuntimeError:
-            self.close()
+            # self.close() <-- DELETE
             return
 
         if self.isHidden():
@@ -1251,7 +722,7 @@ class ConnectorLine(QWidget):
         dx = target_point.x() - center.x()
         dy = target_point.y() - center.y()
         if dx == 0 and dy == 0:
-            return center
+            return QPointF(center)
 
         half_w = rect.width() / 2
         half_h = rect.height() / 2

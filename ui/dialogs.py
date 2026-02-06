@@ -1269,10 +1269,27 @@ class TextSpacingDialog(QDialog):
         group_padding.setLayout(form_padding)
         layout.addWidget(group_padding)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.RestoreDefaults).clicked.connect(self.restore_defaults)
         layout.addWidget(buttons)
+
+    def restore_defaults(self) -> None:
+        """Reset values to canonical defaults defined in TextWindowConfig."""
+        from models.window_config import TextWindowConfig
+
+        defaults = TextWindowConfig()
+
+        # Horizontal
+        self.h_spin.setValue(defaults.char_spacing_h)
+        self.v_spin.setValue(defaults.line_spacing_h)
+
+        # Padding
+        self.top_spin.setValue(defaults.margin_top)
+        self.bottom_spin.setValue(defaults.margin_bottom)
+        self.left_spin.setValue(defaults.margin_left)
+        self.right_spin.setValue(defaults.margin_right)
 
     def get_values(self) -> Tuple[float, float, float, float, float, float]:
         """設定されたすべての数値を返す（後方互換性のため維持）。"""
