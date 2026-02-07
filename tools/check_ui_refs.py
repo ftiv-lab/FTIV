@@ -21,10 +21,6 @@ ALLOWED_ATTRIBUTES = {
     "scene_tab",
     "connections_tab",
     "about_tab",
-    "mindmap_tab",
-    # Mind Map Mode
-    "mindmap_widget",
-    "app_mode_manager",
     "main_controller",
     "layout_actions",
     "img_actions",

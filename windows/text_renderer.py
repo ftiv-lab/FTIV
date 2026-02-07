@@ -193,15 +193,15 @@ class TextRenderer:
         window: Any,
         target_rect: Optional[QRect] = None,
     ) -> QSize:
-        """外部 QPainter に直接描画する（マインドマップ用、DPR 対応）。
+        """外部 QPainter に直接描画する（DPR対応）。
 
         既存の render() は QPixmap を返すが、このメソッドは渡された QPainter に
         直接描画する。QGraphicsItem.paint() から呼び出すことで、DPR（デバイス
         ピクセル比）問題を回避できる。
 
         Args:
-            painter: 描画先の QPainter（例: MindMapNode.paint() から渡される）
-            window: TextWindow/MindMapTextAdapter 互換オブジェクト
+            painter: 描画先の QPainter
+            window: TextWindow互換オブジェクト
             target_rect: 描画先の矩形。None の場合は自動計算。
 
         Returns:

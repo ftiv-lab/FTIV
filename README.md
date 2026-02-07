@@ -53,7 +53,7 @@ FTIVは、単なるビューワーではありません。**「デスクトッ�
 *   **Custom Animations**: Create simple floating/fading animations for any text or image without video editing software.
     *   ソフト内で「ふわふわ浮く」「フェードイン・アウト」などの簡易アニメーションをテキストや画像に付与できます。
 
-### 4. 🧠 Visual Thinking / 思考の可視化
+### 4. 🧠 Visual Thinking / 思考の可視化 
 *   **Connect the Dots**: Link items with customizable lines (Shift+Drag) to create mind maps or relationship charts directly on your desktop.
     *   Shift+ドラッグでウィンドウ同士を **「線」** で接続。デスクトップ上でそのままマインドマップや相関図を作れます。
 

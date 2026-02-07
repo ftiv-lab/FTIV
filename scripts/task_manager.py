@@ -323,7 +323,7 @@ pytest tests/ -v
 
 ## ⚠️ 注意事項
 - qapp フィクスチャを使用
-- MockMindMapWidget を活用
+
 - 既存テストのスタイルに従う
 
 ---

@@ -46,8 +46,6 @@ from ui.tabs.about_tab import AboutTab
 from ui.tabs.animation_tab import AnimationTab
 from ui.tabs.general_tab import GeneralTab
 from ui.tabs.image_tab import ImageTab
-
-# MindMap tab removed for V1.0
 from ui.tabs.scene_tab import ConnectionsTab, SceneTab
 from ui.tabs.text_tab import TextTab
 from utils.app_settings import AppSettings
@@ -120,10 +118,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         self.main_controller = MainController(self, self.window_manager)
         self.main_controller.setup_connections()
 
-        # MindMap widget config removed for V1.0
-        # self.mindmap_widget.setWindowTitle("FTIV Mind Map")
-        # self.mindmap_widget.hide()
-
         # --- 3. UI構築と信号接続 ---
         self.setup_ui()
 
@@ -132,14 +126,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
         self.create_undo_redo_actions()
         self.file_manager.load_scenes_db()
-        # マインドマップDBのロード removed for V1.0
-        # self.mindmaps = self.file_manager.load_mindmaps_db()
-
-        # デフォルトノードスタイルの初期化とロード
-        from models.default_node_style import DefaultNodeStyle
-
-        self.default_node_style = DefaultNodeStyle()
-        self.file_manager.load_default_node_style()
 
         self._register_emergency_shortcuts()
 
@@ -369,11 +355,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         # 7. 情報タブ (クラス化済み)
         self.about_tab = AboutTab(self)
         self.tabs.addTab(self.about_tab, tr("tab_about"))
-        # 8. マインドマップタブ (新規)
-        # MindMap tab removed for V1.0
-        # from ui.tabs.mindmap_tab import MindMapTab
-        # self.mindmap_tab = MindMapTab(self)
-        # self.tabs.addTab(self.mindmap_tab, "MindMap")
 
     def _init_property_panel(self) -> None:
         """プロパティパネルの初期化（Undo/Redo action の取り込み含む）。"""
@@ -450,8 +431,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
                 self.tabs.setTabText(5, tr("tab_animation"))
             if self.tabs.count() >= 7:
                 self.tabs.setTabText(6, tr("tab_about"))
-            if self.tabs.count() >= 8:
-                self.tabs.setTabText(7, "MindMap")  # TODO: tr("tab_mindmap") needed
 
     def _refresh_selected_labels(self) -> None:
         """
@@ -651,9 +630,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
                 self.animation_tab.refresh_ui()
             if hasattr(self, "about_tab"):
                 self.about_tab.refresh_ui()
-            # MindMapTab doesn't have refresh_ui yet, but good to add if implemented
-            # if hasattr(self, "mindmap_tab"):
-            #    self.mindmap_tab.refresh_ui()
 
             # MainWindow自体
             self.setWindowTitle(tr("app_title"))
@@ -1090,8 +1066,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             self.text_tab.update_prop_button_state(self.is_property_panel_active)
         if hasattr(self, "image_tab"):
             self.image_tab.update_prop_button_state(self.is_property_panel_active)
-        if hasattr(self, "mindmap_widget"):
-            self.mindmap_widget.update_prop_button_state(self.is_property_panel_active)
 
         self.update_prop_button_style()
 

@@ -159,19 +159,6 @@ class PropertyPanel(QWidget):
         if self.current_target:
             self.current_target.raise_()
 
-            # 新しいシグナル接続 (MindMapNodeの場合)
-            if hasattr(self.current_target, "sig_position_changed"):
-                # Note: connect returns a Connection object in pure Qt, but in PySide6
-                # we usually keep the signal-slot pair to disconnect.
-                # However, disconnect() works with passed signal too.
-                # Here we use a simpler approach: connect and store the connection if possible,
-                # or just disconnect by signal on next set.
-
-                # Using a wrapper to update UI
-                self.current_target.sig_position_changed.connect(self._on_target_position_changed)
-                # Store for disconnection (logic slightly complex in PySide,
-                # easier to just disconnect specific signal if known)
-
     def _on_target_position_changed(self, pos) -> None:
         """ターゲットの位置変更通知を受け取る。"""
         if self.current_target == self.sender():
@@ -183,7 +170,7 @@ class PropertyPanel(QWidget):
 
     def refresh_ui(self) -> None:
         """現在のターゲットに合わせてUIを完全に再構築します。"""
-        # from ui.mindmap.mindmap_node import MindMapNode
+
         from windows.connector import ConnectorLabel, ConnectorLine
         from windows.image_window import ImageWindow
         from windows.text_window import TextWindow
@@ -204,8 +191,6 @@ class PropertyPanel(QWidget):
             self.build_image_window_ui()
         elif isinstance(self.current_target, ConnectorLine):
             self.build_connector_ui()
-        # elif isinstance(self.current_target, MindMapNode):
-        #     self.build_mindmap_node_ui()
 
         self.scroll_layout.addStretch()
 
@@ -221,7 +206,7 @@ class PropertyPanel(QWidget):
 
     def update_property_values(self) -> None:
         """UIを再構築せずに、数値データのみを最新状態に更新します。"""
-        # from ui.mindmap.mindmap_node import MindMapNode
+
         from windows.connector import ConnectorLabel
         from windows.image_window import ImageWindow
         from windows.text_window import TextWindow
@@ -235,8 +220,6 @@ class PropertyPanel(QWidget):
             self._update_image_values()
         elif isinstance(self.current_target, (TextWindow, ConnectorLabel)):
             self._update_text_values()
-        # elif isinstance(self.current_target, MindMapNode):
-        #     self._update_mindmap_node_values()
 
     def update_coordinates(self) -> None:
         """座標表示を更新します。"""
@@ -1273,8 +1256,3 @@ class PropertyPanel(QWidget):
             pass
 
         event.accept()
-
-    # MindMap legacy code removed
-
-
-# MindMap update methods removed for V1.0

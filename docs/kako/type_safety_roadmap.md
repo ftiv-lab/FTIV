@@ -39,7 +39,7 @@ We will not fix errors randomly. We will fix them in layers, starting from the f
 *   **Action Items**:
     1.  **Overload resolution**: When calling `QAction` or `QPoint`, we must match *exact* signatures.
         *   *Example*: `QPoint(float, float)` is invalid. It must be `QPoint(int, int)`. We must cast `int()`.
-    2.  **Missing Attributes**: `MainWindow.mindmaps` etc. need proper Type Hints in `__init__`.
+    2.  **Missing Attributes**: `MainWindow` attributes need proper Type Hints in `__init__`.
     3.  **Refactor**: Use `typing.cast` judiciously where PySide stubs are wrong (rare).
 
 ### Phase 3: Core Logic Integrity
