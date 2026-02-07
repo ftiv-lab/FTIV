@@ -60,7 +60,7 @@ class GeneralTab(QWidget):
 
         # --- メインウィンドウ最前面切替ボタン ---
         self.btn_main_frontmost = QPushButton(tr("btn_main_frontmost"))
-        self.btn_main_frontmost.setObjectName("ActionBtn")
+        self.btn_main_frontmost.setProperty("class", "toggle")
         self.btn_main_frontmost.setCheckable(True)
 
         # 現在の最前面状態を反映
@@ -78,7 +78,7 @@ class GeneralTab(QWidget):
         quick_layout.setSpacing(10)
 
         self.btn_toggle_prop = QPushButton(tr("btn_toggle_prop_panel"))
-        self.btn_toggle_prop.setObjectName("ActionBtn")
+        self.btn_toggle_prop.setProperty("class", "toggle")
         self.btn_toggle_prop.setCheckable(True)
         self.btn_toggle_prop.setChecked(self.mw.is_property_panel_active)
         self.btn_toggle_prop.clicked.connect(self.mw.toggle_property_panel)
@@ -124,7 +124,7 @@ class GeneralTab(QWidget):
         overlay_layout = QGridLayout(self.overlay_group)
 
         self.btn_toggle_selection_frame = QPushButton(tr("btn_toggle_selection_frame"))
-        self.btn_toggle_selection_frame.setObjectName("ActionBtn")
+        self.btn_toggle_selection_frame.setProperty("class", "toggle")
         self.btn_toggle_selection_frame.setCheckable(True)
         self.btn_toggle_selection_frame.setChecked(
             bool(getattr(self.mw.overlay_settings, "selection_frame_enabled", True))

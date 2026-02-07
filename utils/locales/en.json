@@ -608,5 +608,6 @@
     "btn_lock": "Lock",
     "btn_unlock": "Unlock",
     "menu_select_text_window": "Select Text Window",
-    "label_text": "Text"
+    "label_text": "Text",
+    "label_flip": "Flip:"
 }

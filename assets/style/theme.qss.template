@@ -145,6 +145,48 @@ QPushButton[class="emphasized"] {
     padding: 6px;
 }
 
+/* ============================================================
+   Property Panel / UI Overhaul Classes (Phase 5)
+   ============================================================ */
+
+/* .secondary-button (Default for PropertyPanel actions) */
+QPushButton[class="secondary-button"] {
+    background-color: @bg_secondary;
+    color: @text_primary;
+    border: 1px solid @border;
+}
+QPushButton[class="secondary-button"]:hover {
+    background-color: @border;
+    color: @text_primary; /* Keep text color stable */
+}
+QPushButton[class="secondary-button"]:pressed {
+    background-color: #444; /* Slightly darker */
+}
+QPushButton[class="secondary-button"]:checked {
+    /* Safe fallback if a secondary button is toggleable */
+    background-color: rgba(255, 255, 255, 0.1); 
+}
+
+/* .toggle (Explicit toggle button with state colors) */
+QPushButton[class="toggle"] {
+    background-color: @bg_secondary;
+    color: @text_primary;
+    border: 1px solid @border;
+    text-align: center;
+}
+QPushButton[class="toggle"]:hover {
+    background-color: @border;
+}
+QPushButton[class="toggle"]:checked {
+    background-color: @accent_primary;
+    color: #ffffff;
+    border: 1px solid @accent_primary;
+    font-weight: bold;
+}
+QPushButton[class="toggle"]:checked:hover {
+    background-color: @accent_hover;
+}
+
 /* Toggle Buttons (Checkable) */
 QPushButton:checked {
     background-color: @accent_primary;
@@ -305,7 +347,7 @@ QWidget#PropertyPanel QGroupBox::title {
     padding: 0 4px;
     top: -2px; /* Adjusted from -6px to keep it inside bounds */
     font-size: 11px; /* Smaller font */
-    color: @accent_primary;
+    color: @text_primary;
 }
 
 /* Tighter vertical spacing for forms is handled in Python,
@@ -318,6 +360,30 @@ QWidget#PropertyPanel QComboBox {
     height: 20px; /* Force compact height */
 }
 
+
+/* Collapsible Box Header */
+QPushButton#CollapsibleHeader {
+    text-align: left;
+    padding: 6px 4px 6px 8px; /* Slightly more vertical padding for touch target */
+    background-color: @bg_secondary;
+    border: none;
+    border-bottom: 1px solid @border;
+    border-top: 1px solid @border;
+    color: @text_primary;
+    font-weight: bold;
+    font-size: 11px;
+}
+QPushButton#CollapsibleHeader:hover {
+    background-color: @border;
+}
+QPushButton#CollapsibleHeader:checked {
+    /* Active/Expanded state */
+    background-color: @bg_secondary; /* Keep consistent */
+    border-bottom: 1px solid @border;
+}
+QPushButton#CollapsibleHeader:pressed {
+    background-color: #444;
+}
 
 /* ============================================================
    Menus & Tooltips

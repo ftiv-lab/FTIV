@@ -749,6 +749,85 @@ class PropertyPanel(QWidget):
         layout.addRow(label, container)
         return spin, slider
 
+    def add_slider_spin_float(
+        self,
+        layout: QFormLayout,
+        label: str,
+        value: float,
+        min_v: float,
+        max_v: float,
+        commit_cb: Callable[[float], None],
+        preview_cb: Optional[Callable[[float], None]] = None,
+        step: float = 0.1,
+    ) -> Tuple[QDoubleSpinBox, QSlider]:
+        """Float値対応のslider+spinbox combo生成。
+
+        Args:
+            layout: 追加先レイアウト。
+            label: 行のラベル。
+            value: 現在値。
+            min_v: 最小値。
+            max_v: 最大値。
+            commit_cb: 確定反映コールバック。
+            preview_cb: プレビューコールバック（ドラッグ中）。
+            step: spinbox刻み。
+
+        Returns:
+            Tuple[QDoubleSpinBox, QSlider]: (spinbox, slider)
+        """
+        container = QWidget()
+        h_layout = QHBoxLayout(container)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Calculate decimals from step
+        decimals = 2 if step < 0.1 else 1
+
+        # Float spinbox
+        spin = QDoubleSpinBox()
+        spin.setRange(min_v, max_v)
+        spin.setSingleStep(step)
+        spin.setDecimals(decimals)
+        spin.setValue(value)
+
+        # Integer slider (scaled dynamically based on step)
+        scale_factor = int(1.0 / step) if step > 0 else 10
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(int(min_v * scale_factor), int(max_v * scale_factor))
+        slider.setSingleStep(1)
+        slider.setValue(int(value * scale_factor))
+
+        state: dict[str, bool] = {"is_dragging": False}
+
+        def on_slider_pressed() -> None:
+            state["is_dragging"] = True
+
+        def on_slider_released() -> None:
+            state["is_dragging"] = False
+            v = slider.value() / scale_factor
+            commit_cb(v)
+
+        def on_slider_changed(val: int) -> None:
+            v = val / scale_factor
+            with QSignalBlocker(spin):
+                spin.setValue(v)
+            if state["is_dragging"] and preview_cb:
+                preview_cb(v)
+
+        def on_spin_changed(val: float) -> None:
+            with QSignalBlocker(slider):
+                slider.setValue(int(val * scale_factor))
+            commit_cb(val)
+
+        slider.sliderPressed.connect(on_slider_pressed)
+        slider.sliderReleased.connect(on_slider_released)
+        slider.valueChanged.connect(on_slider_changed)
+        spin.valueChanged.connect(on_spin_changed)
+
+        h_layout.addWidget(slider)
+        h_layout.addWidget(spin)
+        layout.addRow(label, container)
+        return spin, slider
+
     def create_color_button(self, current_color: QColor, callback: Callable) -> QPushButton:
         """Phase 5: Create color button."""
         btn = QPushButton()
@@ -892,14 +971,10 @@ class PropertyPanel(QWidget):
         self.btn_text_font.clicked.connect(change_font)
         t_layout.addRow(tr("prop_font_selector"), typing.cast(QWidget, self.btn_text_font))
 
-        self.spin_text_font_size = self.add_spinbox(
-            t_layout,
-            tr("prop_size"),
-            int(target.font_size),
-            1,
-            500,
-            1,
-            lambda v: target.set_undoable_property("font_size", v, "update_text"),
+        # Font Size (slider+spinbox)
+        commit, prev = self._make_callbacks(target, "font_size", "update_text", True)
+        self.spin_text_font_size, self.slider_text_font_size = self.add_slider_spin(
+            t_layout, tr("prop_size"), target.font_size, 1, 200, commit, prev
         )
 
         self.btn_text_color = self.add_color_button(
@@ -955,30 +1030,21 @@ class PropertyPanel(QWidget):
         self.btn_bg_toggle.setChecked(target.background_visible)
         layout.addRow("", cast(QWidget, self.btn_bg_toggle))
 
-        # Bg Color & Corner (Dual Row)
-        self.btn_bg_color = self.create_color_button(
+        # Bg Color (separate row)
+        self.btn_bg_color = self.add_color_button(
+            layout,
+            tr("prop_color"),
             QColor(target.background_color),
             lambda c: target.set_undoable_property(
                 "background_color", self._normalize_color_to_hexargb(c), "update_text"
             ),
         )
-        # Corner Radius is slider usually, but for space we might use just spin or simple slider.
-        # Just use spin for dual row to save space? Or small slider.
-        # Let's use spin for Corner in dual row.
-        self.spin_bg_corner = self.create_spinbox(
-            target.background_corner_ratio,
-            0,
-            100,
-            1,
-            lambda v: target.set_undoable_property("background_corner_ratio", v, "update_text"),
+
+        # Bg Corner Radius (slider+spinbox, float 0-1.0)
+        commit, prev = self._make_callbacks(target, "background_corner_ratio", "update_text", False)
+        self.spin_bg_corner, self.slider_bg_corner = self.add_slider_spin_float(
+            layout, tr("prop_corner_radius"), target.background_corner_ratio, 0, 1.0, commit, prev, step=0.05
         )
-        # We lose the slider for corner radius in this view, effectively.
-        # But wait, original had slider.
-        # If we want dual, we use spin.
-        self.add_dual_row(layout, self.btn_bg_color, self.spin_bg_corner, tr("prop_color"), tr("prop_corner_radius"))
-        # Hack: Init a dummy slider for `_update_text_values` compatibility
-        # OR update `_update_text_values` to handle missing slider.
-        self.slider_bg_corner = None
 
         # Bg Opacity (0-100 int range)
         c_bg_opacity, self.spin_bg_opacity, self.slider_bg_opacity = self.create_slider_spin(
@@ -1036,34 +1102,30 @@ class PropertyPanel(QWidget):
         self.btn_shadow_toggle.setChecked(target.shadow_enabled)
         layout.addRow("", cast(QWidget, self.btn_shadow_toggle))
 
-        # Shadow Color & Blur (Dual Row)
-        self.btn_shadow_color = self.create_color_button(
+        # Shadow Color (separate row)
+        self.btn_shadow_color = self.add_color_button(
+            layout,
+            tr("prop_color"),
             QColor(target.shadow_color),
             lambda c: target.set_undoable_property("shadow_color", self._normalize_color_to_hexargb(c), "update_text"),
         )
-        self.spin_shadow_blur = self.create_spinbox(
-            target.shadow_blur, 0, 100, 1, lambda v: target.set_undoable_property("shadow_blur", v, "update_text")
-        )
-        self.add_dual_row(layout, self.btn_shadow_color, self.spin_shadow_blur, tr("prop_color"), tr("prop_blur"))
-        self.slider_shadow_blur = None  # Compatibility
 
-        # Shadow Offset X/Y (Dual Row)
-        self.spin_shadow_offset_x = self.create_spinbox(
-            target.shadow_offset_x,
-            -100,
-            100,
-            1,
-            lambda v: target.set_undoable_property("shadow_offset_x", v, "update_text"),
+        # Shadow Blur (slider+spinbox, 0-50)
+        commit, prev = self._make_callbacks(target, "shadow_blur", "update_text", True)
+        self.spin_shadow_blur, self.slider_shadow_blur = self.add_slider_spin(
+            layout, tr("prop_blur"), target.shadow_blur, 0, 50, commit, prev
         )
-        self.spin_shadow_offset_y = self.create_spinbox(
-            target.shadow_offset_y,
-            -100,
-            100,
-            1,
-            lambda v: target.set_undoable_property("shadow_offset_y", v, "update_text"),
+
+        # Shadow Offset X (slider+spinbox, float -1.0~1.0 - multiplier)
+        commit_x, prev_x = self._make_callbacks(target, "shadow_offset_x", "update_text", False)
+        self.spin_shadow_offset_x, self.slider_shadow_offset_x = self.add_slider_spin_float(
+            layout, tr("label_offset_x"), target.shadow_offset_x, -1.0, 1.0, commit_x, prev_x, step=0.05
         )
-        self.add_dual_row(
-            layout, self.spin_shadow_offset_x, self.spin_shadow_offset_y, tr("label_offset_x"), tr("label_offset_y")
+
+        # Shadow Offset Y (slider+spinbox, float -1.0~1.0 - multiplier)
+        commit_y, prev_y = self._make_callbacks(target, "shadow_offset_y", "update_text", False)
+        self.spin_shadow_offset_y, self.slider_shadow_offset_y = self.add_slider_spin_float(
+            layout, tr("label_offset_y"), target.shadow_offset_y, -1.0, 1.0, commit_y, prev_y, step=0.05
         )
 
         # Shadow Opacity
@@ -1106,28 +1168,60 @@ class PropertyPanel(QWidget):
 
             self.add_dual_row(layout, btn_toggle, btn_color)
 
-            # Width & Blur (Dual)
-            spin_width = self.create_spinbox(
+            # Width (slider+spinbox, float)
+            pref = prefix  # capture for nested functions
+
+            def make_commit_width(p: str) -> Callable[[float], None]:
+                def _commit(v: float) -> None:
+                    target.set_undoable_property(f"{p}outline_width", v, "update_text")
+
+                return _commit
+
+            def make_prev_width(p: str) -> Callable[[float], None]:
+                def _prev(v: float) -> None:
+                    setattr(target, f"{p}outline_width", v)
+                    target.update_text()
+
+                return _prev
+
+            spin_width, slider_width = self.add_slider_spin_float(
+                layout,
+                tr("prop_width"),
                 getattr(target, f"{prefix}outline_width"),
                 0,
-                100,
-                0.5,
-                lambda v: target.set_undoable_property(f"{prefix}outline_width", v, "update_text"),
-                is_float=True,
+                30,  # Realistic max width
+                make_commit_width(pref),
+                make_prev_width(pref),
+                step=0.5,
             )
             setattr(self, f"spin_outline_{index}_width", spin_width)
+            setattr(self, f"slider_outline_{index}_width", slider_width)
 
-            spin_blur = self.create_spinbox(
-                getattr(target, f"{prefix}outline_blur"),
+            # Blur (slider+spinbox, int 0-50 matching model type)
+            def make_commit_blur_int(p: str) -> Callable[[int], None]:
+                def _commit(v: int) -> None:
+                    target.set_undoable_property(f"{p}outline_blur", int(v), "update_text")
+
+                return _commit
+
+            def make_prev_blur_int(p: str) -> Callable[[int], None]:
+                def _prev(v: int) -> None:
+                    setattr(target, f"{p}outline_blur", int(v))
+                    target.update_text()
+
+                return _prev
+
+            spin_blur, slider_blur = self.add_slider_spin(
+                layout,
+                tr("prop_blur"),
+                int(getattr(target, f"{prefix}outline_blur")),
                 0,
-                100,
-                0.5,
-                lambda v: target.set_undoable_property(f"{prefix}outline_blur", v, "update_text"),
-                is_float=True,
+                50,
+                make_commit_blur_int(pref),
+                make_prev_blur_int(pref),
             )
             setattr(self, f"spin_outline_{index}_blur", spin_blur)
-
-            self.add_dual_row(layout, spin_width, spin_blur, tr("prop_width"), tr("prop_blur"))
+            setattr(self, f"slider_outline_{index}_blur", slider_blur)
 
             # Opacity (0-100 int range)
             c_op, spin_op, slider_op = self.create_slider_spin(
@@ -1166,14 +1260,10 @@ class PropertyPanel(QWidget):
         self.btn_bg_outline_color = btn_bg_out_color
         self.add_dual_row(layout, btn_bg_out_toggle, btn_bg_out_color)
 
-        # BG Outline Width (Ratio)
-        self.spin_bg_outline_width = self.create_spinbox(
-            target.background_outline_width_ratio,
-            0,
-            10,
-            0.1,
-            lambda v: target.set_undoable_property("background_outline_width_ratio", v, "update_text"),
-            is_float=True,
+        # BG Outline Width (slider+spinbox, float 0-1.0)
+        commit_w, prev_w = self._make_callbacks(target, "background_outline_width_ratio", "update_text", False)
+        self.spin_bg_outline_width, self.slider_bg_outline_width = self.add_slider_spin_float(
+            layout, tr("label_width_ratio"), target.background_outline_width_ratio, 0, 1.0, commit_w, prev_w, step=0.01
         )
         # Opacity (0-100 int range)
         c_bg_out_op, self.spin_bg_outline_opacity, self.slider_bg_outline_opacity = self.create_slider_spin(
@@ -1183,10 +1273,10 @@ class PropertyPanel(QWidget):
             lambda v: target.set_undoable_property("background_outline_opacity", v, "update_text"),
             lambda v: setattr(target, "background_outline_opacity", v) or target.update_text(),
         )
-        layout.addRow(tr("label_width_ratio"), cast(QWidget, self.spin_bg_outline_width))
         layout.addRow(tr("prop_opacity"), c_bg_out_op)
 
     def build_image_window_ui(self) -> None:
+        """画像ウィンドウ用のUI構築。FTIV_a1 style: integer percentage sliders."""
         target = self.current_target
         if not target:
             return
@@ -1195,46 +1285,69 @@ class PropertyPanel(QWidget):
 
         layout = self.create_collapsible_group(tr("prop_grp_image"), expanded=True)
 
-        c_scale, self.spin_img_scale, self.slider_img_scale = self.create_slider_spin(
+        # Scale: 1-500% (FTIV_a1 style)
+        commit, prev = self._make_callbacks(target, "scale_factor", "update_image", False)
+        self.spin_img_scale, self.slider_img_scale = self.add_slider_spin_percent(
+            layout,
+            tr("prop_scale"),
             target.scale_factor,
-            0.1,
-            5.0,
-            lambda v: target.set_undoable_property("scale_factor", v, "update_image"),
-            lambda v: setattr(target, "scale_factor", v) or target.update_image(),
-            unit_scale=100.0,
+            1,
+            500,
+            commit,
+            prev,
+            scale=100.0,
         )
-        layout.addRow(tr("prop_scale"), c_scale)
 
-        c_opacity, self.spin_img_opacity, self.slider_img_opacity = self.create_slider_spin(
+        # Opacity: 0-100% (FTIV_a1 style)
+        commit, prev = self._make_callbacks(target, "opacity", "update_image", False)
+        self.spin_img_opacity, self.slider_img_opacity = self.add_slider_spin_percent(
+            layout,
+            tr("prop_opacity"),
             target.opacity,
             0,
-            1,
-            lambda v: target.set_undoable_property("opacity", v, "update_image"),
-            lambda v: setattr(target, "opacity", v) or target.update_image(),
+            100,
+            commit,
+            prev,
+            scale=100.0,
         )
-        layout.addRow(tr("prop_opacity"), c_opacity)
 
-        c_rot, self.spin_img_rotation, self.slider_img_rotation = self.create_slider_spin(
-            target.rotation_angle,
-            -360,
-            360,
-            lambda v: target.set_undoable_property("rotation_angle", v, "update_image"),
-            lambda v: setattr(target, "rotation_angle", v) or target.update_image(),
+        # Rotation: 0-360 degrees
+        commit, prev = self._make_callbacks(target, "rotation_angle", "update_image", False)
+        self.spin_img_rotation, self.slider_img_rotation = self.add_slider_spin(
+            layout, tr("prop_rotation"), target.rotation_angle, 0, 360, commit, prev
         )
-        layout.addRow(tr("prop_rotation"), c_rot)
 
-        c_speed, self.spin_anim_speed, self.slider_anim_speed = self.create_slider_spin(
+        # Flip Buttons (FTIV_a1 style: toggle buttons)
+        f_layout = QHBoxLayout()
+        f_layout.setContentsMargins(0, 0, 0, 0)
+        f_layout.setSpacing(4)
+        for axis in ["horizontal", "vertical"]:
+            btn = QPushButton(tr(f"btn_flip_{axis}"))
+            btn.setProperty("class", "toggle")
+            btn.setCheckable(True)
+            btn.setChecked(getattr(target, f"flip_{axis}", False))
+            btn.clicked.connect(lambda c, a=axis: target.set_undoable_property(f"flip_{a}", c, "update_image"))
+            f_layout.addWidget(btn)
+        layout.addRow(tr("label_flip"), f_layout)
+
+        # Animation Group (FTIV_a1 style: separate group)
+        a_layout = self.create_collapsible_group(tr("menu_anim_setting_image"), expanded=False)
+
+        # Animation Speed: 0-500% (FTIV_a1 style)
+        commit, prev = self._make_callbacks(target, "animation_speed_factor", "_update_animation_timer", False)
+        self.spin_anim_speed, self.slider_anim_speed = self.add_slider_spin_percent(
+            a_layout,
+            tr("prop_anim_speed"),
             target.animation_speed_factor,
-            0.1,
-            10.0,
-            lambda v: target.set_undoable_property("animation_speed_factor", v, "_update_animation_timer"),
-            unit_scale=100.0,
+            0,
+            500,
+            commit,
+            prev,
+            scale=100.0,
         )
-        layout.addRow(tr("prop_anim_speed"), c_speed)
 
-        # Animation Controls (Play/Pause/Reset)
+        # Animation Controls (Play/Pause/Reset) - preserved from current FTIV
         def _anim_play():
-            # 停止中(0)なら元の速度(または1.0)に戻す
             if target.animation_speed_factor == 0:
                 new_speed = (
                     target.original_animation_speed_factor if target.original_animation_speed_factor > 0 else 1.0
@@ -1242,58 +1355,33 @@ class PropertyPanel(QWidget):
                 target.set_undoable_property("animation_speed_factor", new_speed, "_update_animation_timer")
 
         def _anim_pause():
-            # 現在の速度を保存して0にする
             if target.animation_speed_factor > 0:
                 target.original_animation_speed_factor = target.animation_speed_factor
                 target.set_undoable_property("animation_speed_factor", 0.0, "_update_animation_timer")
 
-        btn_anim_play = self.create_action_button(
-            tr("btn_anim_play"),
-            _anim_play,
-            "secondary-button",
-        )
-        btn_anim_pause = self.create_action_button(
-            tr("btn_anim_pause"),
-            _anim_pause,
-            "secondary-button",
-        )
-
-        # Reset: 速度を1.0に戻し、フレームもリセットするか？
-        # ここでは速度リセットのみ（フレームリセットは別途Reset Frameが欲しいかもだが、要望はReset）
-        # 文脈的に「再生状態のリセット」なら速度1.0 + フレーム0 が自然。
         def _anim_reset():
             target.current_frame = 0
             target.set_undoable_property("animation_speed_factor", 1.0, "_update_animation_timer")
             target.update_image()
 
-        btn_anim_reset = self.create_action_button(
-            tr("btn_anim_reset"),
-            _anim_reset,
-            "secondary-button",
-        )
+        btn_anim_play = self.create_action_button(tr("btn_anim_play"), _anim_play, "secondary-button")
+        btn_anim_pause = self.create_action_button(tr("btn_anim_pause"), _anim_pause, "secondary-button")
+        btn_anim_reset = self.create_action_button(tr("btn_anim_reset"), _anim_reset, "secondary-button")
 
-        # Dual row? Triple row?
-        # Play | Pause | Reset
         row_anim = QHBoxLayout()
         row_anim.setContentsMargins(0, 0, 0, 0)
         row_anim.setSpacing(4)
         row_anim.addWidget(btn_anim_play)
         row_anim.addWidget(btn_anim_pause)
         row_anim.addWidget(btn_anim_reset)
-        layout.addRow(tr("menu_anim_toggle"), row_anim)
+        a_layout.addRow(tr("menu_anim_toggle"), row_anim)
 
-        btn_flip_h = self.create_action_button(
-            tr("btn_flip_horizontal"),
-            lambda: target.set_undoable_property("flip_horizontal", not target.flip_horizontal, "update_image"),
-            "secondary-button",
+        # Reset Animation Speed Button (FTIV_a1 style)
+        self.add_action_button(
+            a_layout, tr("menu_reset_gif_apng_playback_speed"), target.reset_animation_speed, "secondary-button"
         )
-        btn_flip_v = self.create_action_button(
-            tr("btn_flip_vertical"),
-            lambda: target.set_undoable_property("flip_vertical", not target.flip_vertical, "update_image"),
-            "secondary-button",
-        )
-        self.add_dual_row(layout, btn_flip_h, btn_flip_v)
 
+        # Lock Button (preserved from current FTIV)
         self.add_action_button(
             layout,
             tr("btn_unlock") if target.is_locked else tr("btn_lock"),
