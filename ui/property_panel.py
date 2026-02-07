@@ -2,7 +2,7 @@
 
 import logging
 import typing
-from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union, cast
 
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtGui import QColor, QFont
@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFontDialog,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from models.enums import ArrowStyle
+from ui.widgets import CollapsibleBox
 from utils.translator import tr
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class PropertyPanel(QWidget):
         self.mw = parent  # Main Window reference
         self.setWindowTitle(tr("prop_panel_title"))
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
-        self.resize(360, 600)  # Phase 4.4: Further increased for optimal layout
+        self.resize(260, 600)  # Phase 5: Slim default
         self.setObjectName("PropertyPanel")  # For Global Theme Targeting
 
         self.current_target: Optional[Any] = None
@@ -66,6 +66,7 @@ class PropertyPanel(QWidget):
         self.scroll_layout.setAlignment(Qt.AlignTop)
 
         self.scroll_area.setWidget(self.scroll_widget)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Phase 5: No horiz scroll
         self.main_layout.addWidget(self.scroll_area)
 
         # Undo/Redoショートカットの登録
@@ -502,14 +503,70 @@ class PropertyPanel(QWidget):
 
     # --- UI Helper Methods ---
 
-    def create_group(self, title: str) -> QFormLayout:
-        group = QGroupBox(title)
-        layout = QFormLayout()
-        layout.setSpacing(4)  # Phase 4.3: Dense spacing
-        layout.setContentsMargins(8, 16, 8, 8)  # Phase 4.3: Tighter margins, top needs space for title
-        group.setLayout(layout)
-        self.scroll_layout.addWidget(group)
+    def create_collapsible_group(self, title: str, expanded: bool = True) -> QFormLayout:
+        """Phase 5: Collapsible Group Implementation"""
+        box = CollapsibleBox(title)
+
+        # Content Widget & Layout
+        content_widget = QWidget()
+        layout = QFormLayout(content_widget)
+        layout.setSpacing(4)
+        layout.setContentsMargins(4, 8, 4, 4)  # Phase 5: Tight margins
+        layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)  # Phase 5: Wrap labels
+        layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+
+        box.setContentLayout(layout)
+
+        # Initial State
+        box.toggle_button.setChecked(expanded)
+        box.on_toggled(expanded)
+
+        self.scroll_layout.addWidget(box)
         return layout
+
+    def create_group(self, title: str) -> QFormLayout:
+        """Deprecated: Use create_collapsible_group. Kept for compatibility during refactor."""
+        return self.create_collapsible_group(title, True)
+
+    def add_dual_row(self, layout: QFormLayout, widget1: QWidget, widget2: QWidget, label1: str = "", label2: str = ""):
+        """Phase 5: Add two widgets in a single row (2-column grid)."""
+        container = QWidget()
+        h_layout = QHBoxLayout(container)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(4)
+
+        if label1:
+            l1 = QLabel(label1)
+            l1.setProperty("class", "small")
+            h_layout.addWidget(l1)
+        h_layout.addWidget(widget1)
+
+        if label2:
+            l2 = QLabel(label2)
+            l2.setProperty("class", "small")
+            h_layout.addWidget(l2)
+        h_layout.addWidget(widget2)
+
+        layout.addRow(container)
+
+    def create_spinbox(
+        self,
+        value: float,
+        min_v: float,
+        max_v: float,
+        step: float,
+        callback: Callable,
+        is_float: bool = False,
+    ) -> Union[QSpinBox, QDoubleSpinBox]:
+        """Phase 5: Create spinbox without adding to layout."""
+        spin = QDoubleSpinBox() if is_float else QSpinBox()
+        if is_float:
+            spin.setDecimals(2)
+        spin.setRange(min_v, max_v)
+        spin.setSingleStep(step)
+        spin.setValue(value)
+        spin.valueChanged.connect(callback)
+        return spin
 
     def add_spinbox(
         self,
@@ -522,47 +579,20 @@ class PropertyPanel(QWidget):
         callback: Callable,
         is_float: bool = False,
     ) -> Union[QSpinBox, QDoubleSpinBox]:
-        spin = QDoubleSpinBox() if is_float else QSpinBox()
-        if is_float:
-            spin.setDecimals(2)
-        spin.setRange(min_v, max_v)
-        spin.setSingleStep(step)
-        spin.setValue(value)
-        spin.valueChanged.connect(callback)
+        spin = self.create_spinbox(value, min_v, max_v, step, callback, is_float)
         layout.addRow(label, spin)
         return spin
 
-    def add_slider_spin(
+    def create_slider_spin(
         self,
-        layout: QFormLayout,
-        label: str,
         value: float,
         min_v: float,
         max_v: float,
         commit_cb: Callable[[float], None],
         preview_cb: Optional[Callable[[float], None]] = None,
         unit_scale: float = 1.0,
-    ) -> Tuple[QDoubleSpinBox, QSlider]:
-        """スライダー+スピンの組を追加する（Undo爆発防止版）。
-
-        ルール:
-            - スライダードラッグ中：preview_cb（Undoなし）
-            - スライダーrelease：commit_cb（Undoあり）
-            - スピン変更：commit_cb（Undoあり）
-
-        Args:
-            layout (QFormLayout): 追加先レイアウト。
-            label (str): ラベル。
-            value (float): 初期値（内部値）。
-            min_v (float): 最小。
-            max_v (float): 最大。
-            commit_cb (Callable[[float], None]): 確定反映。
-            preview_cb (Optional[Callable[[float], None]]): プレビュー反映。
-            unit_scale (float): slider int <-> value float の倍率。
-
-        Returns:
-            Tuple[QDoubleSpinBox, QSlider]: (spin, slider)
-        """
+    ) -> Tuple[QWidget, QDoubleSpinBox, QSlider]:
+        """Phase 5: Create slider+spin container."""
         container = QWidget()
         h_layout = QHBoxLayout(container)
         h_layout.setContentsMargins(0, 0, 0, 0)
@@ -595,7 +625,6 @@ class PropertyPanel(QWidget):
                 if preview_cb:
                     preview_cb(real_val)
             else:
-                # プログラム変更時は commit しない（release/スピンで確定）
                 pass
 
         def on_spin_changed(val: float) -> None:
@@ -611,6 +640,20 @@ class PropertyPanel(QWidget):
 
         h_layout.addWidget(slider)
         h_layout.addWidget(spin)
+        return container, spin, slider
+
+    def add_slider_spin(
+        self,
+        layout: QFormLayout,
+        label: str,
+        value: float,
+        min_v: float,
+        max_v: float,
+        commit_cb: Callable[[float], None],
+        preview_cb: Optional[Callable[[float], None]] = None,
+        unit_scale: float = 1.0,
+    ) -> Tuple[QDoubleSpinBox, QSlider]:
+        container, spin, slider = self.create_slider_spin(value, min_v, max_v, commit_cb, preview_cb, unit_scale)
         layout.addRow(label, container)
         return spin, slider
 
@@ -706,20 +749,25 @@ class PropertyPanel(QWidget):
         layout.addRow(label, container)
         return spin, slider
 
-    def add_color_button(
-        self, layout: QFormLayout, label: str, current_color: QColor, callback: Callable
-    ) -> QPushButton:
+    def create_color_button(self, current_color: QColor, callback: Callable) -> QPushButton:
+        """Phase 5: Create color button."""
         btn = QPushButton()
         btn.setFixedHeight(24)
         self.update_color_button_style(btn, current_color)
 
         def on_click():
-            color = QColorDialog.getColor(current_color, self, label, QColorDialog.ShowAlphaChannel)
+            color = QColorDialog.getColor(current_color, self, tr("prop_color"), QColorDialog.ShowAlphaChannel)
             if color.isValid():
                 self.update_color_button_style(btn, color)
                 callback(color)
 
         btn.clicked.connect(on_click)
+        return btn
+
+    def add_color_button(
+        self, layout: QFormLayout, label: str, current_color: QColor, callback: Callable
+    ) -> QPushButton:
+        btn = self.create_color_button(current_color, callback)
         layout.addRow(label, btn)
         return btn
 
@@ -777,9 +825,16 @@ class PropertyPanel(QWidget):
         layout.addRow(label, line_edit)
         return line_edit
 
-    def add_action_button(self, layout: QFormLayout, label: str, callback: Callable) -> QPushButton:
+    def create_action_button(self, label: str, callback: Callable, class_name: str = "secondary-button") -> QPushButton:
         btn = QPushButton(label)
+        btn.setProperty("class", class_name)
         btn.clicked.connect(callback)
+        return btn
+
+    def add_action_button(
+        self, layout: QFormLayout, label: str, callback: Callable, class_name: str = "secondary-button"
+    ) -> QPushButton:
+        btn = self.create_action_button(label, callback, class_name)
         layout.addRow("", btn)
         return btn
 
@@ -787,14 +842,16 @@ class PropertyPanel(QWidget):
 
     def build_common_ui(self, target: Any) -> None:
         """全ウィンドウ共通のトランスフォーム設定。"""
-        layout = self.create_group(tr("prop_grp_transform"))
-        self.spin_x = self.add_spinbox(
-            layout, tr("prop_x"), target.x(), -9999, 9999, 1, lambda v: target.move(v, target.y())
-        )
-        self.spin_y = self.add_spinbox(
-            layout, tr("prop_y"), target.y(), -9999, 9999, 1, lambda v: target.move(target.x(), v)
-        )
-        self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost)
+        # Phase 5: Collapsible Group & Dual Row
+        layout = self.create_collapsible_group(tr("prop_grp_transform"), expanded=True)
+
+        # Dual Row for X / Y
+        self.spin_x = self.create_spinbox(target.x(), -9999, 9999, 1, lambda v: target.move(v, target.y()))
+        self.spin_y = self.create_spinbox(target.y(), -9999, 9999, 1, lambda v: target.move(target.x(), v))
+
+        self.add_dual_row(layout, self.spin_x, self.spin_y, tr("prop_x"), tr("prop_y"))
+
+        self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost, "secondary-button")
 
     def build_text_window_ui(self) -> None:
         """テキストウィンドウ用のUI構築。"""
@@ -807,11 +864,12 @@ class PropertyPanel(QWidget):
         else:
             layout = self.create_group(tr("prop_grp_transform"))
             layout.addRow(QLabel(tr("prop_pos_auto_linked")))
-            self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost)
+            self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost, "secondary-button")
 
         # テキストスタイル
         t_layout = self.create_group(tr("prop_grp_text"))
         self.btn_text_font = QPushButton(f"{target.font_family} ({target.font_size}pt)")
+        self.btn_text_font.setProperty("class", "secondary-button")
 
         def change_font():
             # PySide6 の QFontDialog.getFont は (ok, QFont) を返す（環境により異なる場合があるがエラーログより判断）
@@ -836,24 +894,14 @@ class PropertyPanel(QWidget):
 
         self.spin_text_font_size = self.add_spinbox(
             t_layout,
-            "Size:",
+            tr("prop_size"),
             int(target.font_size),
             1,
             500,
             1,
             lambda v: target.set_undoable_property("font_size", v, "update_text"),
         )
-        t_layout.addRow(tr("prop_font_selector"), typing.cast(QWidget, self.btn_text_font))
 
-        self.spin_text_font_size = self.add_spinbox(
-            t_layout,
-            "Size:",
-            int(target.font_size),
-            1,
-            500,
-            1,
-            lambda v: target.set_undoable_property("font_size", v, "update_text"),
-        )
         self.btn_text_color = self.add_color_button(
             t_layout,
             tr("prop_color"),
@@ -868,6 +916,7 @@ class PropertyPanel(QWidget):
 
         # --- Text Gradient ---
         self.btn_text_gradient_toggle = QPushButton(tr("menu_toggle_text_gradient"))
+        self.btn_text_gradient_toggle.setProperty("class", "toggle")
         self.btn_text_gradient_toggle.setCheckable(True)
         self.btn_text_gradient_toggle.setChecked(target.text_gradient_enabled)
         self.btn_text_gradient_toggle.clicked.connect(
@@ -876,6 +925,7 @@ class PropertyPanel(QWidget):
         t_layout.addRow("", typing.cast(QWidget, self.btn_text_gradient_toggle))
 
         self.btn_edit_text_gradient = QPushButton("🎨 " + tr("menu_edit_text_gradient"))
+        self.btn_edit_text_gradient.setProperty("class", "secondary-button")
         self.btn_edit_text_gradient.clicked.connect(self._open_text_gradient_dialog)
         t_layout.addRow("", typing.cast(QWidget, self.btn_edit_text_gradient))
 
@@ -886,274 +936,380 @@ class PropertyPanel(QWidget):
 
         # Archetype Save Button for Text
         btn_save_text_def = QPushButton("💾 " + tr("btn_save_as_default"))
-        btn_save_text_def.setToolTip("現在のテキストスタイルをデフォルトに設定")
+        btn_save_text_def.setProperty("class", "secondary-button")
+        btn_save_text_def.setToolTip(tr("tip_save_text_default"))
         if self.mw and hasattr(self.mw, "main_controller"):
             btn_save_text_def.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
         t_layout.addRow("", typing.cast(QWidget, btn_save_text_def))
 
-        # 背景
-        bg_layout = self.create_group(tr("menu_bg_settings"))
+        # --- Appearance Group (Collapsed) ---
+        layout = self.create_collapsible_group(tr("prop_grp_background"), expanded=False)
 
-        # visibility toggle
-        self.btn_bg_toggle = QPushButton(tr("menu_toggle_background"))
+        # Background Toggle
+        self.btn_bg_toggle = self.create_action_button(
+            tr("prop_bg_visible"),
+            lambda: target.set_undoable_property("background_visible", not target.background_visible, "update_text"),
+            "toggle",
+        )
         self.btn_bg_toggle.setCheckable(True)
         self.btn_bg_toggle.setChecked(target.background_visible)
-        self.btn_bg_toggle.clicked.connect(
-            lambda c: target.set_undoable_property("background_visible", c, "update_text")
-        )
-        bg_layout.addRow("", typing.cast(QWidget, self.btn_bg_toggle))
+        layout.addRow("", cast(QWidget, self.btn_bg_toggle))
 
-        self.btn_bg_color = self.add_color_button(
-            bg_layout,
-            tr("prop_bg_color"),
-            target.background_color,
-            lambda v: target.set_undoable_property(
-                "background_color", self._normalize_color_to_hexargb(v), "update_text"
+        # Bg Color & Corner (Dual Row)
+        self.btn_bg_color = self.create_color_button(
+            QColor(target.background_color),
+            lambda c: target.set_undoable_property(
+                "background_color", self._normalize_color_to_hexargb(c), "update_text"
             ),
         )
-        commit, prev = self._make_callbacks(target, "background_opacity", "update_text", True)
-        self.spin_bg_opacity, self.slider_bg_opacity = self.add_slider_spin(
-            bg_layout, tr("label_opacity"), target.background_opacity, 0, 100, commit, prev
+        # Corner Radius is slider usually, but for space we might use just spin or simple slider.
+        # Just use spin for dual row to save space? Or small slider.
+        # Let's use spin for Corner in dual row.
+        self.spin_bg_corner = self.create_spinbox(
+            target.background_corner_ratio,
+            0,
+            100,
+            1,
+            lambda v: target.set_undoable_property("background_corner_ratio", v, "update_text"),
         )
+        # We lose the slider for corner radius in this view, effectively.
+        # But wait, original had slider.
+        # If we want dual, we use spin.
+        self.add_dual_row(layout, self.btn_bg_color, self.spin_bg_corner, tr("prop_color"), tr("prop_corner_radius"))
+        # Hack: Init a dummy slider for `_update_text_values` compatibility
+        # OR update `_update_text_values` to handle missing slider.
+        self.slider_bg_corner = None
 
-        # --- Background Gradient ---
-        self.btn_bg_gradient_toggle = QPushButton(tr("menu_toggle_bg_gradient"))
+        # Bg Opacity (0-100 int range)
+        c_bg_opacity, self.spin_bg_opacity, self.slider_bg_opacity = self.create_slider_spin(
+            target.background_opacity,
+            0,
+            100,
+            lambda v: target.set_undoable_property("background_opacity", v, "update_text"),
+            lambda v: setattr(target, "background_opacity", v) or target.update_text(),
+        )
+        layout.addRow(tr("prop_opacity"), c_bg_opacity)
+
+        # Bg Gradient
+        self.btn_bg_gradient_toggle = self.create_action_button(
+            tr("prop_gradient_enabled"),
+            lambda: target.set_undoable_property(
+                "background_gradient_enabled", not target.background_gradient_enabled, "update_text"
+            ),
+            "toggle",
+        )
         self.btn_bg_gradient_toggle.setCheckable(True)
         self.btn_bg_gradient_toggle.setChecked(target.background_gradient_enabled)
-        self.btn_bg_gradient_toggle.clicked.connect(
-            lambda c: target.set_undoable_property("background_gradient_enabled", c, "update_text")
-        )
-        bg_layout.addRow("", typing.cast(QWidget, self.btn_bg_gradient_toggle))
 
-        self.btn_edit_bg_gradient = QPushButton("🎨 " + tr("menu_edit_bg_gradient"))
-        self.btn_edit_bg_gradient.clicked.connect(self._open_bg_gradient_dialog)
-        bg_layout.addRow("", typing.cast(QWidget, self.btn_edit_bg_gradient))
-
-        commit, prev = self._make_callbacks(target, "background_gradient_opacity", "update_text", True)
-        self.spin_bg_gradient_opacity, self.slider_bg_gradient_opacity = self.add_slider_spin(
-            bg_layout, tr("menu_set_bg_gradient_opacity"), target.background_gradient_opacity, 0, 100, commit, prev
+        self.btn_edit_bg_gradient = self.create_action_button(
+            tr("prop_gradient_edit"), self._open_bg_gradient_dialog, "secondary-button"
         )
+        self.add_dual_row(layout, self.btn_bg_gradient_toggle, self.btn_edit_bg_gradient)
 
-        commit, prev = self._make_callbacks(target, "background_corner_ratio", "update_text", False)
-        self.spin_bg_corner, self.slider_bg_corner = self.add_slider_spin(
-            bg_layout, tr("label_ratio"), target.background_corner_ratio, 0.0, 2.0, commit, prev, 100.0
+        c_bg_g_opacity, self.spin_bg_gradient_opacity, self.slider_bg_gradient_opacity = self.create_slider_spin(
+            target.background_gradient_opacity,
+            0,
+            100,
+            lambda v: target.set_undoable_property("background_gradient_opacity", v, "update_text"),
+            lambda v: setattr(target, "background_gradient_opacity", v) or target.update_text(),
         )
+        layout.addRow(tr("prop_opacity"), c_bg_g_opacity)
 
         # Archetype Save Button for Background
         btn_save_bg_def = QPushButton("💾 " + tr("btn_save_as_default"))
-        btn_save_bg_def.setToolTip("現在のバックスタイルをデフォルトに設定")
+        btn_save_bg_def.setProperty("class", "secondary-button")
+        btn_save_bg_def.setToolTip(tr("tip_save_bg_default"))
         if self.mw and hasattr(self.mw, "main_controller"):
             btn_save_bg_def.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
-        bg_layout.addRow("", typing.cast(QWidget, btn_save_bg_def))
+        layout.addRow("", typing.cast(QWidget, btn_save_bg_def))
 
-        # 背景枠線 (Legacy Feature Restoration)
-        self.add_bg_outline_settings(target)
+        # --- Effects Group (Collapsed) ---
+        layout = self.create_collapsible_group(tr("prop_grp_shadow"), expanded=False)
 
-        for i in range(1, 4):
-            self.add_outline_settings(target, i)
-
-        # 影
-        sh_layout = self.create_group(tr("prop_grp_shadow"))
-        self.btn_shadow_toggle = QPushButton(tr("menu_toggle_shadow"))
+        # Shadow Toggle
+        self.btn_shadow_toggle = self.create_action_button(
+            tr("prop_shadow_enabled"),
+            lambda: target.set_undoable_property("shadow_enabled", not target.shadow_enabled, "update_text"),
+            "toggle",
+        )
         self.btn_shadow_toggle.setCheckable(True)
         self.btn_shadow_toggle.setChecked(target.shadow_enabled)
-        self.btn_shadow_toggle.clicked.connect(
-            lambda c: target.set_undoable_property("shadow_enabled", c, "update_text")
+        layout.addRow("", cast(QWidget, self.btn_shadow_toggle))
+
+        # Shadow Color & Blur (Dual Row)
+        self.btn_shadow_color = self.create_color_button(
+            QColor(target.shadow_color),
+            lambda c: target.set_undoable_property("shadow_color", self._normalize_color_to_hexargb(c), "update_text"),
         )
-        sh_layout.addRow("", typing.cast(QWidget, self.btn_shadow_toggle))
-        self.btn_shadow_color = self.add_color_button(
-            sh_layout,
-            tr("prop_color"),
-            target.shadow_color,
-            lambda v: target.set_undoable_property("shadow_color", self._normalize_color_to_hexargb(v), "update_text"),
+        self.spin_shadow_blur = self.create_spinbox(
+            target.shadow_blur, 0, 100, 1, lambda v: target.set_undoable_property("shadow_blur", v, "update_text")
         )
-        commit, prev = self._make_callbacks(target, "shadow_opacity", "update_text", True)
-        self.spin_shadow_opacity, self.slider_shadow_opacity = self.add_slider_spin(
-            sh_layout, tr("label_opacity"), target.shadow_opacity, 0, 100, commit, prev
-        )
-        commit, prev = self._make_callbacks(target, "shadow_blur", "update_text", True)
-        self.spin_shadow_blur, self.slider_shadow_blur = self.add_slider_spin(
-            sh_layout, tr("label_blur"), target.shadow_blur, 0, 100, commit, prev
-        )
-        self.spin_shadow_offset_x = self.add_spinbox(
-            sh_layout,
-            tr("label_shadow_offset_x"),
+        self.add_dual_row(layout, self.btn_shadow_color, self.spin_shadow_blur, tr("prop_color"), tr("prop_blur"))
+        self.slider_shadow_blur = None  # Compatibility
+
+        # Shadow Offset X/Y (Dual Row)
+        self.spin_shadow_offset_x = self.create_spinbox(
             target.shadow_offset_x,
-            -10.0,
-            10.0,
-            0.1,
-            lambda v: target.set_undoable_property("shadow_offset_x", v, "update_text"),
-            True,
-        )
-        self.spin_shadow_offset_y = self.add_spinbox(
-            sh_layout,
-            tr("label_shadow_offset_y"),
-            target.shadow_offset_y,
-            -10.0,
-            10.0,
-            0.1,
-            lambda v: target.set_undoable_property("shadow_offset_y", v, "update_text"),
-            True,
-        )
-
-    def add_outline_settings(self, target: Any, index: int) -> None:
-        """縁取り設定セクションを追加します。"""
-        prefix = "" if index == 1 else "second_" if index == 2 else "third_"
-        layout = self.create_group(f"{tr('prop_grp_outline')} ({index})")
-
-        toggle = QPushButton("Enable")
-        toggle.setCheckable(True)
-        toggle.setChecked(getattr(target, f"{prefix}outline_enabled"))
-        toggle.clicked.connect(lambda c: target.set_undoable_property(f"{prefix}outline_enabled", c, "update_text"))
-        layout.addRow("", toggle)
-        setattr(self, f"btn_outline_{index}_toggle", toggle)
-
-        btn_c = self.add_color_button(
-            layout,
-            tr("prop_color"),
-            getattr(target, f"{prefix}outline_color"),
-            lambda v: target.set_undoable_property(
-                f"{prefix}outline_color",
-                self._normalize_color_to_hexargb(v),
-                "update_text",
-            ),
-        )
-        setattr(self, f"btn_outline_{index}_color", btn_c)
-
-        spin_w = self.add_spinbox(
-            layout,
-            tr("label_width"),
-            getattr(target, f"{prefix}outline_width"),
-            0.0,
-            100.0,
-            0.5,
-            lambda v: target.set_undoable_property(f"{prefix}outline_width", v, "update_text"),
-            True,
-        )
-        setattr(self, f"spin_outline_{index}_width", spin_w)
-
-        commit, prev = self._make_callbacks(target, f"{prefix}outline_opacity", "update_text", True)
-        s_op, sl_op = self.add_slider_spin(
-            layout, tr("label_opacity"), getattr(target, f"{prefix}outline_opacity"), 0, 100, commit, prev
-        )
-        setattr(self, f"spin_outline_{index}_opacity", s_op)
-        setattr(self, f"slider_outline_{index}_opacity", sl_op)
-
-        commit, prev = self._make_callbacks(target, f"{prefix}outline_blur", "update_text", True)
-        s_bl, sl_bl = self.add_slider_spin(
-            layout, tr("label_blur"), getattr(target, f"{prefix}outline_blur"), 0, 100, commit, prev
-        )
-        setattr(self, f"spin_outline_{index}_blur", s_bl)
-        setattr(self, f"slider_outline_{index}_blur", sl_bl)
-
-    def add_bg_outline_settings(self, target: Any) -> None:
-        """背景枠線設定セクションを追加します。"""
-        layout = self.create_group(tr("menu_toggle_bg_outline"))
-
-        # Toggle
-        toggle = QPushButton("Enable")
-        toggle.setCheckable(True)
-        toggle.setChecked(target.background_outline_enabled)
-        toggle.clicked.connect(lambda c: target.set_undoable_property("background_outline_enabled", c, "update_text"))
-        layout.addRow("", toggle)
-        self.btn_bg_outline_toggle = toggle
-
-        # Color
-        self.btn_bg_outline_color = self.add_color_button(
-            layout,
-            tr("prop_color"),
-            target.background_outline_color,
-            lambda v: target.set_undoable_property(
-                "background_outline_color", self._normalize_color_to_hexargb(v), "update_text"
-            ),
-        )
-
-        # Width Ratio
-        self.spin_bg_outline_width = self.add_spinbox(
-            layout,
-            tr("label_bg_outline_width"),
-            target.background_outline_width_ratio,
-            0.0,
-            1.0,
-            0.01,
-            lambda v: target.set_undoable_property("background_outline_width_ratio", v, "update_text"),
-            True,
-        )
-
-        # Opacity
-        commit, prev = self._make_callbacks(target, "background_outline_opacity", "update_text", True)
-        self.spin_bg_outline_opacity, self.slider_bg_outline_opacity = self.add_slider_spin(
-            layout, tr("label_opacity"), target.background_outline_opacity, 0, 100, commit, prev
-        )
-
-    def build_image_window_ui(self) -> None:
-        """画像ウィンドウ用のUI構築。"""
-        target = self.current_target
-        self.build_common_ui(target)
-        layout = self.create_group(tr("prop_grp_appearance"))
-
-        commit, prev = self._make_callbacks(target, "scale_factor", "update_image", False)
-        self.spin_img_scale, self.slider_img_scale = self.add_slider_spin_percent(
-            layout,
-            tr("btn_img_selected_size_pct")
-            if tr("btn_img_selected_size_pct") != "btn_img_selected_size_pct"
-            else "Size:",
-            target.scale_factor,
+            -100,
+            100,
             1,
-            500,
-            commit,
-            prev,
-            scale=100.0,
+            lambda v: target.set_undoable_property("shadow_offset_x", v, "update_text"),
+        )
+        self.spin_shadow_offset_y = self.create_spinbox(
+            target.shadow_offset_y,
+            -100,
+            100,
+            1,
+            lambda v: target.set_undoable_property("shadow_offset_y", v, "update_text"),
+        )
+        self.add_dual_row(
+            layout, self.spin_shadow_offset_x, self.spin_shadow_offset_y, tr("label_offset_x"), tr("label_offset_y")
         )
 
-        commit, prev = self._make_callbacks(target, "opacity", "update_image", False)
-        self.spin_img_opacity, self.slider_img_opacity = self.add_slider_spin_percent(
-            layout,
-            tr("label_opacity"),
-            target.opacity,
+        # Shadow Opacity
+        c_sh_opacity, self.spin_shadow_opacity, self.slider_shadow_opacity = self.create_slider_spin(
+            target.shadow_opacity,
             0,
             100,
-            commit,
-            prev,
-            scale=100.0,
+            lambda v: target.set_undoable_property("shadow_opacity", v, "update_text"),
+            lambda v: setattr(target, "shadow_opacity", v) or target.update_text(),
         )
+        layout.addRow(tr("prop_opacity"), c_sh_opacity)
 
-        commit, prev = self._make_callbacks(target, "rotation_angle", "update_image", False)
-        self.spin_img_rotation, self.slider_img_rotation = self.add_slider_spin(
-            layout, tr("label_rotation"), target.rotation_angle, 0, 360, commit, prev
+        # --- Outline Group (Restored) ---
+        layout = self.create_collapsible_group(tr("prop_grp_outline_settings"), expanded=False)
+
+        # Helper for Outline
+        def add_outline_ui(index: int) -> None:
+            prefix = "" if index == 1 else "second_" if index == 2 else "third_"
+            ui_label_key = f"prop_outline_{index}"
+
+            # Toggle & Color (Dual)
+            btn_toggle = self.create_action_button(
+                tr(ui_label_key),
+                lambda: target.set_undoable_property(
+                    f"{prefix}outline_enabled", not getattr(target, f"{prefix}outline_enabled"), "update_text"
+                ),
+                "toggle",
+            )
+            btn_toggle.setCheckable(True)
+            btn_toggle.setChecked(getattr(target, f"{prefix}outline_enabled"))
+            setattr(self, f"btn_outline_{index}_toggle", btn_toggle)
+
+            btn_color = self.create_color_button(
+                QColor(getattr(target, f"{prefix}outline_color")),
+                lambda c: target.set_undoable_property(
+                    f"{prefix}outline_color", self._normalize_color_to_hexargb(c), "update_text"
+                ),
+            )
+            setattr(self, f"btn_outline_{index}_color", btn_color)
+
+            self.add_dual_row(layout, btn_toggle, btn_color)
+
+            # Width & Blur (Dual)
+            spin_width = self.create_spinbox(
+                getattr(target, f"{prefix}outline_width"),
+                0,
+                100,
+                0.5,
+                lambda v: target.set_undoable_property(f"{prefix}outline_width", v, "update_text"),
+                is_float=True,
+            )
+            setattr(self, f"spin_outline_{index}_width", spin_width)
+
+            spin_blur = self.create_spinbox(
+                getattr(target, f"{prefix}outline_blur"),
+                0,
+                100,
+                0.5,
+                lambda v: target.set_undoable_property(f"{prefix}outline_blur", v, "update_text"),
+                is_float=True,
+            )
+            setattr(self, f"spin_outline_{index}_blur", spin_blur)
+
+            self.add_dual_row(layout, spin_width, spin_blur, tr("prop_width"), tr("prop_blur"))
+
+            # Opacity (0-100 int range)
+            c_op, spin_op, slider_op = self.create_slider_spin(
+                getattr(target, f"{prefix}outline_opacity"),
+                0,
+                100,
+                lambda v: target.set_undoable_property(f"{prefix}outline_opacity", v, "update_text"),
+                lambda v: setattr(target, f"{prefix}outline_opacity", v) or target.update_text(),
+            )
+            setattr(self, f"spin_outline_{index}_opacity", spin_op)
+            setattr(self, f"slider_outline_{index}_opacity", slider_op)
+            layout.addRow(tr("prop_opacity"), c_op)
+
+        # Add 3 outlines
+        for i in range(1, 4):
+            add_outline_ui(i)
+
+        # Background Outline
+        btn_bg_out_toggle = self.create_action_button(
+            tr("prop_bg_outline"),
+            lambda: target.set_undoable_property(
+                "background_outline_enabled", not target.background_outline_enabled, "update_text"
+            ),
+            "toggle",
         )
+        btn_bg_out_toggle.setCheckable(True)
+        btn_bg_out_toggle.setChecked(target.background_outline_enabled)
+        self.btn_bg_outline_toggle = btn_bg_out_toggle
 
-        f_layout = QHBoxLayout()
-        for axis in ["horizontal", "vertical"]:
-            btn = QPushButton(tr(f"menu_flip_{axis[0]}"))
-            btn.setCheckable(True)
-            btn.setChecked(getattr(target, f"flip_{axis}", False))
-            btn.clicked.connect(lambda c, a=axis: target.set_undoable_property(f"flip_{a}", c, "update_image"))
-            f_layout.addWidget(btn)
-        layout.addRow("Flip:", f_layout)
+        btn_bg_out_color = self.create_color_button(
+            QColor(target.background_outline_color),
+            lambda c: target.set_undoable_property(
+                "background_outline_color", self._normalize_color_to_hexargb(c), "update_text"
+            ),
+        )
+        self.btn_bg_outline_color = btn_bg_out_color
+        self.add_dual_row(layout, btn_bg_out_toggle, btn_bg_out_color)
 
-        a_layout = self.create_group(tr("menu_anim_setting_image"))
-        commit, prev = self._make_callbacks(target, "animation_speed_factor", "_update_animation_timer", False)
-        self.spin_anim_speed, self.slider_anim_speed = self.add_slider_spin_percent(
-            a_layout,
-            tr("title_anim_speed"),
-            target.animation_speed_factor,
+        # BG Outline Width (Ratio)
+        self.spin_bg_outline_width = self.create_spinbox(
+            target.background_outline_width_ratio,
             0,
-            500,
-            commit,
-            prev,
-            scale=100.0,
+            10,
+            0.1,
+            lambda v: target.set_undoable_property("background_outline_width_ratio", v, "update_text"),
+            is_float=True,
         )
-        self.add_action_button(a_layout, tr("menu_reset_gif_apng_playback_speed"), target.reset_animation_speed)
+        # Opacity (0-100 int range)
+        c_bg_out_op, self.spin_bg_outline_opacity, self.slider_bg_outline_opacity = self.create_slider_spin(
+            target.background_outline_opacity,
+            0,
+            100,
+            lambda v: target.set_undoable_property("background_outline_opacity", v, "update_text"),
+            lambda v: setattr(target, "background_outline_opacity", v) or target.update_text(),
+        )
+        layout.addRow(tr("label_width_ratio"), cast(QWidget, self.spin_bg_outline_width))
+        layout.addRow(tr("prop_opacity"), c_bg_out_op)
+
+    def build_image_window_ui(self) -> None:
+        target = self.current_target
+        if not target:
+            return
+
+        self.build_common_ui(target)
+
+        layout = self.create_collapsible_group(tr("prop_grp_image"), expanded=True)
+
+        c_scale, self.spin_img_scale, self.slider_img_scale = self.create_slider_spin(
+            target.scale_factor,
+            0.1,
+            5.0,
+            lambda v: target.set_undoable_property("scale_factor", v, "update_image"),
+            lambda v: setattr(target, "scale_factor", v) or target.update_image(),
+            unit_scale=100.0,
+        )
+        layout.addRow(tr("prop_scale"), c_scale)
+
+        c_opacity, self.spin_img_opacity, self.slider_img_opacity = self.create_slider_spin(
+            target.opacity,
+            0,
+            1,
+            lambda v: target.set_undoable_property("opacity", v, "update_image"),
+            lambda v: setattr(target, "opacity", v) or target.update_image(),
+        )
+        layout.addRow(tr("prop_opacity"), c_opacity)
+
+        c_rot, self.spin_img_rotation, self.slider_img_rotation = self.create_slider_spin(
+            target.rotation_angle,
+            -360,
+            360,
+            lambda v: target.set_undoable_property("rotation_angle", v, "update_image"),
+            lambda v: setattr(target, "rotation_angle", v) or target.update_image(),
+        )
+        layout.addRow(tr("prop_rotation"), c_rot)
+
+        c_speed, self.spin_anim_speed, self.slider_anim_speed = self.create_slider_spin(
+            target.animation_speed_factor,
+            0.1,
+            10.0,
+            lambda v: target.set_undoable_property("animation_speed_factor", v, "_update_animation_timer"),
+            unit_scale=100.0,
+        )
+        layout.addRow(tr("prop_anim_speed"), c_speed)
+
+        # Animation Controls (Play/Pause/Reset)
+        def _anim_play():
+            # 停止中(0)なら元の速度(または1.0)に戻す
+            if target.animation_speed_factor == 0:
+                new_speed = (
+                    target.original_animation_speed_factor if target.original_animation_speed_factor > 0 else 1.0
+                )
+                target.set_undoable_property("animation_speed_factor", new_speed, "_update_animation_timer")
+
+        def _anim_pause():
+            # 現在の速度を保存して0にする
+            if target.animation_speed_factor > 0:
+                target.original_animation_speed_factor = target.animation_speed_factor
+                target.set_undoable_property("animation_speed_factor", 0.0, "_update_animation_timer")
+
+        btn_anim_play = self.create_action_button(
+            tr("btn_anim_play"),
+            _anim_play,
+            "secondary-button",
+        )
+        btn_anim_pause = self.create_action_button(
+            tr("btn_anim_pause"),
+            _anim_pause,
+            "secondary-button",
+        )
+
+        # Reset: 速度を1.0に戻し、フレームもリセットするか？
+        # ここでは速度リセットのみ（フレームリセットは別途Reset Frameが欲しいかもだが、要望はReset）
+        # 文脈的に「再生状態のリセット」なら速度1.0 + フレーム0 が自然。
+        def _anim_reset():
+            target.current_frame = 0
+            target.set_undoable_property("animation_speed_factor", 1.0, "_update_animation_timer")
+            target.update_image()
+
+        btn_anim_reset = self.create_action_button(
+            tr("btn_anim_reset"),
+            _anim_reset,
+            "secondary-button",
+        )
+
+        # Dual row? Triple row?
+        # Play | Pause | Reset
+        row_anim = QHBoxLayout()
+        row_anim.setContentsMargins(0, 0, 0, 0)
+        row_anim.setSpacing(4)
+        row_anim.addWidget(btn_anim_play)
+        row_anim.addWidget(btn_anim_pause)
+        row_anim.addWidget(btn_anim_reset)
+        layout.addRow(tr("menu_anim_toggle"), row_anim)
+
+        btn_flip_h = self.create_action_button(
+            tr("btn_flip_horizontal"),
+            lambda: target.set_undoable_property("flip_horizontal", not target.flip_horizontal, "update_image"),
+            "secondary-button",
+        )
+        btn_flip_v = self.create_action_button(
+            tr("btn_flip_vertical"),
+            lambda: target.set_undoable_property("flip_vertical", not target.flip_vertical, "update_image"),
+            "secondary-button",
+        )
+        self.add_dual_row(layout, btn_flip_h, btn_flip_v)
+
+        self.add_action_button(
+            layout,
+            tr("btn_unlock") if target.is_locked else tr("btn_lock"),
+            lambda: setattr(target, "is_locked", not target.is_locked) or self.refresh_ui(),
+            "danger-button" if target.is_locked else "secondary-button",
+        )
 
     def build_connector_ui(self) -> None:
         """接続線用のUI構築。"""
         target = self.current_target
-        layout = self.create_group(tr("prop_grp_connection"))
+        layout = self.create_collapsible_group(tr("prop_grp_connection"), expanded=True)
 
         self.add_color_button(
             layout, tr("prop_color"), target.line_color, lambda v: setattr(target, "line_color", v) or target.update()
         )
+
         self.add_spinbox(
             layout,
             tr("label_width"),
@@ -1179,27 +1335,21 @@ class PropertyPanel(QWidget):
         ]
         self.add_combo(layout, tr("prop_arrow"), target.arrow_style, arrows, lambda v: target.set_arrow_style(v))
 
-        text = target.label_window.text if hasattr(target, "label_window") and target.label_window else ""
-        self.add_text_edit(
-            layout,
-            tr("prop_label_text"),
-            text,
-            lambda t: (
-                target.label_window.set_undoable_property("text", t, "update_text") if target.label_window else None
-            ),
-        )
+        if hasattr(target, "label_window") and target.label_window:
+            self.add_text_edit(
+                layout, tr("label_text"), target.label_window.text, lambda v: target.label_window.set_text(v)
+            )
 
         if hasattr(target, "label_window") and target.label_window:
-            btn = QPushButton(tr("menu_select_text_window"))
-            # btn.setStyleSheet("background-color: #555; color: white; margin-top: 5px;") # Legacy
-            btn.setProperty("class", "secondary-button")  # Use .secondary-button
-            btn.clicked.connect(lambda: self.set_target(target.label_window))
+            btn = self.create_action_button(
+                tr("menu_select_text_window"), lambda: self.set_target(target.label_window), "secondary-button"
+            )
             layout.addRow("", btn)
 
         # Delete Button (Danger)
-        del_btn = QPushButton(tr("menu_delete_line"))
-        del_btn.setProperty("class", "danger")  # Use .danger class
-        del_btn.clicked.connect(lambda: target.delete_line() or self.set_target(None))
+        del_btn = self.create_action_button(
+            tr("menu_delete_line"), lambda: target.delete_line() or self.set_target(None), "danger-button"
+        )
         layout.addRow("", del_btn)
 
     def _make_callbacks(
