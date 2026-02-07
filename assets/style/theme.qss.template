@@ -6,6 +6,7 @@
 QWidget {
     font-family: "Segoe UI", "Meiryo", sans-serif;
     color: @text_primary;
+    background-color: @bg_primary; /* Phase 4.7: Force dark background everywhere to fix OS white bleed */
 }
 
 /* ============================================================
@@ -37,7 +38,7 @@ QTabBar::tab {
     background: @bg_primary;
     border: 1px solid @border;
     border-bottom: none;
-    padding: 8px 16px;
+    padding: 6px 8px;
     margin-right: 2px;
     border-top-left-radius: 4px;
     border-top-right-radius: 4px;
@@ -47,7 +48,7 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: @bg_secondary;
     border-bottom: 2px solid @accent_primary;
-    color: @accent_primary;
+    color: #ffffff; /* Phase 4.6: White text for selected tab */
     font-weight: bold;
 }
 
@@ -58,12 +59,19 @@ QTabBar::tab:hover {
 /* ============================================================
    Groups (QGroupBox)
    ============================================================ */
+/* ============================================================
+   Groups (QGroupBox)
+   ============================================================ */
 QGroupBox {
     border: 1px solid @border;
     border-radius: 6px;
-    margin-top: 24px;
+    margin-top: 10px; /* Legacy: 8px-10px */
     font-weight: bold;
     color: @text_dim;
+}
+
+QGroupBox QLabel {
+    color: @text_primary; /* Reset text color for children */
 }
 
 QGroupBox::title {
@@ -71,75 +79,70 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 10px;
     padding: 0 5px;
-    color: @accent_primary;
+    color: @text_primary; /* Phase 4.6: De-accented (was @accent_primary) */
 }
 
 /* ============================================================
    Buttons (QPushButton)
    ============================================================ */
 QPushButton {
-    background-color: @surface;
+    background-color: @accent_primary; /* Legacy: Blue Default */
     border: 1px solid @border;
     border-radius: 4px;
-    padding: 6px 12px;
-    color: @text_primary;
+    padding: 6px 6px;
+    color: #ffffff; /* Always white on blue */
 }
 
 QPushButton:hover {
-    background-color: #e5e5e5;
+    background-color: @accent_hover;
     border-color: @accent_primary;
 }
 
 QPushButton:pressed {
-    background-color: #d0d0d0;
+    background-color: #005f9e;
 }
 
-/* Semantic Classes (setProperty("class", "primary") etc) */
-
-/* .primary */
-QPushButton[class="primary"] {
-    background-color: @accent_primary;
+/* .action / #ActionBtn (Secondary Action - Grey) */
+QPushButton[class="action"], QPushButton#ActionBtn {
+    background-color: @bg_secondary; /* Use Surface/Secondary for Action */
+    color: @text_primary;
+    border: 1px solid @border;
+}
+QPushButton[class="action"]:hover, QPushButton#ActionBtn:hover {
+    background-color: @border; /* Slightly lighter gray */
     color: #ffffff;
-    border: none;
-}
-QPushButton[class="primary"]:hover {
-    background-color: @accent_hover;
 }
 
-/* .danger */
-QPushButton[class="danger"] {
-    background-color: @surface;
-    color: @danger;
-    border: 1px solid @danger;
+/* Action Button Checked State (Restoring "Light Blue Overlay") */
+QPushButton[class="action"]:checked, QPushButton#ActionBtn:checked {
+    background-color: rgba(0, 122, 204, 0.4); /* @accent_primary with 40% opacity */
+    color: @text_primary; /* Keep text readable */
+    border: 1px solid @accent_primary;
 }
-QPushButton[class="danger"]:hover {
+
+/* .danger / #DangerBtn (Destructive Action - Red) */
+QPushButton[class="danger"], QPushButton#DangerBtn {
     background-color: @danger;
     color: #ffffff;
+    border: 1px solid @danger;
 }
-
-/* .action (Secondary Action) */
-QPushButton[class="action"] {
-    background-color: #eef6fc; /* Light Blue tint */
-    color: @accent_primary;
-    border: 1px solid #cce4f7;
-}
-QPushButton[class="action"]:hover {
-    background-color: @accent_primary;
-    color: #ffffff;
+QPushButton[class="danger"]:hover, QPushButton#DangerBtn:hover {
+    background-color: #b04040; /* Darker red hover */
+    border-color: #b04040;
 }
 
 /* .large-button (Main Call to Action) */
 QPushButton[class="large-button"] {
     font-size: 16px;
     font-weight: bold;
-    padding: 12px;
+    padding: 10px;
 }
 
 /* .emphasized (Sub-Main Button) */
 QPushButton[class="emphasized"] {
     font-size: 14px;
     font-weight: bold;
-    padding: 8px;
+    padding: 6px;
 }
 
 /* Toggle Buttons (Checkable) */
@@ -162,6 +165,19 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {
 
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
     border: 1px solid @accent_primary;
+}
+
+/* ListView & ComboBox Popup */
+QListView, QComboBox QAbstractItemView {
+    background-color: @bg_secondary;
+    color: @text_primary;
+    border: 1px solid @border;
+    outline: none;
+}
+
+QListView::item:selected, QComboBox QAbstractItemView::item:selected {
+    background-color: @accent_primary;
+    color: #ffffff;
 }
 
 /* ============================================================
@@ -192,6 +208,81 @@ QLabel[class="hint"] {
     margin-top: 5px;
 }
 
+QLabel[class="edition-label"] {
+    font-weight: bold;
+    color: @text_dim;
+    font-size: 14px;
+}
+
+/* Fix for Dialog Labels being too dim */
+QDialog {
+    background-color: @bg_secondary; /* Use secondary bg for dialogs usually, or primary? Plan said Primary but existing dialogs often use Secondary. Let's stick to Plan or consistency. Main Window is Primary. Dialogs usually float on top. Let's use BG_SECONDARY for consistency with Panel/Menu, OR Primary?
+    Actually, standard QDialog often looks better with same bg as main window or slightly lighter.
+    Plan said "@bg_primary". Let's use @bg_secondary which is typically the "Panel/Surface" color in VSCode-like themes (#252526). @bg_primary is #1e1e1e.
+    If I use @bg_secondary, it matches the QGroupBoxes inside.
+    Let's use @bg_secondary to match QMenu/PropertyPanel.
+     */
+    background-color: @bg_secondary;
+}
+
+QDialog QLabel {
+    color: @text_primary;
+    font-weight: normal;
+}
+
+QLabel[class="monospace-label"] {
+    color: @text_primary;
+    font-family: Consolas, Monospace;
+    line-height: 1.4;
+}
+
+/* ============================================================
+   Utility Classes (Phase 5: Hardcoded Migration)
+   ============================================================ */
+
+/* Text Utilities */
+QLabel[class="danger-text"] {
+    color: @danger; /* #d32f2f */
+    font-weight: bold;
+}
+
+QLabel[class="hint-text"] {
+    color: @text_dim; /* #aaaaaa */
+    font-size: 11px;
+}
+
+QLabel[class="footer-text"] {
+    color: @text_dim;
+    font-size: 11px;
+    margin-top: 5px;
+}
+
+QLabel[class="bold-label"] {
+    font-weight: bold;
+    color: @text_dim; /* Usually used for headers */
+}
+
+/* Button Utilities */
+QPushButton[class="secondary-button"] {
+    background-color: @bg_secondary; /* #323232 */
+    color: @text_primary;
+    border: 1px solid @border;
+}
+QPushButton[class="secondary-button"]:hover {
+    background-color: @border;
+}
+
+QPushButton[class="danger-button"] {
+    background-color: @danger;
+    color: #ffffff;
+    font-weight: bold;
+    border: 1px solid @danger;
+}
+QPushButton[class="danger-button"]:hover {
+    background-color: #b04040;
+    border-color: #b04040;
+}
+
 /* ============================================================
    Property Panel Specific
    ============================================================ */
@@ -200,6 +291,102 @@ QWidget#PropertyPanel {
     border-left: 1px solid @border;
 }
 
+/* Dense GroupBox inside PropertyPanel for Phase 4.3 */
 QWidget#PropertyPanel QGroupBox {
-    margin-top: 10px;
+    margin-top: 16px; /* Increased from 10px to fix title cutoff (Phase 4.4) */
+    padding-top: 6px;
+    border: 1px solid #333; /* Subtler border */
+}
+
+QWidget#PropertyPanel QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 8px;
+    padding: 0 4px;
+    top: -2px; /* Adjusted from -6px to keep it inside bounds */
+    font-size: 11px; /* Smaller font */
+    color: @accent_primary;
+}
+
+/* Tighter vertical spacing for forms is handled in Python,
+   but we can try to tighten widgets here */
+QWidget#PropertyPanel QLineEdit,
+QWidget#PropertyPanel QSpinBox, 
+QWidget#PropertyPanel QDoubleSpinBox, 
+QWidget#PropertyPanel QComboBox {
+    padding: 3px;
+    height: 20px; /* Force compact height */
+}
+
+
+/* ============================================================
+   Menus & Tooltips
+   ============================================================ */
+QMenu {
+    background-color: @bg_secondary;
+    border: 1px solid @border;
+    padding: 5px;
+}
+
+QMenu::item {
+    background-color: transparent;
+    padding: 4px 12px;
+    color: @text_primary;
+}
+
+QMenu::item:selected {
+    background-color: @accent_primary;
+    color: #ffffff;
+}
+
+QToolTip {
+    background-color: @bg_secondary;
+    border: 1px solid @border;
+    color: @text_primary;
+    padding: 4px;
+}
+
+/* ============================================================
+   Scrollbars
+   ============================================================ */
+QScrollBar:vertical {
+    border: none;
+    background: @bg_primary;
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #555;
+    min-height: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: @accent_primary;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: @bg_primary;
+    height: 10px;
+    margin: 0px 0px 0px 0px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #555;
+    min-width: 20px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: @accent_primary;
+}
+
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0px;
 }

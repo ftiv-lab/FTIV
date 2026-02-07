@@ -100,6 +100,39 @@ class BulkOperationManager:
         """特定のテキストウィンドウのコンテキストメニューを表示。"""
         text_window.show_context_menu(self.mw.mapToGlobal(pos))
 
+    def show_image_window_context_menu(self, image_window: Any) -> None:
+        """特定の画像ウィンドウのコンテキストメニューを表示。"""
+        # ImageWindow.show_context_menu は引数なしか、QPointかを要確認
+        # 通常は QCursor.pos() を使う実装が多いが、シグネチャによる
+        # ここでは cursor position を使用する前提
+        try:
+            from PySide6.QtGui import QCursor
+
+            image_window.show_context_menu(QCursor.pos())
+        except Exception:
+            pass
+
+    def toggle_all_frontmost_image_windows(self) -> None:
+        """全画像ウィンドウの最前面状態をトグル切り替え。"""
+        if not hasattr(self.mw, "image_windows") or not self.mw.image_windows:
+            return
+
+        # 最初のウィンドウの状態を見て反転
+        first = self.mw.image_windows[0]
+        target_state = not getattr(first, "is_frontmost", False)
+
+        if hasattr(self.mw, "undo_stack"):
+            self.mw.undo_stack.beginMacro("Toggle All Images Frontmost")
+
+        for w in self.mw.image_windows:
+            if hasattr(w, "set_undoable_property"):
+                w.set_undoable_property("is_frontmost", target_state, None)
+            else:
+                w.set_frontmost(target_state)
+
+        if hasattr(self.mw, "undo_stack"):
+            self.mw.undo_stack.endMacro()
+
     # ==========================================
     # Bulk Styling Actions
     # ==========================================

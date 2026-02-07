@@ -3,7 +3,43 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QPointF, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QColorDialog, QMessageBox, QSizePolicy, QWidget
+from PySide6.QtWidgets import QColorDialog, QMessageBox, QPushButton, QSizePolicy, QWidget
+
+
+class ColorButton(QPushButton):
+    """色を表示・選択するためのボタン。
+
+    背景色として現在色を表示し、クリック時にシグナルを発行するか、
+    ダイアログ表示ロジックをカプセル化（将来）するためのウィジェット。
+    """
+
+    colorChanged = Signal(QColor)
+
+    def __init__(self, color: Optional[QColor] = None, parent: Optional[QWidget] = None):
+        super().__init__(parent)
+        self._color = QColor(color) if color else QColor("#ffffff")
+        self.setFlat(False)  # QSSのボーダーを有効にするため
+        self._update_style()
+
+    def setColor(self, color: QColor):
+        """色を設定し、スタイルを更新します。"""
+        if self._color == color:
+            return
+        self._color = color
+        self._update_style()
+        self.colorChanged.emit(self._color)
+
+    def color(self) -> QColor:
+        """現在の色を返します。"""
+        return self._color
+
+    def _update_style(self):
+        """背景色のみを更新し、ボーダーはQSSに委ねます。"""
+        if self._color.isValid():
+            # Alpha対応のため HexArgb を使用
+            self.setStyleSheet(f"background-color: {self._color.name(QColor.HexArgb)};")
+        else:
+            self.setStyleSheet("")
 
 
 class Gradient(QWidget):

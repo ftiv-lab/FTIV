@@ -70,7 +70,7 @@ class SettingsManager:
             self.mw.setWindowIcon(QIcon(self.mw.icon_path))
 
         self.mw.setWindowTitle(tr("app_title"))
-        self.mw.resize(380, 700)
+        self.mw.resize(320, 600)
 
         # 追加：設定に応じて最前面を適用
         is_top: bool = True

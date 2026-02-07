@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -30,10 +31,13 @@ class AnimationTab(QWidget):
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        # --- Target ---
+        # --- Target (Compressed) ---
         self.anim_target_group = QGroupBox(tr("grp_anim_target"))
-        target_layout = QGridLayout(self.anim_target_group)
+        # Using HBox to save vertical space
+        target_layout = QHBoxLayout(self.anim_target_group)
+        target_layout.setContentsMargins(10, 10, 10, 10)
 
+        self.anim_label_apply_to = QLabel(tr("label_anim_apply_to"))
         self.anim_target_combo = QComboBox()
         self.anim_target_combo.addItems(
             [
@@ -46,12 +50,14 @@ class AnimationTab(QWidget):
         self.anim_target_combo.currentIndexChanged.connect(self.refresh_enabled_state)
 
         self.anim_selected_label = QLabel(tr("label_anim_selected_none"))
-        self.anim_selected_label.setProperty("class", "dim")
+        # self.anim_selected_label.setProperty("class", "dim") # QSS might conflict
+        self.anim_selected_label.setProperty("class", "info-label")  # Consistent style
+        self.anim_selected_label.setWordWrap(True)
 
-        self.anim_label_apply_to = QLabel(tr("label_anim_apply_to"))
-        target_layout.addWidget(self.anim_label_apply_to, 0, 0)
-        target_layout.addWidget(self.anim_target_combo, 0, 1)
-        target_layout.addWidget(self.anim_selected_label, 1, 0, 1, 2)
+        # Layout: [Label] [Combo] [Selected Label (Stretch)]
+        target_layout.addWidget(self.anim_label_apply_to)
+        target_layout.addWidget(self.anim_target_combo)
+        target_layout.addWidget(self.anim_selected_label, 1)
 
         layout.addWidget(self.anim_target_group)
 
@@ -129,32 +135,36 @@ class AnimationTab(QWidget):
         abs_layout.addWidget(self.anim_btn_abs_end, 0, 1)
         abs_layout.addWidget(self.anim_btn_abs_clear, 1, 0, 1, 2)
 
+        # Smart Pairing: Speed & Pause in one row
         self.anim_abs_move_speed = QSpinBox()
         self.anim_abs_move_speed.setRange(10, 100000)
-
         self.anim_abs_move_pause = QSpinBox()
         self.anim_abs_move_pause.setRange(0, 10000)
 
+        speed_pause_layout = QHBoxLayout()
+        self.anim_label_abs_speed = QLabel(tr("label_move_speed"))
+        self.anim_label_abs_pause = QLabel(tr("label_pause_time"))
+
+        speed_pause_layout.addWidget(self.anim_label_abs_speed)
+        speed_pause_layout.addWidget(self.anim_abs_move_speed)
+        speed_pause_layout.addWidget(self.anim_label_abs_pause)
+        speed_pause_layout.addWidget(self.anim_abs_move_pause)
+
+        # Add the nested layout to the grid
+        abs_layout.addLayout(speed_pause_layout, 2, 0, 1, 2)
+
         self.anim_abs_easing_combo = QComboBox()
         self.anim_abs_easing_combo.addItems(easing_names)
-
-        self.anim_label_abs_speed = QLabel(tr("label_move_speed"))
-        abs_layout.addWidget(self.anim_label_abs_speed, 2, 0, 1, 1)
-        abs_layout.addWidget(self.anim_abs_move_speed, 2, 1, 1, 1)
-
-        self.anim_label_abs_pause = QLabel(tr("label_pause_time"))
-        abs_layout.addWidget(self.anim_label_abs_pause, 3, 0, 1, 1)
-        abs_layout.addWidget(self.anim_abs_move_pause, 3, 1, 1, 1)
-
         self.anim_label_abs_easing = QLabel(tr("label_easing"))
-        abs_layout.addWidget(self.anim_label_abs_easing, 4, 0, 1, 1)
-        abs_layout.addWidget(self.anim_abs_easing_combo, 4, 1, 1, 1)
+
+        abs_layout.addWidget(self.anim_label_abs_easing, 3, 0)
+        abs_layout.addWidget(self.anim_abs_easing_combo, 3, 1)
 
         self.anim_btn_apply_abs_params = QPushButton(tr("btn_anim_apply_move_params"))
         self.anim_btn_apply_abs_params.setObjectName("ActionBtn")
         self.anim_btn_apply_abs_params.clicked.connect(self.mw.animation_manager.apply_abs_params)
 
-        abs_layout.addWidget(self.anim_btn_apply_abs_params, 5, 0, 1, 2)
+        abs_layout.addWidget(self.anim_btn_apply_abs_params, 4, 0, 1, 2)
 
         self.anim_btn_abs_pingpong = QPushButton(tr("menu_absolute_move_pingpong"))
         self.anim_btn_abs_pingpong.setCheckable(True)
@@ -172,9 +182,9 @@ class AnimationTab(QWidget):
         self.anim_btn_abs_stop.setObjectName("DangerBtn")
         self.anim_btn_abs_stop.clicked.connect(self.mw.animation_manager.stop_move)
 
-        abs_layout.addWidget(self.anim_btn_abs_pingpong, 6, 0)
-        abs_layout.addWidget(self.anim_btn_abs_oneway, 6, 1)
-        abs_layout.addWidget(self.anim_btn_abs_stop, 7, 0, 1, 2)
+        abs_layout.addWidget(self.anim_btn_abs_pingpong, 5, 0)
+        abs_layout.addWidget(self.anim_btn_abs_oneway, 5, 1)
+        abs_layout.addWidget(self.anim_btn_abs_stop, 6, 0, 1, 2)
 
         abs_page_layout.addWidget(self.anim_abs_group)
         abs_page_layout.addStretch()
@@ -227,32 +237,35 @@ class AnimationTab(QWidget):
         rel_layout.addWidget(self.anim_btn_clear_offset, 3, 0, 1, 4)
         rel_layout.addWidget(self.anim_base_status, 4, 0, 1, 4)
 
+        # Smart Pairing: Speed & Pause
         self.anim_move_speed = QSpinBox()
         self.anim_move_speed.setRange(10, 100000)
-
         self.anim_move_pause = QSpinBox()
         self.anim_move_pause.setRange(0, 10000)
 
+        rel_speed_pause_layout = QHBoxLayout()
+        self.anim_label_move_speed = QLabel(tr("label_move_speed"))
+        self.anim_label_move_pause = QLabel(tr("label_pause_time"))
+
+        rel_speed_pause_layout.addWidget(self.anim_label_move_speed)
+        rel_speed_pause_layout.addWidget(self.anim_move_speed)
+        rel_speed_pause_layout.addWidget(self.anim_label_move_pause)
+        rel_speed_pause_layout.addWidget(self.anim_move_pause)
+
+        rel_layout.addLayout(rel_speed_pause_layout, 5, 0, 1, 4)
+
         self.anim_move_easing_combo = QComboBox()
         self.anim_move_easing_combo.addItems(easing_names)
+        self.anim_label_move_easing = QLabel(tr("label_easing"))
+
+        rel_layout.addWidget(self.anim_label_move_easing, 6, 0, 1, 2)
+        rel_layout.addWidget(self.anim_move_easing_combo, 6, 2, 1, 2)
 
         self.anim_btn_apply_move_params = QPushButton(tr("btn_anim_apply_move_params"))
         self.anim_btn_apply_move_params.setObjectName("ActionBtn")
         self.anim_btn_apply_move_params.clicked.connect(self.mw.animation_manager.apply_move_params)
 
-        self.anim_label_move_speed = QLabel(tr("label_move_speed"))
-        rel_layout.addWidget(self.anim_label_move_speed, 5, 0, 1, 2)
-        rel_layout.addWidget(self.anim_move_speed, 5, 2, 1, 2)
-
-        self.anim_label_move_pause = QLabel(tr("label_pause_time"))
-        rel_layout.addWidget(self.anim_label_move_pause, 6, 0, 1, 2)
-        rel_layout.addWidget(self.anim_move_pause, 6, 2, 1, 2)
-
-        self.anim_label_move_easing = QLabel(tr("label_easing"))
-        rel_layout.addWidget(self.anim_label_move_easing, 7, 0, 1, 2)
-        rel_layout.addWidget(self.anim_move_easing_combo, 7, 2, 1, 2)
-
-        rel_layout.addWidget(self.anim_btn_apply_move_params, 8, 0, 1, 4)
+        rel_layout.addWidget(self.anim_btn_apply_move_params, 7, 0, 1, 4)
 
         self.anim_btn_pingpong = QPushButton(tr("menu_relative_move_pingpong"))
         self.anim_btn_pingpong.setCheckable(True)
@@ -270,9 +283,9 @@ class AnimationTab(QWidget):
         self.anim_btn_stop_move.setObjectName("DangerBtn")
         self.anim_btn_stop_move.clicked.connect(self.mw.animation_manager.stop_move)
 
-        rel_layout.addWidget(self.anim_btn_pingpong, 9, 0, 1, 2)
-        rel_layout.addWidget(self.anim_btn_oneway, 9, 2, 1, 2)
-        rel_layout.addWidget(self.anim_btn_stop_move, 10, 0, 1, 4)
+        rel_layout.addWidget(self.anim_btn_pingpong, 8, 0, 1, 2)
+        rel_layout.addWidget(self.anim_btn_oneway, 8, 2, 1, 2)
+        rel_layout.addWidget(self.anim_btn_stop_move, 9, 0, 1, 4)
 
         rel_page_layout.addWidget(self.anim_rel_group)
         rel_page_layout.addStretch()
@@ -288,32 +301,35 @@ class AnimationTab(QWidget):
         self.anim_fade_group = QGroupBox(tr("menu_anim_fade"))
         fade_layout = QGridLayout(self.anim_fade_group)
 
+        # Smart Pairing: Speed & Pause
         self.anim_fade_speed = QSpinBox()
         self.anim_fade_speed.setRange(100, 100000)
-
         self.anim_fade_pause = QSpinBox()
         self.anim_fade_pause.setRange(0, 10000)
 
+        fade_speed_pause_layout = QHBoxLayout()
+        self.anim_label_fade_speed = QLabel(tr("label_fade_speed"))
+        self.anim_label_fade_pause = QLabel(tr("label_pause_time"))
+
+        fade_speed_pause_layout.addWidget(self.anim_label_fade_speed)
+        fade_speed_pause_layout.addWidget(self.anim_fade_speed)
+        fade_speed_pause_layout.addWidget(self.anim_label_fade_pause)
+        fade_speed_pause_layout.addWidget(self.anim_fade_pause)
+
+        fade_layout.addLayout(fade_speed_pause_layout, 0, 0, 1, 4)
+
         self.anim_fade_easing_combo = QComboBox()
         self.anim_fade_easing_combo.addItems(easing_names)
+        self.anim_label_fade_easing = QLabel(tr("label_easing"))
+
+        fade_layout.addWidget(self.anim_label_fade_easing, 1, 0, 1, 2)
+        fade_layout.addWidget(self.anim_fade_easing_combo, 1, 2, 1, 2)
 
         self.anim_btn_apply_fade_params = QPushButton(tr("btn_anim_apply_fade_params"))
         self.anim_btn_apply_fade_params.setObjectName("ActionBtn")
         self.anim_btn_apply_fade_params.clicked.connect(self.mw.animation_manager.apply_fade_params)
 
-        self.anim_label_fade_speed = QLabel(tr("label_fade_speed"))
-        fade_layout.addWidget(self.anim_label_fade_speed, 0, 0, 1, 2)
-        fade_layout.addWidget(self.anim_fade_speed, 0, 2, 1, 2)
-
-        self.anim_label_fade_pause = QLabel(tr("label_pause_time"))
-        fade_layout.addWidget(self.anim_label_fade_pause, 1, 0, 1, 2)
-        fade_layout.addWidget(self.anim_fade_pause, 1, 2, 1, 2)
-
-        self.anim_label_fade_easing = QLabel(tr("label_easing"))
-        fade_layout.addWidget(self.anim_label_fade_easing, 2, 0, 1, 2)
-        fade_layout.addWidget(self.anim_fade_easing_combo, 2, 2, 1, 2)
-
-        fade_layout.addWidget(self.anim_btn_apply_fade_params, 3, 0, 1, 4)
+        fade_layout.addWidget(self.anim_btn_apply_fade_params, 2, 0, 1, 4)
 
         self.anim_btn_fade_in_out = QPushButton(tr("menu_toggle_fade_in_out"))
         self.anim_btn_fade_in_out.setCheckable(True)
@@ -331,10 +347,10 @@ class AnimationTab(QWidget):
         self.anim_btn_stop_fade.setObjectName("DangerBtn")
         self.anim_btn_stop_fade.clicked.connect(self.mw.animation_manager.stop_fade)
 
-        fade_layout.addWidget(self.anim_btn_fade_in_out, 4, 0, 1, 4)
-        fade_layout.addWidget(self.anim_btn_fade_in_only, 5, 0, 1, 4)
-        fade_layout.addWidget(self.anim_btn_fade_out_only, 6, 0, 1, 4)
-        fade_layout.addWidget(self.anim_btn_stop_fade, 7, 0, 1, 4)
+        fade_layout.addWidget(self.anim_btn_fade_in_out, 3, 0, 1, 4)
+        fade_layout.addWidget(self.anim_btn_fade_in_only, 4, 0, 1, 4)
+        fade_layout.addWidget(self.anim_btn_fade_out_only, 5, 0, 1, 4)
+        fade_layout.addWidget(self.anim_btn_stop_fade, 6, 0, 1, 4)
 
         fade_page_layout.addWidget(self.anim_fade_group)
         fade_page_layout.addStretch()

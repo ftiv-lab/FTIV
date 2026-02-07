@@ -93,6 +93,13 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         self.window_manager: WindowManager = WindowManager(self)
         self.file_manager: FileManager = FileManager(self)
         self.style_manager: StyleManager = StyleManager(self)
+
+        # Global Style System (Design Tokens)
+        from managers.theme_manager import ThemeManager
+
+        self.theme_manager = ThemeManager(self)
+        self.theme_manager.apply_theme()
+
         self.menu_manager: MenuManager = MenuManager(self)
         self.animation_manager: AnimationManager = AnimationManager(self)
         self.bulk_manager: BulkOperationManager = BulkOperationManager(self)
@@ -326,15 +333,15 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
     def setup_ui(self) -> None:
         """メインUIコンポーネントの構築。"""
         main_layout = QVBoxLayout(self)
-        self.setStyleSheet(self._get_stylesheet())
+        # self.setStyleSheet(self._get_stylesheet())  # Removed for Global Style System
 
         self.tabs = QTabWidget()
         main_layout.addWidget(self.tabs)
         self._build_main_tabs()
 
         self.footer_label = QLabel(tr("footer_msg"))
-        self.footer_label.setStyleSheet("color: #888; font-size: 11px; margin-top: 5px;")
-        self.footer_label.setAlignment(Qt.AlignCenter)
+        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.footer_label.setProperty("class", "footer-text")
         main_layout.addWidget(self.footer_label)
 
         self._init_property_panel()
@@ -1415,7 +1422,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
         self.manual_dialog = TextBrowserDialog(tr("btn_manual"), text, parent=None, allow_independence=True)
         # 独立ウィンドウにもメインと同じスタイルを適用
-        self.manual_dialog.setStyleSheet(self._get_stylesheet())
+        # self.manual_dialog.setStyleSheet(self._get_stylesheet())  # Removed for Global Style System
         self.manual_dialog.show()
 
     def show_license_dialog(self) -> None:

@@ -13,11 +13,6 @@ class ContextMenuBuilder:
         self.window = target_window
         self.main_window = main_window
         self.menu = QMenu(target_window)
-        self.menu.setStyleSheet("""
-            QMenu { font-size: 14px; background-color: #eeeeee; border: 1px solid #aaa; }
-            QMenu::item:selected { background-color: #99ccff; }
-            QMenu::item { color: black; }
-        """)
 
     def add_action(self, text_key, slot=None, checkable=False, checked=False, parent_menu=None):
         target_menu = parent_menu if parent_menu else self.menu

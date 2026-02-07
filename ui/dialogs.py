@@ -375,7 +375,7 @@ class TextInputDialog(BaseTranslatableDialog):
         layout: QVBoxLayout = QVBoxLayout(self)
 
         self.hint_label: QLabel = QLabel(tr("label_text_edit_hint"))
-        self.hint_label.setStyleSheet("color: #888; font-size: 11px;")
+        self.hint_label.setProperty("class", "hint-text")
         layout.addWidget(self.hint_label)
 
         self.text_edit: QTextEdit = QTextEdit(self)
@@ -796,7 +796,7 @@ class GradientEditorDialog(BaseTranslatableDialog):
 
         # --- Hint (v1.1) ---
         self.lbl_hint: QLabel = QLabel(tr("hint_gradient_editor_ops"))
-        self.lbl_hint.setStyleSheet("color: #888; font-size: 11px;")
+        self.lbl_hint.setProperty("class", "hint-text")
         self.lbl_hint.setWordWrap(True)
         left_col.addWidget(self.lbl_hint)
 
@@ -820,7 +820,7 @@ class GradientEditorDialog(BaseTranslatableDialog):
         self.spin_stop_pos.valueChanged.connect(self._apply_selected_stop_position)
 
         self.lbl_stop_pos_value: QLabel = QLabel("")
-        self.lbl_stop_pos_value.setStyleSheet("color: #bbb; font-size: 11px;")
+        self.lbl_stop_pos_value.setProperty("class", "hint-text")
 
         pos_row_layout.addWidget(self.spin_stop_pos, 1)
         pos_row_layout.addWidget(self.lbl_stop_pos_value, 1)
@@ -1219,7 +1219,7 @@ class TextSpacingDialog(QDialog):
         # モード表示ラベル
         mode_text = tr("mode_vertical") if is_vertical else tr("mode_horizontal")
         mode_label = QLabel(tr("label_current_mode_fmt").format(mode_text))
-        mode_label.setStyleSheet("font-weight: bold; color: #666;")
+        mode_label.setProperty("class", "bold-label")
         layout.addWidget(mode_label)
 
         # 文字・行間隔グループ

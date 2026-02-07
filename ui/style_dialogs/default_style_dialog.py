@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ui.widgets import ColorButton
 from utils.translator import tr
 
 if TYPE_CHECKING:
@@ -65,15 +66,13 @@ class DefaultStyleDialog(QDialog):
         color_group = QGroupBox(tr("prop_grp_colors"))
         color_layout = QFormLayout()
 
-        self._btn_text_color = QPushButton()
+        self._btn_text_color = ColorButton(color=QColor(self._style.font_color))
         self._btn_text_color.setFixedSize(60, 24)
-        self._update_color_button(self._btn_text_color, QColor(self._style.font_color))
         self._btn_text_color.clicked.connect(self._pick_text_color)
         color_layout.addRow(tr("prop_text_color"), self._btn_text_color)
 
-        self._btn_bg_color = QPushButton()
+        self._btn_bg_color = ColorButton(color=QColor(self._style.background_color))
         self._btn_bg_color.setFixedSize(60, 24)
-        self._update_color_button(self._btn_bg_color, QColor(self._style.background_color))
         self._btn_bg_color.clicked.connect(self._pick_bg_color)
         color_layout.addRow(tr("prop_bg_color"), self._btn_bg_color)
 
@@ -142,24 +141,29 @@ class DefaultStyleDialog(QDialog):
 
         layout.addLayout(btn_layout)
 
-    def _update_color_button(self, btn: QPushButton, color: QColor) -> None:
-        """色ボタンの背景色を更新する。"""
-        btn.setStyleSheet(f"background-color: {color.name()}; border: 1px solid #555;")
-        btn.setProperty("color", color)
-
     def _pick_text_color(self) -> None:
         """テキスト色選択ダイアログを表示する。"""
-        current = self._btn_text_color.property("color")
-        color = QColorDialog.getColor(current, self, tr("prop_text_color"))
+        current = self._btn_text_color.color()
+        color = QColorDialog.getColor(
+            current,
+            self,
+            tr("prop_text_color"),
+            options=QColorDialog.ColorDialogOption.DontUseNativeDialog,
+        )
         if color.isValid():
-            self._update_color_button(self._btn_text_color, color)
+            self._btn_text_color.setColor(color)
 
     def _pick_bg_color(self) -> None:
         """背景色選択ダイアログを表示する。"""
-        current = self._btn_bg_color.property("color")
-        color = QColorDialog.getColor(current, self, tr("prop_bg_color"))
+        current = self._btn_bg_color.color()
+        color = QColorDialog.getColor(
+            current,
+            self,
+            tr("prop_bg_color"),
+            options=QColorDialog.ColorDialogOption.DontUseNativeDialog,
+        )
         if color.isValid():
-            self._update_color_button(self._btn_bg_color, color)
+            self._btn_bg_color.setColor(color)
 
     def _reset_to_default(self) -> None:
         """デフォルト値にリセットする。"""
@@ -185,8 +189,8 @@ class DefaultStyleDialog(QDialog):
         """編集後のスタイルを返す。"""
         self._style.font_family = self._cmb_font.currentFont().family()
         self._style.font_size = self._spin_size.value()
-        self._style.font_color = self._btn_text_color.property("color").name()
-        self._style.background_color = self._btn_bg_color.property("color").name()
+        self._style.font_color = self._btn_text_color.color().name()
+        self._style.background_color = self._btn_bg_color.color().name()
         self._style.text_opacity = self._spin_text_opacity.value()
         self._style.background_opacity = self._spin_bg_opacity.value()
         self._style.shadow_enabled = self._chk_shadow.isChecked()

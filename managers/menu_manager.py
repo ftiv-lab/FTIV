@@ -20,44 +20,50 @@ class MenuManager:
             menu = QMenu(self.mw)
             menu.addAction(tr("menu_about")).triggered.connect(self.mw.show_about_dialog)
             menu.addSeparator()
-            menu.setStyleSheet(
-                "QMenu { font-size: 14px; background-color: #eee; color: black; } QMenu::item:selected { background-color: #9cf; }"
-            )
 
             # テキスト
-            menu.addAction(tr("menu_add_text")).triggered.connect(self.mw.add_text_window)
+            # テキスト
+            menu.addAction(tr("menu_add_text")).triggered.connect(self.mw.txt_actions.add_new_text_window)
             t_list = menu.addMenu(tr("title_text_list"))
             t_list.setEnabled(bool(self.mw.text_windows))
             for i, tw in enumerate(self.mw.text_windows):
                 lbl = tw.text.split("\n")[0][:20] or "Untitled"
-                t_list.addAction(f"{i + 1}: {lbl}").triggered.connect(partial(self.mw.show_text_window_menu, tw, pos))
+                t_list.addAction(f"{i + 1}: {lbl}").triggered.connect(
+                    partial(self.mw.bulk_manager.show_text_window_menu, tw, pos)
+                )
 
-            menu.addAction(tr("menu_change_all_font")).triggered.connect(self.mw.change_all_fonts)
+            menu.addAction(tr("menu_change_all_font")).triggered.connect(self.mw.bulk_manager.change_all_fonts)
 
             menu.addSeparator()
             menu.addAction(tr("menu_save_json")).triggered.connect(self.mw.file_manager.save_scene_to_json)
             menu.addAction(tr("menu_load_json")).triggered.connect(self.mw.file_manager.load_scene_from_json)
-            menu.addAction(tr("menu_hide_all_text")).triggered.connect(self.mw.hide_all_text_windows)
-            menu.addAction(tr("menu_show_all_text")).triggered.connect(self.mw.show_all_text_windows)
+            menu.addAction(tr("menu_hide_all_text")).triggered.connect(self.mw.bulk_manager.hide_all_text_windows)
+            menu.addAction(tr("menu_show_all_text")).triggered.connect(self.mw.bulk_manager.show_all_text_windows)
             menu.addAction(tr("menu_switch_all_front_text")).triggered.connect(
-                self.mw.toggle_all_frontmost_text_windows
+                self.mw.bulk_manager.toggle_all_frontmost_text_windows
             )
-            menu.addAction(tr("menu_stop_all_text_anim")).triggered.connect(self.mw.stop_all_text_animations)
-            menu.addAction(tr("menu_close_all_text")).triggered.connect(self.mw.close_all_text_windows)
+            menu.addAction(tr("menu_stop_all_text_anim")).triggered.connect(
+                self.mw.window_manager.stop_all_text_animations
+            )
+            menu.addAction(tr("menu_close_all_text")).triggered.connect(self.mw.bulk_manager.close_all_text_windows)
 
             menu.addSeparator()
 
             # 画像
-            menu.addAction(tr("menu_add_image")).triggered.connect(self.mw.add_image)
+            menu.addAction(tr("menu_add_image")).triggered.connect(self.mw.img_actions.add_new_image)
             i_list = menu.addMenu(tr("title_image_list"))
             i_list.setEnabled(bool(self.mw.image_windows))
             for iw in self.mw.image_windows:
                 i_list.addAction(iw.get_filename()).triggered.connect(
-                    partial(self.mw.show_image_window_context_menu, iw)
+                    partial(self.mw.bulk_manager.show_image_window_context_menu, iw)
                 )
 
-            menu.addAction(tr("menu_set_all_image_size")).triggered.connect(self.mw.set_all_image_size_percentage)
-            menu.addAction(tr("menu_set_all_image_opacity")).triggered.connect(self.mw.set_all_image_opacity)
+            menu.addAction(tr("menu_set_all_image_size")).triggered.connect(
+                self.mw.img_actions.set_all_image_size_percentage
+            )
+            menu.addAction(tr("menu_set_all_image_opacity")).triggered.connect(
+                self.mw.img_actions.set_all_image_opacity
+            )
 
             r_menu = menu.addMenu(tr("menu_set_all_image_rotation_90"))
             for angle in [0, 90, 180, 270]:
@@ -67,14 +73,17 @@ class MenuManager:
                     a.setChecked(True)
                 r_menu.addAction(a)
 
-            menu.addAction(tr("menu_toggle_all_anim")).triggered.connect(self.mw.toggle_all_image_animation_speed)
-            menu.addAction(tr("menu_reset_all_flips")).triggered.connect(self.mw.reset_all_flips)
-            menu.addAction(tr("menu_show_all_images")).triggered.connect(self.mw.show_all_image_windows)
+            # Note: image toggle speed implementation is messy, prefer img_actions directly
+            menu.addAction(tr("menu_toggle_all_anim")).triggered.connect(
+                self.mw.img_actions.toggle_all_image_animation_speed
+            )
+            menu.addAction(tr("menu_reset_all_flips")).triggered.connect(self.mw.img_actions.reset_all_flips)
+            menu.addAction(tr("menu_show_all_images")).triggered.connect(self.mw.bulk_manager.show_all_image_windows)
             menu.addAction(tr("menu_switch_all_front_image")).triggered.connect(
-                self.mw.toggle_all_frontmost_image_windows
+                self.mw.bulk_manager.toggle_all_frontmost_image_windows
             )
             menu.addAction(tr("menu_align_images")).triggered.connect(self.mw.open_align_dialog)
-            menu.addAction(tr("menu_close_all_images")).triggered.connect(self.mw.close_all_images)
+            menu.addAction(tr("menu_close_all_images")).triggered.connect(self.mw.bulk_manager.close_all_image_windows)
 
             menu.exec(self.mw.mapToGlobal(pos))
         except Exception as e:

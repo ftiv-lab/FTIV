@@ -50,7 +50,7 @@ class PropertyPanel(QWidget):
         self.mw = parent  # Main Window reference
         self.setWindowTitle(tr("prop_panel_title"))
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
-        self.resize(300, 600)
+        self.resize(360, 600)  # Phase 4.4: Further increased for optimal layout
         self.setObjectName("PropertyPanel")  # For Global Theme Targeting
 
         self.current_target: Optional[Any] = None
@@ -522,6 +522,8 @@ class PropertyPanel(QWidget):
     def create_group(self, title: str) -> QFormLayout:
         group = QGroupBox(title)
         layout = QFormLayout()
+        layout.setSpacing(4)  # Phase 4.3: Dense spacing
+        layout.setContentsMargins(8, 16, 8, 8)  # Phase 4.3: Tighter margins, top needs space for title
         group.setLayout(layout)
         self.scroll_layout.addWidget(group)
         return layout
@@ -830,7 +832,11 @@ class PropertyPanel(QWidget):
 
         def change_font():
             # PySide6 の QFontDialog.getFont は (ok, QFont) を返す（環境により異なる場合があるがエラーログより判断）
-            ok, font = QFontDialog.getFont(QFont(target.font_family, int(target.font_size)), self)
+            ok, font = QFontDialog.getFont(
+                QFont(target.font_family, int(target.font_size)),
+                self,
+                options=QFontDialog.FontDialogOption.DontUseNativeDialog,
+            )
             if ok:
                 try:
                     target.set_undoable_property("font_family", font.family())
@@ -1201,13 +1207,15 @@ class PropertyPanel(QWidget):
         )
 
         if hasattr(target, "label_window") and target.label_window:
-            btn = QPushButton(tr("btn_select_label_style"))
-            btn.setStyleSheet("background-color: #555; color: white; margin-top: 5px;")
+            btn = QPushButton(tr("menu_select_text_window"))
+            # btn.setStyleSheet("background-color: #555; color: white; margin-top: 5px;") # Legacy
+            btn.setProperty("class", "secondary-button")  # Use .secondary-button
             btn.clicked.connect(lambda: self.set_target(target.label_window))
             layout.addRow("", btn)
 
+        # Delete Button (Danger)
         del_btn = QPushButton(tr("menu_delete_line"))
-        del_btn.setStyleSheet("background-color: #d32f2f; color: white; font-weight: bold; margin-top: 10px;")
+        del_btn.setProperty("class", "danger")  # Use .danger class
         del_btn.clicked.connect(lambda: target.delete_line() or self.set_target(None))
         layout.addRow("", del_btn)
 

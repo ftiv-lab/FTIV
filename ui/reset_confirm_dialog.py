@@ -45,27 +45,28 @@ class ResetConfirmDialog(QDialog):
         op_layout.addWidget(self.chk_settings)
 
         self.chk_presets = QCheckBox(tr("lbl_reset_presets"))
+        self.chk_presets.setProperty("class", "danger-text")
         self.chk_presets.setChecked(False)
-        # Red text for destructive option
-        self.chk_presets.setStyleSheet("color: #ff6b6b; font-weight: bold;")
-        op_layout.addWidget(self.chk_presets)
+        self.chk_presets.setToolTip(tr("tooltip_reset_presets"))
+        layout.addWidget(self.chk_presets)
 
         layout.addWidget(options_group)
 
         # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.button(QDialogButtonBox.Ok).setText(tr("btn_reset_perform"))
-        button_box.button(QDialogButtonBox.Cancel).setText(tr("btn_cancel"))
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.button(QDialogButtonBox.Ok).setText(tr("btn_factory_reset"))
+        self.button_box.button(QDialogButtonBox.Ok).setProperty("class", "danger-button")  # Red Button)
+        self.button_box.button(QDialogButtonBox.Cancel).setText(tr("btn_cancel"))
 
         # Style the OK button as Danger
         # We need to rely on StyleManager or set object name
-        btn_ok = button_box.button(QDialogButtonBox.Ok)
+        btn_ok = self.button_box.button(QDialogButtonBox.Ok)
         btn_ok.setObjectName("btn_danger")
 
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
 
-        layout.addWidget(button_box)
+        layout.addWidget(self.button_box)
 
         # Apply Theme
         StyleManager.apply_theme_to_dialog(self)

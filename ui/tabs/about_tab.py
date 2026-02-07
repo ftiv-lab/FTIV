@@ -29,7 +29,7 @@ class AboutTab(QWidget):
 
         # 現在のエディション表示
         self.label_current_edition = QLabel(tr("label_current_edition").format(edition="STANDARD"))
-        self.label_current_edition.setStyleSheet("font-weight: bold; color: #aaa; font-size: 14px;")
+        self.label_current_edition.setProperty("class", "edition-label")
 
         # ショップボタン
         self.btn_open_shop = QPushButton(tr("btn_open_shop"))
@@ -86,7 +86,7 @@ class AboutTab(QWidget):
         shortcuts_layout = QVBoxLayout(self.shortcuts_group)
 
         self.label_shortcuts = QLabel(tr("label_rescue_shortcuts"))
-        self.label_shortcuts.setStyleSheet("color: #ccc; font-family: Consolas, Monospace; line-height: 1.4;")
+        self.label_shortcuts.setProperty("class", "monospace-label")
         self.label_shortcuts.setTextInteractionFlags(Qt.TextSelectableByMouse)  # コピーできるようにする
 
         shortcuts_layout.addWidget(self.label_shortcuts)
@@ -111,7 +111,7 @@ class AboutTab(QWidget):
         self.spin_debounce.setValue(int(cur_debounce))
 
         self.hint_debounce = QLabel(tr("hint_debounce"))
-        self.hint_debounce.setStyleSheet("color: #888; font-size: 11px;")
+        self.hint_debounce.setProperty("class", "hint")
         self.hint_debounce.setWordWrap(True)
 
         # --- Debounce (Wheel) ---
@@ -122,7 +122,7 @@ class AboutTab(QWidget):
         self.spin_wheel.setValue(int(cur_wheel))
 
         self.hint_wheel = QLabel(tr("hint_wheel_debounce"))
-        self.hint_wheel.setStyleSheet("color: #888; font-size: 11px;")
+        self.hint_wheel.setProperty("class", "hint")
         self.hint_wheel.setWordWrap(True)
 
         # --- Cache ---
@@ -133,7 +133,7 @@ class AboutTab(QWidget):
         self.spin_cache.setValue(int(cur_cache))
 
         self.hint_cache = QLabel(tr("hint_cache"))
-        self.hint_cache.setStyleSheet("color: #888; font-size: 11px;")
+        self.hint_cache.setProperty("class", "hint")
         self.hint_cache.setWordWrap(True)
 
         # Apply Button
