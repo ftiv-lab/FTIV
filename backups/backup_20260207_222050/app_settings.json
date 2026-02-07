@@ -1,0 +1,6 @@
+{
+  "main_window_frontmost": false,
+  "render_debounce_ms": 100,
+  "wheel_debounce_ms": 50,
+  "glyph_cache_size": 500
+}

@@ -48,7 +48,7 @@ class TextTab(QWidget):
         layout.addWidget(self.btn_add_text_main)
 
         self.btn_toggle_prop_text = QPushButton(tr("btn_toggle_prop_panel"))
-        self.btn_toggle_prop_text.setObjectName("ActionBtn")
+        self.btn_toggle_prop_text.setProperty("class", "toggle")
         self.btn_toggle_prop_text.setCheckable(True)
         self.btn_toggle_prop_text.clicked.connect(self.mw.toggle_property_panel)
         layout.addWidget(self.btn_toggle_prop_text)
@@ -194,14 +194,14 @@ class TextTab(QWidget):
         )
 
         self.txt_btn_sel_frontmost = QPushButton(tr("menu_toggle_frontmost"))
-        self.txt_btn_sel_frontmost.setObjectName("ActionBtn")
+        self.txt_btn_sel_frontmost.setProperty("class", "toggle")
         self.txt_btn_sel_frontmost.setCheckable(True)
         self.txt_btn_sel_frontmost.toggled.connect(
             lambda checked: self.mw.main_controller.txt_actions.run_selected_visibility_action("frontmost", checked)
         )
 
         self.txt_btn_sel_click_through = QPushButton(tr("menu_toggle_click_through"))
-        self.txt_btn_sel_click_through.setObjectName("ActionBtn")
+        self.txt_btn_sel_click_through.setProperty("class", "toggle")
         self.txt_btn_sel_click_through.setCheckable(True)
         self.txt_btn_sel_click_through.toggled.connect(
             lambda checked: self.mw.main_controller.txt_actions.run_selected_visibility_action("click_through", checked)
@@ -281,7 +281,7 @@ class TextTab(QWidget):
         grid_sel = QGridLayout(self.txt_layout_grp_selected)
 
         self.txt_btn_sel_toggle_vertical = QPushButton(tr("btn_toggle_orientation"))
-        self.txt_btn_sel_toggle_vertical.setObjectName("ActionBtn")
+        self.txt_btn_sel_toggle_vertical.setProperty("class", "toggle")
         self.txt_btn_sel_toggle_vertical.setCheckable(True)
         self.txt_btn_sel_toggle_vertical.toggled.connect(
             lambda checked: self.mw.main_controller.txt_actions.run_selected_layout_action("set_vertical", checked)

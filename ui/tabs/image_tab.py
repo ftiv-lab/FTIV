@@ -44,7 +44,7 @@ class ImageTab(QWidget):
         layout.addWidget(self.btn_add_image_main)
 
         self.btn_toggle_prop_image = QPushButton(tr("btn_toggle_prop_panel"))
-        self.btn_toggle_prop_image.setObjectName("ActionBtn")
+        self.btn_toggle_prop_image.setProperty("class", "toggle")
         self.btn_toggle_prop_image.setCheckable(True)
         self.btn_toggle_prop_image.clicked.connect(self.mw.toggle_property_panel)
         layout.addWidget(self.btn_toggle_prop_image)
@@ -544,14 +544,14 @@ class ImageTab(QWidget):
         )
 
         self.img_btn_sel_frontmost = QPushButton(tr("btn_toggle_front"))
-        self.img_btn_sel_frontmost.setObjectName("ActionBtn")
+        self.img_btn_sel_frontmost.setProperty("class", "toggle")
         self.img_btn_sel_frontmost.setCheckable(True)
         self.img_btn_sel_frontmost.toggled.connect(
             lambda checked: self.mw.main_controller.image_actions.run_selected_visibility_action("frontmost", checked)
         )
 
         self.img_btn_sel_click_through = QPushButton(tr("menu_toggle_click_through_image"))
-        self.img_btn_sel_click_through.setObjectName("ActionBtn")
+        self.img_btn_sel_click_through.setProperty("class", "toggle")
         self.img_btn_sel_click_through.setCheckable(True)
         self.img_btn_sel_click_through.toggled.connect(
             lambda checked: self.mw.main_controller.image_actions.run_selected_visibility_action(

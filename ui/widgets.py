@@ -3,7 +3,7 @@ from typing import List, Optional, Tuple
 
 from PySide6.QtCore import QPointF, QRect, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QColorDialog, QMessageBox, QPushButton, QSizePolicy, QWidget
+from PySide6.QtWidgets import QColorDialog, QLayout, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget
 
 
 class ColorButton(QPushButton):
@@ -545,3 +545,47 @@ class Gradient(QWidget):
                 best_d = d
                 best_i = i
         return best_i
+
+
+class CollapsibleBox(QWidget):
+    """折りたたみ可能なコンテナウィジェット。"""
+
+    def __init__(self, title: str = "", parent: Optional[QWidget] = None):
+        super().__init__(parent)
+
+        self.toggle_button = QPushButton(title)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(True)
+        self.toggle_button.setObjectName("CollapsibleHeader")
+        self.toggle_button.toggled.connect(self.on_toggled)
+
+        # 矢印アイコンの代わりにテキストで表現
+        self.title_text = title
+        self.toggle_button.setText(f"▼ {title}")
+
+        self.content_area = QWidget()
+        # コンテンツエリア自体のレイアウトは setContentLayout で設定されるが
+        # 初期状態として空のレイアウトを持たせるか、Noneにしておく
+
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setSpacing(0)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.addWidget(self.toggle_button)
+        self.main_layout.addWidget(self.content_area)
+
+    def setContentLayout(self, layout: QLayout):
+        """コンテンツエリアにレイアウトを設定する。"""
+        # 既存のレイアウトがあれば削除（再利用想定）
+        if self.content_area.layout():
+            QWidget().setLayout(self.content_area.layout())  # Ownership transfer hack
+        self.content_area.setLayout(layout)
+
+    def on_toggled(self, checked: bool):
+        self.content_area.setVisible(checked)
+        arrow = "▼" if checked else "▶"
+        self.toggle_button.setText(f"{arrow} {self.title_text}")
+
+    def setText(self, text: str):
+        self.title_text = text
+        arrow = "▼" if self.toggle_button.isChecked() else "▶"
+        self.toggle_button.setText(f"{arrow} {text}")

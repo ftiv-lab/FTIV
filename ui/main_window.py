@@ -1056,6 +1056,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         sender = self.sender()
         if isinstance(sender, QPushButton):
             self.is_property_panel_active = sender.isChecked()
+            # Style update is handled by .toggle class now but we ensure state sync
         else:
             # メニュー等から直接呼ばれた場合のトグル
             self.is_property_panel_active = not self.is_property_panel_active
@@ -1067,7 +1068,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         if hasattr(self, "image_tab"):
             self.image_tab.update_prop_button_state(self.is_property_panel_active)
 
-        self.update_prop_button_style()
+        # self.update_prop_button_style() # Deprecated/Removed as CSS handles it via :checked state
 
         if hasattr(self, "property_panel"):
             if self.is_property_panel_active:
