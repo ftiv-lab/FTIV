@@ -26,6 +26,9 @@ class ImageTab(QWidget):
         super().__init__()
         self.mw = main_window
 
+        # Forward declaration for Mypy type inference
+        self.img_sel_display_combo: Optional[QComboBox] = None
+
         # 変換タブのインデックス保持用 (旧 mw._img_transform_sel_tab_index)
         self._transform_sel_tab_index = 0
 

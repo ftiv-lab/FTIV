@@ -77,6 +77,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         self.default_line_width: int = 4
         self.is_property_panel_active: bool = False
         self.scenes: Dict[str, Any] = {}
+        self.manual_dialog: Optional[Any] = None  # Lazy-init in show_manual_dialog()
 
         # 初期設定 (SettingsManagerに移譲)
         self.settings_manager = SettingsManager(self)
@@ -1382,10 +1383,11 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
     def show_manual_dialog(self) -> None:
         """説明書ダイアログを表示する。"""
         # 既に表示中なら最前面へ
-        if hasattr(self, "manual_dialog") and self.manual_dialog is not None:
-            if self.manual_dialog.isVisible():
-                self.manual_dialog.activateWindow()
-                self.manual_dialog.raise_()
+        dialog = self.manual_dialog
+        if dialog is not None:
+            if dialog.isVisible():
+                dialog.activateWindow()
+                dialog.raise_()
                 return
 
         from ui.dialogs import TextBrowserDialog

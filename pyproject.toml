@@ -12,6 +12,11 @@ dependencies = [
     "pydantic>=2.0.0",
 ]
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -84,24 +89,27 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 disallow_any_generics = false
 disable_error_code = [
+    # Phase 2 targets (medium risk):
     "attr-defined",
-    "import-untyped",
     "union-attr",
-    "has-type",
     "return-value",
     "arg-type",
     "assignment",
+    # Phase 3 targets (higher risk):
+    "import-untyped",
     "operator",
     "index",
     "func-returns-value",
-    "var-annotated"
+    # Note: "var-annotated" and "has-type" now enabled (Phase 1 complete)
 ]
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.0",
     "mypy>=1.0.0",
     "pre-commit>=4.5.1",
     "pytest>=8.0",
+    "pytest-cov>=4.0",
     "ruff>=0.9.0",
     "types-pyside6>=6.10.1.1",
 ]

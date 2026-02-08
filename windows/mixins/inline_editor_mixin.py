@@ -119,7 +119,7 @@ class InlineEditorMixin:
             char_spacing_ratio = float(getattr(self, "horizontal_margin_ratio", 0.0))
             if char_spacing_ratio > 0:
                 char_spacing_px = font_size * char_spacing_ratio
-                font.setLetterSpacing(QFont.AbsoluteSpacing, char_spacing_px)
+                font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, char_spacing_px)
                 editor.setFont(font)
 
             # Style Application
@@ -141,13 +141,13 @@ class InlineEditorMixin:
         editor.selectAll()
 
         # 4. 配置と挙動
-        editor.setFrameShape(QFrame.NoFrame)
-        editor.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        editor.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        editor.setFrameShape(QFrame.Shape.NoFrame)
+        editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # --- Phase 2: No-Wrap Mode ---
         # 縦書き編集時の構造を明確にし、かつ勝手な折り返しを防ぐ
-        editor.setLineWrapMode(QPlainTextEdit.NoWrap)
+        editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
 
         # エディタの初期サイズ・位置合わせ
         self._on_inline_text_changed()  # 初期サイズ計算のため一度呼ぶ
@@ -272,7 +272,7 @@ class InlineEditorMixin:
         final_text = editor.toPlainText()
 
         try:
-            editor.setFocusPolicy(Qt.NoFocus)
+            editor.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             editor.hide()
             editor.deleteLater()
         except Exception:
@@ -316,25 +316,25 @@ class InlineEditorMixin:
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         """エディタのキーイベントをフックする。"""
-        if obj == self._inline_editor and event.type() == QEvent.KeyPress:
+        if obj == self._inline_editor and event.type() == QEvent.Type.KeyPress:
             key_evt = typing_cast_key_event(event)
             key = key_evt.key()
             mods = key_evt.modifiers()
 
             # Shift+Enter -> Commit
-            if key in (Qt.Key_Return, Qt.Key_Enter):
-                if mods & Qt.ShiftModifier:
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if mods & Qt.KeyboardModifier.ShiftModifier:
                     self._finish_inline_edit(commit=True)
                     return True  # イベント消費
                 # Enterのみは改行許容
 
             # Escape -> Cancel
-            if key == Qt.Key_Escape:
+            if key == Qt.Key.Key_Escape:
                 self._finish_inline_edit(commit=False)
                 return True
 
         # FocusOut 処理
-        if obj == self._inline_editor and event.type() == QEvent.FocusOut:
+        if obj == self._inline_editor and event.type() == QEvent.Type.FocusOut:
             if self._is_editing:
                 self._finish_inline_edit(commit=True)
             return False

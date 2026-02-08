@@ -49,7 +49,7 @@ class PropertyPanel(QWidget):
         super().__init__(parent)
         self.mw = parent  # Main Window reference
         self.setWindowTitle(tr("prop_panel_title"))
-        self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.resize(260, 600)  # Phase 5: Slim default
         self.setObjectName("PropertyPanel")  # For Global Theme Targeting
 
@@ -63,10 +63,10 @@ class PropertyPanel(QWidget):
         self.scroll_area.setWidgetResizable(True)
         self.scroll_widget = QWidget()
         self.scroll_layout = QVBoxLayout(self.scroll_widget)
-        self.scroll_layout.setAlignment(Qt.AlignTop)
+        self.scroll_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
         self.scroll_area.setWidget(self.scroll_widget)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # Phase 5: No horiz scroll
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # Phase 5: No horiz scroll
         self.main_layout.addWidget(self.scroll_area)
 
         # Undo/Redoショートカットの登録
@@ -181,7 +181,7 @@ class PropertyPanel(QWidget):
 
         if self.current_target is None:
             lbl = QLabel(tr("prop_no_selection"))
-            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.scroll_layout.addWidget(lbl)
             return
 
@@ -602,7 +602,7 @@ class PropertyPanel(QWidget):
         spin.setValue(float(value))
         spin.setSingleStep(1.0 if unit_scale == 1.0 else 0.1)
 
-        slider = QSlider(Qt.Horizontal)
+        slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(int(min_v * unit_scale), int(max_v * unit_scale))
         slider.setValue(int(value * unit_scale))
 
@@ -697,7 +697,7 @@ class PropertyPanel(QWidget):
         spin.setSingleStep(1)
         spin.setSuffix("%")
 
-        slider = QSlider(Qt.Horizontal)
+        slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(int(min_percent), int(max_percent))
         slider.setSingleStep(1)
         slider.setPageStep(1)
@@ -791,7 +791,7 @@ class PropertyPanel(QWidget):
 
         # Integer slider (scaled dynamically based on step)
         scale_factor = int(1.0 / step) if step > 0 else 10
-        slider = QSlider(Qt.Horizontal)
+        slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(int(min_v * scale_factor), int(max_v * scale_factor))
         slider.setSingleStep(1)
         slider.setValue(int(value * scale_factor))
@@ -835,7 +835,9 @@ class PropertyPanel(QWidget):
         self.update_color_button_style(btn, current_color)
 
         def on_click():
-            color = QColorDialog.getColor(current_color, self, tr("prop_color"), QColorDialog.ShowAlphaChannel)
+            color = QColorDialog.getColor(
+                current_color, self, tr("prop_color"), QColorDialog.ColorDialogOption.ShowAlphaChannel
+            )
             if color.isValid():
                 self.update_color_button_style(btn, color)
                 callback(color)
@@ -862,12 +864,12 @@ class PropertyPanel(QWidget):
         try:
             if isinstance(color, QColor):
                 if color.isValid():
-                    return color.name(QColor.HexArgb)
+                    return color.name(QColor.NameFormat.HexArgb)
                 return "#FFFFFFFF"
 
             c = QColor(str(color))
             if c.isValid():
-                return c.name(QColor.HexArgb)
+                return c.name(QColor.NameFormat.HexArgb)
         except Exception:
             pass
 
@@ -1409,9 +1411,9 @@ class PropertyPanel(QWidget):
         )
 
         styles = [
-            (tr("line_style_solid"), Qt.SolidLine),
-            (tr("line_style_dash"), Qt.DashLine),
-            (tr("line_style_dot"), Qt.DotLine),
+            (tr("line_style_solid"), Qt.PenStyle.SolidLine),
+            (tr("line_style_dash"), Qt.PenStyle.DashLine),
+            (tr("line_style_dot"), Qt.PenStyle.DotLine),
         ]
         self.add_combo(layout, tr("menu_line_style"), target.pen_style, styles, lambda v: target.set_line_style(v))
 

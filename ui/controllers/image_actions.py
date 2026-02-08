@@ -993,7 +993,7 @@ class ImageActions:
         row_widths = []
         row_heights = []
 
-        current_row = []
+        current_row: list = []
         current_w_sum = 0
         current_h_max = 0
 

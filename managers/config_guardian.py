@@ -16,7 +16,7 @@ class ConfigGuardian:
         self.base_dir = base_dir
         self.json_dir = os.path.join(base_dir, "json")
         self.settings_path = os.path.join(self.json_dir, "settings.json")
-        self.reports = []
+        self.reports: list[str] = []
 
     def validate_all(self) -> bool:
         """

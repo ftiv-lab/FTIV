@@ -35,12 +35,12 @@ if %errorlevel% neq 0 (
 
 
 echo.
-echo [4/6] Running Tests: Group 1 (Core Logic)...
-echo [3/6] Running Tests: Group 1 (Core Logic)...
-echo [3/6] Running Tests: Group 1 (Core Logic)...
-uv run pytest tests/ -k "not interactive and not chaos and not stress and not inline" --maxfail=1 --showlocals -v
+echo [4/6] Running Tests: Group 1 (Core Logic with Coverage)...
+echo [4/6] Running Tests: Group 1 (Core Logic with Coverage)...
+REM Coverage threshold set to 27%% (stable baseline). Full project coverage at 31%%.
+uv run pytest tests/ -k "not interactive and not chaos and not stress and not inline" --cov=ui --cov=managers --cov=windows --cov=models --cov-report=term-missing --cov-report=html --cov-fail-under=27 --maxfail=1 --showlocals -v
 if %errorlevel% neq 0 (
-    echo [ERROR] Core Tests failed.
+    echo [ERROR] Core Tests failed or coverage below 27%%.
     goto :FAIL
 )
 
