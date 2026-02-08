@@ -129,18 +129,10 @@ logs/
 data/temp/
 nul
 
-# Internal Documentation (Industry Standard: Exclude dev logs & business plans)
-# Public: docs/index.html (Website)
-# Private:
-docs/refactoring_plans/
-docs/investigation/
-docs/online_course_plan/
-docs/codebase/
-docs/strategy/
-docs/guides/
-docs/manual/
-docs/distribution_strategy.md
-docs/RULES_AND_STANDARDS.md
+# Internal Documentation (2-layer structure)
+# Public: docs/public/ (Website, public docs)
+# Private: docs/internal/ (AI guides, plans, strategies)
+docs/internal/
 
 # Agent & System Configs
 .agent/
