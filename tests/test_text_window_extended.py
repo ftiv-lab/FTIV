@@ -623,31 +623,25 @@ class TestShowPropertyPanel:
 
 
 # ============================================================
-# change_font (QFontDialog)
+# change_font (choose_font helper)
 # ============================================================
 class TestChangeFont:
-    @patch("windows.text_window.QFontDialog")
-    def test_accepted_applies_font(self, mock_dlg_cls):
+    @patch("windows.text_window.choose_font")
+    def test_accepted_applies_font(self, mock_choose_font):
         from PySide6.QtGui import QFont
 
         w = _make_text_window()
-        mock_dlg = MagicMock()
-        mock_dlg.exec.return_value = mock_dlg_cls.Accepted
-        selected_font = QFont("Courier", 16)
-        mock_dlg.selectedFont.return_value = selected_font
-        mock_dlg_cls.return_value = mock_dlg
+        mock_choose_font.return_value = QFont("Courier", 16)
 
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.change_font()
         mock_prop.assert_any_call("font_family", "Courier", None)
         mock_prop.assert_any_call("font_size", 16, None)
 
-    @patch("windows.text_window.QFontDialog")
-    def test_cancelled_no_change(self, mock_dlg_cls):
+    @patch("windows.text_window.choose_font")
+    def test_cancelled_no_change(self, mock_choose_font):
         w = _make_text_window()
-        mock_dlg = MagicMock()
-        mock_dlg.exec.return_value = 0  # Rejected
-        mock_dlg_cls.return_value = mock_dlg
+        mock_choose_font.return_value = None
 
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.change_font()

@@ -321,19 +321,18 @@ class TestClearLabelText:
 # ConnectorLabel: _change_label_font
 # ============================================================
 class TestChangeLabelFont:
-    @patch("windows.connector.QFontDialog")
-    def test_accepted_applies(self, mock_font_dlg):
+    @patch("windows.connector.choose_font")
+    def test_accepted_applies(self, mock_choose_font):
         label = _make_connector_label()
-        font = QFont("Courier", 16)
-        mock_font_dlg.getFont.return_value = (font, True)
+        mock_choose_font.return_value = QFont("Courier", 16)
         with patch.object(type(label), "_apply_label_layout_change") as mock_apply:
             label._change_label_font()
         mock_apply.assert_called_once()
 
-    @patch("windows.connector.QFontDialog")
-    def test_cancelled_noop(self, mock_font_dlg):
+    @patch("windows.connector.choose_font")
+    def test_cancelled_noop(self, mock_choose_font):
         label = _make_connector_label()
-        mock_font_dlg.getFont.return_value = (QFont(), False)
+        mock_choose_font.return_value = None
         with patch.object(type(label), "_apply_label_layout_change") as mock_apply:
             label._change_label_font()
         mock_apply.assert_not_called()

@@ -6,9 +6,10 @@ from typing import Any
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QDialog, QFontDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 
 from models.window_config import TextWindowConfig
+from utils.font_dialog import choose_font
 from utils.translator import tr
 
 logger = logging.getLogger(__name__)
@@ -144,12 +145,8 @@ class BulkOperationManager:
 
         # 既存のフォントをデフォルトとしてダイアログを開く
         initial_font = QFont(self.mw.text_windows[0].font_family, self.mw.text_windows[0].font_size)
-        font_dialog = QFontDialog(self.mw)
-        font_dialog.setCurrentFont(initial_font)
-
-        if font_dialog.exec() == QFontDialog.Accepted:
-            selected_font = font_dialog.selectedFont()
-
+        selected_font = choose_font(self.mw, initial_font)
+        if selected_font is not None:
             # Undo操作を「フォント一括変更」として1つにまとめる
             if hasattr(self.mw, "undo_stack"):
                 self.mw.undo_stack.beginMacro("Batch Change Font")

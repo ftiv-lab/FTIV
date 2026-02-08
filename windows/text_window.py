@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QDialog,
     QFileDialog,
-    QFontDialog,
     QMessageBox,
 )
 
@@ -25,6 +24,7 @@ from ui.dialogs import (
     TextInputDialog,
     TextSpacingDialog,
 )
+from utils.font_dialog import choose_font
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
@@ -372,18 +372,15 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
     def change_font(self) -> None:
         """フォント選択ダイアログを表示し、適用する。"""
-        font_dialog = QFontDialog(self)
-        font_dialog.setCurrentFont(QFont(self.font_family, int(self.font_size)))
-        if font_dialog.exec() == QFontDialog.Accepted:
-            font = font_dialog.selectedFont()
-            if isinstance(font, QFont):
-                if hasattr(self.main_window, "undo_stack"):
-                    self.main_window.undo_stack.beginMacro("Change Font")
-                self.set_undoable_property("font_family", font.family(), None)
-                self.set_undoable_property("font_size", font.pointSize(), None)
+        font = choose_font(self, QFont(self.font_family, int(self.font_size)))
+        if font is not None:
+            if hasattr(self.main_window, "undo_stack"):
+                self.main_window.undo_stack.beginMacro("Change Font")
+            self.set_undoable_property("font_family", font.family(), None)
+            self.set_undoable_property("font_size", font.pointSize(), None)
 
-                if hasattr(self.main_window, "undo_stack"):
-                    self.main_window.undo_stack.endMacro()
+            if hasattr(self.main_window, "undo_stack"):
+                self.main_window.undo_stack.endMacro()
 
     def change_font_color(self) -> None:
         color = QColorDialog.getColor(self.font_color, self)

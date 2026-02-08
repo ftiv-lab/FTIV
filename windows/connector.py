@@ -15,7 +15,7 @@ from PySide6.QtGui import (
     QPolygonF,
     QRegion,
 )
-from PySide6.QtWidgets import QColorDialog, QDialog, QFontDialog, QInputDialog, QWidget
+from PySide6.QtWidgets import QColorDialog, QDialog, QInputDialog, QWidget
 
 from models.constants import AppDefaults
 from models.enums import AnchorPosition, ArrowStyle
@@ -26,6 +26,7 @@ from ui.dialogs import (
     TextInputDialog,
     TextSpacingDialog,
 )
+from utils.font_dialog import choose_font
 from utils.translator import tr
 from windows.base_window import BaseOverlayWindow
 from windows.mixins.inline_editor_mixin import InlineEditorMixin
@@ -485,8 +486,8 @@ class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):
     def _change_label_font(self) -> None:
         """ラベルのフォントを変更する（OK確定でUndo1回のまとまり）。"""
         try:
-            font, ok = QFontDialog.getFont(QFont(self.font_family, int(self.font_size)), self)
-            if not ok:
+            font = choose_font(self, QFont(self.font_family, int(self.font_size)))
+            if font is None:
                 return
 
             def _apply() -> None:

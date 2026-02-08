@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
-    QFontDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -32,6 +31,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from utils.font_dialog import choose_font
 from utils.translator import tr
 
 from .widgets import Gradient
@@ -458,17 +458,14 @@ class TextInputDialog(BaseTranslatableDialog):
 
     def change_font(self) -> None:
         """フォント選択ダイアログを表示してフォントを更新する。"""
-        font_dialog: QFontDialog = QFontDialog(self)
-        font_dialog.setCurrentFont(self.current_font)
-        if font_dialog.exec() == QFontDialog.Accepted:
-            font = font_dialog.selectedFont()
-            if isinstance(font, QFont):
-                self.current_font = font
-                self.apply_font_to_text(self.current_font)
-                try:
-                    self.save_settings()
-                except Exception:
-                    pass
+        font = choose_font(self, self.current_font)
+        if font is not None:
+            self.current_font = font
+            self.apply_font_to_text(self.current_font)
+            try:
+                self.save_settings()
+            except Exception:
+                pass
 
     def apply_font_to_text(self, font: QFont) -> None:
         """QTextEditのフォントを更新する（Windows向け：絵文字/記号が化けない表示を優先）。

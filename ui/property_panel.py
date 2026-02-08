@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QDoubleSpinBox,
-    QFontDialog,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -26,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from models.enums import ArrowStyle
 from ui.widgets import CollapsibleBox
+from utils.font_dialog import choose_font
 from utils.translator import tr
 
 logger = logging.getLogger(__name__)
@@ -953,13 +953,8 @@ class PropertyPanel(QWidget):
         self.btn_text_font.setProperty("class", "secondary-button")
 
         def change_font():
-            # PySide6 の QFontDialog.getFont は (ok, QFont) を返す（環境により異なる場合があるがエラーログより判断）
-            ok, font = QFontDialog.getFont(
-                QFont(target.font_family, int(target.font_size)),
-                self,
-                options=QFontDialog.FontDialogOption.DontUseNativeDialog,
-            )
-            if ok:
+            font = choose_font(self, QFont(target.font_family, int(target.font_size)))
+            if font is not None:
                 try:
                     target.set_undoable_property("font_family", font.family())
                     target.set_undoable_property("font_size", font.pointSize())
