@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+      
+      - name: Install dependencies
+        run: uv sync
+      
+      - name: Run Ruff Linter
+        run: uv run ruff check .
+      
+      - name: Run Mypy Type Check
+        run: uv run mypy . --ignore-missing-imports
+      
+      - name: Run Core Tests
+        run: uv run pytest tests/ -k "not interactive and not chaos and not stress and not inline" --maxfail=3 -v
