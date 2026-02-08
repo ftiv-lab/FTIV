@@ -1479,15 +1479,11 @@ class PropertyPanel(QWidget):
                 except Exception:
                     pass
 
-                # トグルボタン群もOFFへ
-                for attr in ["btn_toggle_prop", "btn_toggle_prop_image", "btn_toggle_prop_text"]:
-                    if hasattr(parent, attr):
-                        btn = getattr(parent, attr)
-                        try:
-                            btn.blockSignals(True)
-                            btn.setChecked(False)
-                        finally:
-                            btn.blockSignals(False)
+                # トグルボタン群もOFFへ（各タブの同期メソッド経由）
+                for tab_name in ["general_tab", "text_tab", "image_tab"]:
+                    tab = getattr(parent, tab_name, None)
+                    if tab is not None and hasattr(tab, "update_prop_button_state"):
+                        tab.update_prop_button_state(False)
 
                 # 見た目更新
                 if hasattr(parent, "update_prop_button_style"):
