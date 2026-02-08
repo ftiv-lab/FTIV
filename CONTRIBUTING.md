@@ -21,7 +21,8 @@ We maintain a high standard of reliability. Before submitting changes:
     *   **Ruff**: Linter and formatter.
     *   **Mypy**: Static type checker (Strict Mode).
     *   **UI Audit**: Checks for unsafe references.
-    *   **Pytest**: Runs all unit and interactive tests (30+ tests).
+    *   **Pytest**: Runs all configured test suites (core / interactive / chaos / stress).
+    *   **Latest Metrics**: Test count and coverage snapshots are tracked in `docs/internal/guides/MEMORY.md`.
 
 2.  **Strict Typing (Mypy)**
     *   **Zero Errors Policy**: The CI (and `verify_all.bat`) will fail on a single Mypy error.
@@ -53,7 +54,7 @@ If `verify_all.bat` fails, use these steps to rapidly identify the root cause:
     *   Don't keep running the full suite. Run only the failing test file:
         ```powershell
         # Example: If tests/test_main_controller.py failed
-        .venv314\Scripts\python.exe -m pytest tests/test_main_controller.py
+        uv run pytest tests/test_main_controller.py
         ```
 
 3.  **UI Reference Errors**:
