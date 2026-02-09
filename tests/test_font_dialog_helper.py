@@ -4,9 +4,15 @@
 from unittest.mock import MagicMock, patch
 
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QCheckBox, QDialog, QGroupBox, QLineEdit
+from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QGroupBox, QLabel, QLineEdit, QListView
 
-from utils.font_dialog import _hide_effect_controls, _stabilize_sample_preview, choose_font
+from utils.font_dialog import (
+    _apply_dialog_layout_policy,
+    _hide_effect_controls,
+    _hide_style_controls,
+    _stabilize_sample_preview,
+    choose_font,
+)
 
 
 @patch("utils.font_dialog.QFontDialog")
@@ -83,4 +89,86 @@ def test_stabilize_sample_preview_keeps_sample_area_usable(qapp):
     dialog.show()
     qapp.processEvents()
     assert sample_edit.height() > 0
+    dialog.done(QDialog.Rejected)
+
+
+def test_hide_style_controls_hides_middle_style_column(qapp):
+    from PySide6.QtWidgets import QFontDialog
+
+    dialog = QFontDialog()
+    dialog.setOption(QFontDialog.FontDialogOption.DontUseNativeDialog, True)
+    dialog.show()
+    qapp.processEvents()
+
+    visible_lists_before = [v for v in dialog.findChildren(QListView) if v.isVisible()]
+    assert len(visible_lists_before) >= 3
+
+    _hide_style_controls(dialog)
+    qapp.processEvents()
+
+    visible_lists_after = [v for v in dialog.findChildren(QListView) if v.isVisible()]
+    assert len(visible_lists_after) <= len(visible_lists_before) - 1
+    assert len(visible_lists_after) == 2
+
+    dialog.done(QDialog.Rejected)
+
+
+def test_apply_layout_policy_moves_writing_system_to_top_middle(qapp):
+    from PySide6.QtWidgets import QFontDialog
+
+    dialog = QFontDialog()
+    dialog.setOption(QFontDialog.FontDialogOption.DontUseNativeDialog, True)
+    dialog.show()
+    qapp.processEvents()
+
+    ws_label = None
+    ws_combo = None
+    for label in dialog.findChildren(QLabel):
+        buddy = label.buddy()
+        if isinstance(buddy, QComboBox):
+            ws_label = label
+            ws_combo = buddy
+            break
+
+    assert ws_label is not None
+    assert ws_combo is not None
+    before_y = ws_label.geometry().y()
+    assert before_y > 200
+
+    _apply_dialog_layout_policy(dialog)
+    qapp.processEvents()
+
+    after_y = ws_label.geometry().y()
+    assert after_y < 80
+    assert ws_combo.geometry().y() < 80
+
+    visible_lists_after = [v for v in dialog.findChildren(QListView) if v.isVisible()]
+    assert len(visible_lists_after) == 2
+    dialog.done(QDialog.Rejected)
+
+
+def test_apply_layout_policy_expands_font_list_area(qapp):
+    from PySide6.QtWidgets import QFontDialog
+
+    dialog = QFontDialog()
+    dialog.setOption(QFontDialog.FontDialogOption.DontUseNativeDialog, True)
+    dialog.show()
+    qapp.processEvents()
+
+    _apply_dialog_layout_policy(dialog)
+    qapp.processEvents()
+
+    visible_lists = [v for v in dialog.findChildren(QListView) if v.isVisible()]
+    assert len(visible_lists) == 2
+    visible_lists.sort(key=lambda view: view.geometry().x())
+    font_list, size_list = visible_lists
+
+    assert font_list.geometry().height() > size_list.geometry().height()
+    assert size_list.geometry().height() >= 180
+
+    sample_edit = dialog.findChild(QLineEdit, "qt_fontDialog_sampleEdit")
+    assert sample_edit is not None
+    assert sample_edit.isVisible()
+    assert sample_edit.height() >= 24
+
     dialog.done(QDialog.Rejected)
