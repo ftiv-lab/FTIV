@@ -1344,7 +1344,7 @@ class PropertyPanel(QWidget):
             scale=100.0,
         )
 
-        # Animation Controls (Play/Pause/Reset) - preserved from current FTIV
+        # Animation Controls (Play/Pause)
         def _anim_play():
             if target.animation_speed_factor == 0:
                 new_speed = (
@@ -1357,24 +1357,24 @@ class PropertyPanel(QWidget):
                 target.original_animation_speed_factor = target.animation_speed_factor
                 target.set_undoable_property("animation_speed_factor", 0.0, "_update_animation_timer")
 
-        def _anim_reset():
+        def _anim_seek_start():
             target.current_frame = 0
-            target.set_undoable_property("animation_speed_factor", 1.0, "_update_animation_timer")
             target.update_image()
 
         btn_anim_play = self.create_action_button(tr("btn_anim_play"), _anim_play, "secondary-button")
         btn_anim_pause = self.create_action_button(tr("btn_anim_pause"), _anim_pause, "secondary-button")
-        btn_anim_reset = self.create_action_button(tr("btn_anim_reset"), _anim_reset, "secondary-button")
 
         row_anim = QHBoxLayout()
         row_anim.setContentsMargins(0, 0, 0, 0)
         row_anim.setSpacing(4)
         row_anim.addWidget(btn_anim_play)
         row_anim.addWidget(btn_anim_pause)
-        row_anim.addWidget(btn_anim_reset)
         a_layout.addRow(tr("menu_anim_toggle"), row_anim)
 
-        # Reset Animation Speed Button (FTIV_a1 style)
+        # Seek to first frame
+        self.add_action_button(a_layout, tr("btn_anim_seek_start"), _anim_seek_start, "secondary-button")
+
+        # Reset playback speed to default
         self.add_action_button(
             a_layout, tr("menu_reset_gif_apng_playback_speed"), target.reset_animation_speed, "secondary-button"
         )
