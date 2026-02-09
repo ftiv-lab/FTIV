@@ -923,8 +923,22 @@ class FileManager:
 
     def load_scenes_db(self) -> None:
         """シーンデータベースを読み込みます。ファイルがない場合は初期値を設定します。"""
+        default_key = "__default__"
+        default_aliases = {default_key, "未分類", "Uncategorized"}
+
+        def _normalize_scene_categories(raw: Dict[str, Any]) -> Dict[str, Any]:
+            normalized: Dict[str, Any] = {}
+            for key, value in raw.items():
+                target_key = default_key if key in default_aliases else key
+                if target_key == default_key and target_key in normalized and isinstance(normalized[target_key], dict):
+                    if isinstance(value, dict):
+                        normalized[target_key].update(value)
+                else:
+                    normalized[target_key] = value
+            return normalized
+
         if not os.path.exists(self.main_window.scene_db_path):
-            self.main_window.scenes = {tr("default_category"): {}}
+            self.main_window.scenes = {default_key: {}}
             self.main_window.refresh_scene_tabs()
             return
 
@@ -936,16 +950,16 @@ class FileManager:
             is_old = any(isinstance(v, dict) and ("windows" in v or "version" in v) for v in data.values())
 
             if is_old:
-                self.main_window.scenes = {tr("default_category"): data}
+                self.main_window.scenes = {default_key: data}
                 self.save_scenes_db()
             else:
-                self.main_window.scenes = data
+                self.main_window.scenes = _normalize_scene_categories(data)
 
             if not self.main_window.scenes:
-                self.main_window.scenes[tr("default_category")] = {}
+                self.main_window.scenes[default_key] = {}
         except Exception:
             pass  # Error loading scenes db
-            self.main_window.scenes = {tr("default_category"): {}}
+            self.main_window.scenes = {default_key: {}}
 
         self.main_window.refresh_scene_tabs()
 

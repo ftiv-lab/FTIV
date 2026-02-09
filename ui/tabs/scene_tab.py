@@ -98,6 +98,9 @@ class SceneTab(QWidget):
         idx = self.scene_category_tabs.currentIndex()
         if idx < 0:
             return ""
+        tab_data = self.scene_category_tabs.tabBar().tabData(idx)
+        if tab_data is not None and str(tab_data):
+            return str(tab_data)
         return self.scene_category_tabs.tabText(idx)
 
     def get_current_scene(self) -> str:

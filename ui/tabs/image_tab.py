@@ -634,7 +634,7 @@ class ImageTab(QWidget):
             return
 
         name = type(selected_obj).__name__
-        self.img_selected_label.setText(f"Selected: {name}")
+        self.img_selected_label.setText(tr("label_anim_selected_fmt").format(name=name))
 
         # チェック同期
         self._sync_check_states(selected_obj)

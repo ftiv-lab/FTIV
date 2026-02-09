@@ -367,10 +367,11 @@ class TextTab(QWidget):
         if len(first_line) > 30:
             first_line = first_line[:30] + "..."
 
+        selected_text = tr("label_anim_selected_fmt").format(name=name)
         if first_line:
-            self.txt_selected_label.setText(f"Selected: {name} / {first_line}")
+            self.txt_selected_label.setText(f"{selected_text} / {first_line}")
         else:
-            self.txt_selected_label.setText(f"Selected: {name}")
+            self.txt_selected_label.setText(selected_text)
 
         # チェック状態の同期
         self._sync_check_states(selected_obj)

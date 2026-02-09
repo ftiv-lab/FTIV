@@ -448,19 +448,25 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             logger.error("Failed to refresh AnimationTab selection", exc_info=True)
 
         try:
-            if hasattr(self, "_img_on_selection_changed"):
+            if hasattr(self, "image_tab"):
+                self.image_tab.on_selection_changed(self.last_selected_window)
+            elif hasattr(self, "_img_on_selection_changed"):
                 self._img_on_selection_changed(self.last_selected_window)
         except Exception:
             logger.error("Failed to refresh ImageTab selection", exc_info=True)
 
         try:
-            if hasattr(self, "_txt_on_selection_changed"):
+            if hasattr(self, "text_tab"):
+                self.text_tab.on_selection_changed(self.last_selected_window)
+            elif hasattr(self, "_txt_on_selection_changed"):
                 self._txt_on_selection_changed(self.last_selected_window)
         except Exception:
             logger.error("Failed to refresh TextTab selection", exc_info=True)
 
         try:
-            if hasattr(self, "_conn_on_selection_changed"):
+            if hasattr(self, "connections_tab"):
+                self.connections_tab.on_selection_changed(self.last_selected_window)
+            elif hasattr(self, "_conn_on_selection_changed"):
                 self._conn_on_selection_changed(self.last_selected_window)
         except Exception:
             logger.error("Failed to refresh ConnectionsTab selection", exc_info=True)
@@ -598,13 +604,16 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         if hasattr(self, "btn_delete_scene"):
             self.btn_delete_scene.setText(tr("btn_delete_scene"))
 
-        # Sceneカテゴリタブ名：デフォルトカテゴリだけ表示を翻訳に寄せる（最小修正）
-        if hasattr(self, "scene_category_tabs"):
+        # Sceneカテゴリタブ名：defaultカテゴリだけ表示を翻訳に寄せる
+        if hasattr(self, "scene_tab") and hasattr(self.scene_tab, "scene_category_tabs"):
             try:
-                for i in range(self.scene_category_tabs.count()):
-                    title = self.scene_category_tabs.tabText(i)
-                    if title in ("未分類", "Uncategorized"):
-                        self.scene_category_tabs.setTabText(i, tr("default_category"))
+                tabs = self.scene_tab.scene_category_tabs
+                tab_bar = tabs.tabBar()
+                for i in range(tabs.count()):
+                    tab_data = tab_bar.tabData(i)
+                    key = str(tab_data) if tab_data is not None else tabs.tabText(i)
+                    if self._is_default_scene_category(key):
+                        tabs.setTabText(i, tr("default_category"))
             except Exception:
                 logger.debug("Failed to update scene category tab text", exc_info=True)
 
@@ -638,6 +647,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             self.setWindowTitle(tr("app_title"))
             if hasattr(self, "footer_label"):
                 self.footer_label.setText(tr("footer_msg"))
+
+            # Sceneカテゴリ表示を現在言語へ同期（defaultカテゴリ表記を含む）
+            if hasattr(self, "scenes"):
+                self.refresh_scene_tabs()
 
             # Selected表示/チェック状態の再同期
             self._refresh_selected_labels()
@@ -1094,14 +1107,29 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
     # Scene Database & Tab Management
     # ==========================================
 
+    @staticmethod
+    def _is_default_scene_category(category: str) -> bool:
+        """defaultカテゴリの内部キー/旧表示名を判定する。"""
+        return str(category) in {"__default__", "未分類", "Uncategorized"}
+
+    def _scene_category_display_title(self, category: str) -> str:
+        """カテゴリキーから表示名を決定する。"""
+        if self._is_default_scene_category(category):
+            return tr("default_category")
+        return str(category)
+
     def refresh_scene_tabs(self) -> None:
         """シーンDBの内容に基づいてタブを再構築。"""
         if not hasattr(self, "scene_tab") or not hasattr(self.scene_tab, "scene_category_tabs"):
             return
 
         tabs = self.scene_tab.scene_category_tabs
+        tab_bar = tabs.tabBar()
         cur_idx = tabs.currentIndex()
-        cur_txt = tabs.tabText(cur_idx) if cur_idx >= 0 else ""
+        cur_key = ""
+        if cur_idx >= 0:
+            cur_data = tab_bar.tabData(cur_idx)
+            cur_key = str(cur_data) if cur_data is not None else tabs.tabText(cur_idx)
         tabs.clear()
 
         for category, scene_dict in self.scenes.items():
@@ -1110,10 +1138,13 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             list_widget.itemDoubleClicked.connect(self.load_selected_scene)
             for name in scene_dict.keys():
                 list_widget.addItem(name)
-            tabs.addTab(list_widget, category)
+            tabs.addTab(list_widget, self._scene_category_display_title(category))
+            tab_bar.setTabData(tabs.count() - 1, str(category))
 
         for i in range(tabs.count()):
-            if tabs.tabText(i) == cur_txt:
+            tab_data = tab_bar.tabData(i)
+            key = str(tab_data) if tab_data is not None else tabs.tabText(i)
+            if key == cur_key:
                 tabs.setCurrentIndex(i)
                 break
 
