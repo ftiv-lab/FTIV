@@ -359,9 +359,9 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def _init_property_panel(self) -> None:
         """プロパティパネルの初期化（Undo/Redo action の取り込み含む）。"""
-        # Xボタンで閉じた際に MainWindow 側トグル状態を正しく同期できるように親を明示。
-        # Windowフラグは PropertyPanel 側で設定しているため、独立ウィンドウ表示は維持される。
-        self.property_panel = PropertyPanel(parent=self)
+        # 独立ウィンドウとして扱うため Qt親は None にする。
+        # MainWindow側トグル同期に必要な参照は main_window 引数で渡す。
+        self.property_panel = PropertyPanel(parent=None, main_window=self)
 
         if hasattr(self, "undo_action"):
             self.property_panel.addAction(self.undo_action)

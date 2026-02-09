@@ -53,15 +53,18 @@ class MainController:
         """WindowManagerからの選択変更通知を処理する。"""
         # 1. PropertyPanel の更新
         if hasattr(self.view, "property_panel"):
+            panel = self.view.property_panel
             if window:
-                self.view.property_panel.set_target(window)
+                panel.set_target(window)
                 if self.view.is_property_panel_active:
-                    self.view.property_panel.show()
-                    self.view.property_panel.raise_()
+                    # 独立最小化中はユーザー意図を尊重して自動復帰させない。
+                    if not self._is_panel_minimized(panel):
+                        panel.show()
+                        panel.raise_()
             else:
-                self.view.property_panel.set_target(None)
+                panel.set_target(None)
                 if not self.view.is_property_panel_active:
-                    self.view.property_panel.hide()
+                    panel.hide()
 
         # 2. 各タブの更新 (View上のコンポーネントへ通知)
         self._update_tab_state("animation_tab", window)
@@ -100,8 +103,21 @@ class MainController:
 
         # パネル表示・前面化
         if hasattr(self.view, "property_panel"):
-            self.view.property_panel.show()
-            self.view.property_panel.raise_()
-            self.view.property_panel.activateWindow()
+            panel = self.view.property_panel
+            if self._is_panel_minimized(panel):
+                panel.showNormal()
+            else:
+                panel.show()
+            panel.raise_()
+            panel.activateWindow()
             if hasattr(window, "raise_"):
                 window.raise_()
+
+    @staticmethod
+    def _is_panel_minimized(panel: Any) -> bool:
+        """プロパティパネルが最小化状態かを安全に判定する。"""
+        try:
+            state = panel.isMinimized()
+            return state if isinstance(state, bool) else False
+        except Exception:
+            return False

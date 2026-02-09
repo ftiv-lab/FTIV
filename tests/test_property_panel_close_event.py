@@ -30,6 +30,28 @@ def test_close_event_syncs_mainwindow_toggle_off(qapp):
     parent.update_prop_button_style.assert_called()
 
 
+def test_close_event_syncs_with_main_window_reference_when_detached(qapp):
+    mw = QWidget()
+    mw.is_property_panel_active = True
+    mw.general_tab = MagicMock()
+    mw.text_tab = MagicMock()
+    mw.image_tab = MagicMock()
+    mw.update_prop_button_style = MagicMock()
+
+    panel = PropertyPanel(parent=None, main_window=mw)
+    panel.show()
+    qapp.processEvents()
+
+    panel.close()
+    qapp.processEvents()
+
+    assert mw.is_property_panel_active is False
+    mw.general_tab.update_prop_button_state.assert_called_with(False)
+    mw.text_tab.update_prop_button_state.assert_called_with(False)
+    mw.image_tab.update_prop_button_state.assert_called_with(False)
+    mw.update_prop_button_style.assert_called()
+
+
 def test_close_event_without_parent_is_safe(qapp):
     panel = PropertyPanel(parent=None)
     panel.show()

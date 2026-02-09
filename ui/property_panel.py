@@ -40,14 +40,15 @@ class PropertyPanel(QWidget):
     TextWindow, ImageWindow, ConnectorLine の属性をリアルタイムで反映・操作します。
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None, main_window: Optional[QWidget] = None) -> None:
         """PropertyPanelを初期化します。
 
         Args:
-            parent (Optional[QWidget]): 親ウィジェット。通常はMainWindow。
+            parent (Optional[QWidget]): Qt親ウィジェット。独立表示時は None。
+            main_window (Optional[QWidget]): MainWindow参照（状態同期用）。
         """
         super().__init__(parent)
-        self.mw = parent  # Main Window reference
+        self.mw = main_window if main_window is not None else parent
         self.setWindowTitle(tr("prop_panel_title"))
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint)
         self.resize(260, 600)  # Phase 5: Slim default
@@ -70,9 +71,9 @@ class PropertyPanel(QWidget):
         self.main_layout.addWidget(self.scroll_area)
 
         # Undo/Redoショートカットの登録
-        if parent and hasattr(parent, "undo_action"):
-            self.addAction(parent.undo_action)
-            self.addAction(parent.redo_action)
+        if self.mw and hasattr(self.mw, "undo_action"):
+            self.addAction(self.mw.undo_action)
+            self.addAction(self.mw.redo_action)
 
         # メンバ変数の初期化
         self._init_property_widgets()
@@ -1467,22 +1468,22 @@ class PropertyPanel(QWidget):
             event (Any): close event
         """
         try:
-            parent = self.parent()
-            if parent is not None and hasattr(parent, "is_property_panel_active"):
+            mw = self.mw
+            if mw is not None and hasattr(mw, "is_property_panel_active"):
                 try:
-                    parent.is_property_panel_active = False
+                    mw.is_property_panel_active = False
                 except Exception:
                     pass
 
                 # トグルボタン群もOFFへ（各タブの同期メソッド経由）
                 for tab_name in ["general_tab", "text_tab", "image_tab"]:
-                    tab = getattr(parent, tab_name, None)
+                    tab = getattr(mw, tab_name, None)
                     if tab is not None and hasattr(tab, "update_prop_button_state"):
                         tab.update_prop_button_state(False)
 
                 # 見た目更新
-                if hasattr(parent, "update_prop_button_style"):
-                    parent.update_prop_button_style()
+                if hasattr(mw, "update_prop_button_style"):
+                    mw.update_prop_button_style()
         except Exception:
             pass
 

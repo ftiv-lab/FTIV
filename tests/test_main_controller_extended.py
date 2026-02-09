@@ -95,6 +95,17 @@ class TestOnSelectionChanged:
         mock_mw.property_panel.show.assert_called()
         mock_mw.property_panel.raise_.assert_called()
 
+    def test_with_window_active_panel_minimized_keeps_minimized(self, mc, mock_mw):
+        w = MagicMock()
+        mock_mw.is_property_panel_active = True
+        mock_mw.property_panel.isMinimized.return_value = True
+
+        mc._on_selection_changed(w)
+
+        mock_mw.property_panel.set_target.assert_called_with(w)
+        mock_mw.property_panel.show.assert_not_called()
+        mock_mw.property_panel.raise_.assert_not_called()
+
     def test_none_hides_panel(self, mc, mock_mw):
         mock_mw.is_property_panel_active = False
         mc._on_selection_changed(None)
@@ -179,6 +190,15 @@ class TestRequestPropertyPanel:
         mock_mw.property_panel.show.assert_called()
         mock_mw.property_panel.raise_.assert_called()
         mock_mw.property_panel.activateWindow.assert_called()
+
+    def test_restores_minimized_panel(self, mc, mock_mw, mock_wm):
+        w = MagicMock()
+        mock_mw.property_panel.isMinimized.return_value = True
+
+        mc.request_property_panel(w)
+
+        mock_mw.property_panel.showNormal.assert_called_once()
+        mock_mw.property_panel.show.assert_not_called()
 
     def test_raises_window(self, mc, mock_mw, mock_wm):
         w = MagicMock()
