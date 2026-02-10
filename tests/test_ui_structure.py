@@ -18,7 +18,7 @@ def app():
     return app
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def main_window(app):
     """Headless MainWindow fixture."""
     # Mocking config or heavy dependencies if needed,
@@ -27,7 +27,12 @@ def main_window(app):
     # Note: Logic/Managers might start threads or timers,
     # so we rely on their safe init.
     mw = MainWindow()
-    return mw
+    yield mw
+    try:
+        mw.close()
+        mw.deleteLater()
+    except RuntimeError:
+        pass
 
 
 class TestUIStructure:

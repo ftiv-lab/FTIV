@@ -8,6 +8,21 @@ from PySide6.QtCore import QPoint
 from ui.main_window import MainWindow
 
 
+def _get_image_edge_size() -> int:
+    """Resolve stress image size with env override and test-mode defaults."""
+    raw_override = os.getenv("FTIV_STRESS_IMAGE_SIZE", "").strip()
+    if raw_override:
+        try:
+            return max(1024, int(raw_override))
+        except ValueError:
+            pass
+
+    # FTIV test mode prioritizes deterministic runtime in CI/dev loops.
+    if os.getenv("FTIV_TEST_MODE") == "1":
+        return 6144
+    return 8192
+
+
 def test_large_image_load(qapp):
     """
     Stress check: Load a massive image (8K+ resolution).
@@ -18,7 +33,8 @@ def test_large_image_load(qapp):
 
     # Create a large image (e.g., 8192x8192 = 64MP -> ~200MB in memory raw)
     # Using a solid color for speed of creation
-    WIDTH, HEIGHT = 8192, 8192
+    edge = _get_image_edge_size()
+    WIDTH, HEIGHT = edge, edge
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
         tmp_path = tmp_file.name

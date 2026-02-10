@@ -1,9 +1,25 @@
+import os
 import time
 from unittest.mock import patch
 
 from PySide6.QtCore import QPoint
 
 from ui.main_window import MainWindow
+
+
+def _get_target_count() -> int:
+    """Resolve stress size with env override and test-mode defaults."""
+    raw_override = os.getenv("FTIV_STRESS_TEXT_WINDOWS", "").strip()
+    if raw_override:
+        try:
+            return max(1, int(raw_override))
+        except ValueError:
+            pass
+
+    # FTIV test mode prioritizes deterministic runtime in CI/dev loops.
+    if os.getenv("FTIV_TEST_MODE") == "1":
+        return 120
+    return 200
 
 
 def test_heavy_load_text_windows(qapp):
@@ -16,7 +32,7 @@ def test_heavy_load_text_windows(qapp):
     mw.show()
 
     # Target count
-    TARGET_COUNT = 200
+    TARGET_COUNT = _get_target_count()
 
     try:
         # Mock the limit check to always return False (Under limit)
