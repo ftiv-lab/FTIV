@@ -93,6 +93,10 @@ class PropertyPanel(QWidget):
         self.lbl_task_progress = None
         self.btn_complete_all = None
         self.btn_uncomplete_all = None
+        self.edit_note_title = None
+        self.edit_note_tags = None
+        self.btn_note_star = None
+        self.btn_apply_note_meta = None
         self.btn_text_color = None
         self.spin_text_opacity = self.slider_text_opacity = None
         self.btn_bg_color = None
@@ -361,6 +365,21 @@ class PropertyPanel(QWidget):
         if self.lbl_task_progress and hasattr(t, "get_task_progress"):
             done, total = t.get_task_progress()
             self.lbl_task_progress.setText(tr("label_task_progress_fmt").format(done=done, total=total))
+
+        if self.edit_note_title:
+            with QSignalBlocker(self.edit_note_title):
+                self.edit_note_title.setText(str(getattr(t, "title", "") or ""))
+
+        if self.edit_note_tags:
+            raw_tags = getattr(t, "tags", [])
+            tag_text = ", ".join(str(tag) for tag in raw_tags if str(tag).strip()) if isinstance(raw_tags, list) else ""
+            with QSignalBlocker(self.edit_note_tags):
+                self.edit_note_tags.setText(tag_text)
+
+        if self.btn_note_star:
+            self.btn_note_star.blockSignals(True)
+            self.btn_note_star.setChecked(bool(getattr(t, "is_starred", False)))
+            self.btn_note_star.blockSignals(False)
 
         if self.btn_text_font:
             self.btn_text_font.setText(f"{t.font_family} ({t.font_size}pt)")
@@ -1002,6 +1021,67 @@ class PropertyPanel(QWidget):
                 btn_h.addWidget(self.btn_complete_all)
                 btn_h.addWidget(self.btn_uncomplete_all)
                 t_layout.addRow("", btn_row)
+
+            self.edit_note_title = QLineEdit(str(getattr(target, "title", "") or ""))
+            self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
+            t_layout.addRow(tr("label_note_title"), typing.cast(QWidget, self.edit_note_title))
+
+            raw_tags = getattr(target, "tags", [])
+            tag_text = ", ".join(str(tag) for tag in raw_tags if str(tag).strip()) if isinstance(raw_tags, list) else ""
+            self.edit_note_tags = QLineEdit(tag_text)
+            self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
+            t_layout.addRow(tr("label_note_tags"), typing.cast(QWidget, self.edit_note_tags))
+
+            self.btn_note_star = self.create_action_button(tr("label_note_star"), lambda: None, "toggle")
+            self.btn_note_star.setCheckable(True)
+            self.btn_note_star.setChecked(bool(getattr(target, "is_starred", False)))
+
+            self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
+            self.btn_apply_note_meta.setProperty("class", "secondary-button")
+
+            def _parse_tags_csv(raw: str) -> list[str]:
+                tags: list[str] = []
+                seen: set[str] = set()
+                for token in str(raw or "").split(","):
+                    tag = token.strip()
+                    key = tag.lower()
+                    if not tag or key in seen:
+                        continue
+                    tags.append(tag)
+                    seen.add(key)
+                return tags
+
+            def _apply_note_meta() -> None:
+                title = self.edit_note_title.text().strip() if self.edit_note_title is not None else ""
+                tags = _parse_tags_csv(self.edit_note_tags.text() if self.edit_note_tags is not None else "")
+                starred = self.btn_note_star.isChecked() if self.btn_note_star is not None else False
+
+                if hasattr(target, "set_title_and_tags"):
+                    target.set_title_and_tags(title, tags)
+                else:
+                    target.set_undoable_property("title", title, "update_text")
+                    target.set_undoable_property("tags", tags, "update_text")
+
+                if hasattr(target, "set_starred"):
+                    target.set_starred(starred)
+                else:
+                    target.set_undoable_property("is_starred", bool(starred), "update_text")
+
+                self.update_property_values()
+                if self.mw and hasattr(self.mw, "info_tab"):
+                    self.mw.info_tab.refresh_data()
+
+            self.edit_note_title.returnPressed.connect(_apply_note_meta)
+            self.edit_note_tags.returnPressed.connect(_apply_note_meta)
+            self.btn_apply_note_meta.clicked.connect(_apply_note_meta)
+
+            meta_btn_row = QWidget()
+            meta_btn_layout = QHBoxLayout(meta_btn_row)
+            meta_btn_layout.setContentsMargins(0, 0, 0, 0)
+            meta_btn_layout.setSpacing(4)
+            meta_btn_layout.addWidget(self.btn_note_star)
+            meta_btn_layout.addWidget(self.btn_apply_note_meta)
+            t_layout.addRow("", meta_btn_row)
 
         self.btn_text_font = QPushButton(f"{target.font_family} ({target.font_size}pt)")
         self.btn_text_font.setProperty("class", "secondary-button")

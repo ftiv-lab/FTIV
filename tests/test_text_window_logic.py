@@ -253,3 +253,41 @@ class TestTaskModeHelpers:
         w._is_editing = False
         w._toggle_task_line_under_cursor()
         mock_info.assert_called_once()
+
+    def test_iter_task_items_returns_refs(self):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w.config.text = "one\ntwo"
+        w.config.task_states = [True, False]
+
+        items = w.iter_task_items()
+        assert len(items) == 2
+        assert items[0].line_index == 0
+        assert items[0].text == "one"
+        assert items[0].done is True
+        assert items[1].line_index == 1
+        assert items[1].done is False
+
+    def test_set_task_line_state_updates_states(self):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w.config.text = "one\ntwo"
+        w.config.task_states = [False, False]
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_task_line_state(0, True)
+
+        mock_prop.assert_called_once_with("task_states", [True, False], "update_text")
+        w._touch_updated_at.assert_called_once()
+
+    def test_set_title_and_tags_normalizes_tags(self):
+        w = _make_text_window()
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_title_and_tags("  Hello  ", ["A", "a", "", "B "])
+
+        mock_prop.assert_any_call("title", "Hello", "update_text")
+        mock_prop.assert_any_call("tags", ["A", "B"], "update_text")
+        w._touch_updated_at.assert_called_once()

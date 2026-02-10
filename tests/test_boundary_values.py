@@ -140,6 +140,8 @@ class TestTextWindowConfigBoundary:
         assert config.is_starred is False
         assert config.created_at == ""
         assert config.updated_at == ""
+        assert config.due_at == ""
+        assert config.is_archived is False
         assert config.task_states == []
         assert config.task_schema_version == 1
         assert config.note_vertical_preference is False

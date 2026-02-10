@@ -64,6 +64,8 @@ class TextWindowConfig(WindowConfigBase):
     task_states: List[bool] = Field(default_factory=list)
     task_schema_version: int = 1
     note_vertical_preference: bool = False
+    due_at: str = ""
+    is_archived: bool = False
     text: str = "New Text"
     font: str = "Arial"
     font_size: int = 48

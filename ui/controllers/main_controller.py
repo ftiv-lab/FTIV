@@ -49,6 +49,10 @@ class MainController:
     def bulk_manager(self) -> Any:
         return getattr(self.view, "bulk_manager", None)
 
+    @property
+    def info_actions(self) -> Any:
+        return getattr(self.view, "info_actions", None)
+
     def _on_selection_changed(self, window: Optional[Any]) -> None:
         """WindowManagerからの選択変更通知を処理する。"""
         # 1. PropertyPanel の更新
@@ -71,6 +75,7 @@ class MainController:
         self._update_tab_state("image_tab", window)
         self._update_tab_state("text_tab", window)
         self._update_tab_state("connections_tab", window)
+        self._update_tab_state("info_tab", window)
 
     def _update_tab_state(self, tab_attr: str, window: Optional[Any]) -> None:
         """タブが選択変更メソッドを持っていれば呼ぶヘルパー。"""

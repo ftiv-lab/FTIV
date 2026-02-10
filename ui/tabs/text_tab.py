@@ -2,9 +2,11 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QGridLayout,
     QGroupBox,
     QLabel,
+    QLineEdit,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -305,17 +307,38 @@ class TextTab(QWidget):
         self.btn_content_mode_task.setCheckable(True)
         self.btn_content_mode_task.clicked.connect(lambda: self._set_content_mode("task"))
 
+        self.lbl_note_title = QLabel(tr("label_note_title"))
+        self.edit_note_title = QLineEdit()
+        self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
+        self.edit_note_title.returnPressed.connect(self._apply_note_metadata)
+
+        self.lbl_note_tags = QLabel(tr("label_note_tags"))
+        self.edit_note_tags = QLineEdit()
+        self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
+        self.edit_note_tags.returnPressed.connect(self._apply_note_metadata)
+
+        self.chk_note_star = QCheckBox(tr("label_note_star"))
+        self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
+        self.btn_apply_note_meta.setObjectName("ActionBtn")
+        self.btn_apply_note_meta.clicked.connect(self._apply_note_metadata)
+
         grid_sel.addWidget(self.btn_content_mode_note, 0, 0)
         grid_sel.addWidget(self.btn_content_mode_task, 0, 1)
-        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 1, 0, 1, 2)
-        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 2, 0, 1, 2)
+        grid_sel.addWidget(self.lbl_note_title, 1, 0)
+        grid_sel.addWidget(self.edit_note_title, 1, 1)
+        grid_sel.addWidget(self.lbl_note_tags, 2, 0)
+        grid_sel.addWidget(self.edit_note_tags, 2, 1)
+        grid_sel.addWidget(self.chk_note_star, 3, 0)
+        grid_sel.addWidget(self.btn_apply_note_meta, 3, 1)
+        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 4, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 5, 0, 1, 2)
 
         # ✨ New: Save current as Default
         self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
         self.btn_save_default_selected.setObjectName("ActionBtn")
         self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
         self.btn_save_default_selected.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
-        grid_sel.addWidget(self.btn_save_default_selected, 3, 0, 1, 2)
+        grid_sel.addWidget(self.btn_save_default_selected, 6, 0, 1, 2)
 
         layout.addWidget(self.txt_layout_grp_selected)
 
@@ -403,6 +426,7 @@ class TextTab(QWidget):
             btn.setChecked(False)
             btn.blockSignals(False)
         self._sync_content_mode_buttons("note")
+        self._sync_note_meta_controls(None)
 
     def _sync_check_states(self, obj: Any) -> None:
         # Frontmost
@@ -429,6 +453,7 @@ class TextTab(QWidget):
 
         # Content Mode
         self._sync_content_mode_buttons(mode)
+        self._sync_note_meta_controls(obj)
 
     def _set_content_mode(self, mode: str) -> None:
         """選択中のTextWindowのコンテンツモードを変更する。"""
@@ -453,6 +478,76 @@ class TextTab(QWidget):
         self.btn_content_mode_task.setChecked(mode == "task")
         self.btn_content_mode_note.blockSignals(False)
         self.btn_content_mode_task.blockSignals(False)
+
+    @staticmethod
+    def _parse_tags_csv(raw: str) -> list[str]:
+        tags: list[str] = []
+        seen: set[str] = set()
+        for token in str(raw or "").split(","):
+            tag = token.strip()
+            key = tag.lower()
+            if not tag or key in seen:
+                continue
+            tags.append(tag)
+            seen.add(key)
+        return tags
+
+    def _apply_note_metadata(self) -> None:
+        """選択中のTextWindowへ title/tags/star を適用する。"""
+        try:
+            wm = getattr(self.mw, "window_manager", None)
+            if wm is None:
+                return
+            target = getattr(wm, "last_selected_window", None)
+            if target is None:
+                return
+
+            t_name = type(target).__name__
+            if t_name not in ("TextWindow", "ConnectorLabel"):
+                return
+
+            title = self.edit_note_title.text().strip()
+            tags = self._parse_tags_csv(self.edit_note_tags.text())
+            is_starred = self.chk_note_star.isChecked()
+
+            if hasattr(target, "set_title_and_tags"):
+                target.set_title_and_tags(title, tags)
+            else:
+                target.set_undoable_property("title", title, "update_text")
+                target.set_undoable_property("tags", tags, "update_text")
+
+            if hasattr(target, "set_starred"):
+                target.set_starred(is_starred)
+            else:
+                target.set_undoable_property("is_starred", bool(is_starred), "update_text")
+
+            self._sync_note_meta_controls(target)
+            if hasattr(self.mw, "info_tab"):
+                self.mw.info_tab.refresh_data()
+        except Exception:
+            logger.debug("Failed to apply note metadata", exc_info=True)
+
+    def _sync_note_meta_controls(self, obj: Optional[Any]) -> None:
+        enabled = obj is not None and type(obj).__name__ in ("TextWindow", "ConnectorLabel")
+
+        for w in [self.edit_note_title, self.edit_note_tags, self.chk_note_star, self.btn_apply_note_meta]:
+            if w is not None:
+                w.setEnabled(enabled)
+
+        if not enabled or obj is None:
+            self.edit_note_title.setText("")
+            self.edit_note_tags.setText("")
+            self.chk_note_star.setChecked(False)
+            return
+
+        self.edit_note_title.setText(str(getattr(obj, "title", "") or ""))
+        raw_tags = getattr(obj, "tags", [])
+        if isinstance(raw_tags, list):
+            tag_text = ", ".join(str(tag) for tag in raw_tags if str(tag).strip())
+        else:
+            tag_text = ""
+        self.edit_note_tags.setText(tag_text)
+        self.chk_note_star.setChecked(bool(getattr(obj, "is_starred", False)))
 
     def refresh_ui(self) -> None:
         """UI文言更新"""
@@ -505,6 +600,12 @@ class TextTab(QWidget):
         self.txt_btn_sel_spacing_settings.setText(tr("menu_margin_settings"))
         self.btn_content_mode_note.setText(tr("label_content_mode_note"))
         self.btn_content_mode_task.setText(tr("label_content_mode_task"))
+        self.lbl_note_title.setText(tr("label_note_title"))
+        self.lbl_note_tags.setText(tr("label_note_tags"))
+        self.chk_note_star.setText(tr("label_note_star"))
+        self.btn_apply_note_meta.setText(tr("btn_apply_note_meta"))
+        self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
+        self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
 
         self.txt_layout_grp_all.setTitle(tr("anim_target_all_text"))
         self.btn_all_horizontal.setText(tr("btn_set_all_horizontal"))
@@ -567,6 +668,10 @@ class TextTab(QWidget):
             # Content Mode
             "btn_content_mode_note",
             "btn_content_mode_task",
+            "edit_note_title",
+            "edit_note_tags",
+            "chk_note_star",
+            "btn_apply_note_meta",
         ]
 
         for attr in attr_names_text_like:

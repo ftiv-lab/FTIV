@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import traceback
+from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional
@@ -37,6 +38,16 @@ from .mixins.text_properties_mixin import TextPropertiesMixin
 # ロガーの取得
 logger = logging.getLogger(__name__)
 LEGACY_TASK_LINE_PATTERN = re.compile(r"^\s*\[(?P<state>[ xX])\]\s?(?P<body>.*)$")
+
+
+@dataclass(frozen=True)
+class TaskLineRef:
+    """タスク一覧向けの1行参照。"""
+
+    window_uuid: str
+    line_index: int
+    text: str
+    done: bool
 
 
 class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # type: ignore
@@ -377,20 +388,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
     def _toggle_task_line_by_index(self, idx: int) -> None:
         """指定行の完了状態をトグルする。"""
-        if not self.is_task_mode():
-            return
-
-        lines = self._split_lines(self.text)
-        if idx < 0 or idx >= len(lines):
-            return
-
-        states = self._normalize_task_states(self.task_states, len(lines))
-        new_states = list(states)
-        new_states[idx] = not bool(new_states[idx])
-
-        if new_states != states:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        self.toggle_task_line_state(idx)
 
     def _toggle_task_line_under_cursor(self) -> None:
         """インライン編集中のカーソル行の完了状態をトグルする。"""
@@ -423,6 +421,102 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         states = self._normalize_task_states(self.task_states, total)
         done = sum(1 for state in states if state)
         return done, total
+
+    def iter_task_items(self) -> List[TaskLineRef]:
+        """タスク行の参照一覧を返す（taskモード時のみ）。"""
+        if not self.is_task_mode():
+            return []
+
+        lines = self._split_lines(self.text)
+        states = self._normalize_task_states(self.task_states, len(lines))
+        window_uuid = str(getattr(self, "uuid", ""))
+        return [
+            TaskLineRef(
+                window_uuid=window_uuid,
+                line_index=i,
+                text=str(line or ""),
+                done=bool(states[i]),
+            )
+            for i, line in enumerate(lines)
+        ]
+
+    def get_task_line_state(self, index: int) -> bool:
+        """指定行のタスク状態を返す。"""
+        if not self.is_task_mode():
+            return False
+        lines = self._split_lines(self.text)
+        if index < 0 or index >= len(lines):
+            return False
+        states = self._normalize_task_states(self.task_states, len(lines))
+        return bool(states[index])
+
+    def set_task_line_state(self, index: int, done: bool) -> None:
+        """指定行のタスク状態を設定する。"""
+        if not self.is_task_mode():
+            return
+        lines = self._split_lines(self.text)
+        if index < 0 or index >= len(lines):
+            return
+
+        states = self._normalize_task_states(self.task_states, len(lines))
+        target = bool(done)
+        if bool(states[index]) == target:
+            return
+
+        new_states = list(states)
+        new_states[index] = target
+        self.set_undoable_property("task_states", new_states, "update_text")
+        self._touch_updated_at()
+
+    def toggle_task_line_state(self, index: int) -> None:
+        """指定行のタスク状態をトグルする。"""
+        if not self.is_task_mode():
+            return
+        self.set_task_line_state(index, not self.get_task_line_state(index))
+
+    def set_title_and_tags(self, title: str, tags: List[str]) -> None:
+        """ノートメタ（title/tags）をまとめて更新する。"""
+        normalized_title = str(title or "").strip()
+
+        normalized_tags: List[str] = []
+        seen: set[str] = set()
+        for raw in list(tags or []):
+            tag = str(raw or "").strip()
+            key = tag.lower()
+            if not tag or key in seen:
+                continue
+            normalized_tags.append(tag)
+            seen.add(key)
+
+        stack = getattr(self.main_window, "undo_stack", None)
+        use_macro = bool(stack is not None and hasattr(stack, "beginMacro") and hasattr(stack, "endMacro"))
+        if use_macro:
+            stack.beginMacro("Update Note Metadata")
+        try:
+            if self.title != normalized_title:
+                self.set_undoable_property("title", normalized_title, "update_text")
+            if self.tags != normalized_tags:
+                self.set_undoable_property("tags", normalized_tags, "update_text")
+            self._touch_updated_at()
+        finally:
+            if use_macro:
+                stack.endMacro()
+
+    def set_starred(self, value: bool) -> None:
+        """スター状態を更新する。"""
+        new_value = bool(value)
+        if bool(self.is_starred) == new_value:
+            return
+        self.set_undoable_property("is_starred", new_value, "update_text")
+        self._touch_updated_at()
+
+    def set_archived(self, value: bool) -> None:
+        """アーカイブ状態を更新する。"""
+        new_value = bool(value)
+        if bool(getattr(self, "is_archived", False)) == new_value:
+            return
+        self.set_undoable_property("is_archived", new_value, "update_text")
+        self._touch_updated_at()
 
     def complete_all_tasks(self) -> None:
         """全タスク行を完了状態にする。"""

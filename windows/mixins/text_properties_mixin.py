@@ -168,6 +168,22 @@ class TextPropertiesMixin:
         self.config.updated_at = str(value or "")
 
     @property
+    def due_at(self) -> str:
+        return str(getattr(self.config, "due_at", "") or "")
+
+    @due_at.setter
+    def due_at(self, value: str) -> None:
+        self.config.due_at = str(value or "")
+
+    @property
+    def is_archived(self) -> bool:
+        return bool(getattr(self.config, "is_archived", False))
+
+    @is_archived.setter
+    def is_archived(self, value: bool) -> None:
+        self.config.is_archived = bool(value)
+
+    @property
     def font_family(self) -> str:
         return self.config.font
 
