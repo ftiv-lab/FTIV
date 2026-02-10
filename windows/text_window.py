@@ -30,6 +30,7 @@ from ui.dialogs import (
 )
 from utils.due_date import normalize_due_iso
 from utils.font_dialog import choose_font
+from utils.tag_ops import normalize_tags
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
@@ -478,16 +479,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
     def set_title_and_tags(self, title: str, tags: List[str]) -> None:
         """ノートメタ（title/tags）をまとめて更新する。"""
         normalized_title = str(title or "").strip()
-
-        normalized_tags: List[str] = []
-        seen: set[str] = set()
-        for raw in list(tags or []):
-            tag = str(raw or "").strip()
-            key = tag.lower()
-            if not tag or key in seen:
-                continue
-            normalized_tags.append(tag)
-            seen.add(key)
+        normalized_tags = normalize_tags(tags or [])
 
         stack = getattr(self.main_window, "undo_stack", None)
         use_macro = bool(stack is not None and hasattr(stack, "beginMacro") and hasattr(stack, "endMacro"))
@@ -502,6 +494,14 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         finally:
             if use_macro:
                 stack.endMacro()
+
+    def set_tags(self, tags: List[str]) -> None:
+        """タグのみを正規化して更新する。"""
+        normalized_tags = normalize_tags(tags or [])
+        if list(getattr(self, "tags", []) or []) == normalized_tags:
+            return
+        self.set_undoable_property("tags", normalized_tags, "update_text")
+        self._touch_updated_at()
 
     def set_starred(self, value: bool) -> None:
         """スター状態を更新する。"""

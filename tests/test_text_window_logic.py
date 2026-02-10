@@ -292,6 +292,28 @@ class TestTaskModeHelpers:
         mock_prop.assert_any_call("tags", ["A", "B"], "update_text")
         w._touch_updated_at.assert_called_once()
 
+    def test_set_tags_normalizes_and_updates(self):
+        w = _make_text_window()
+        w.config.tags = ["One"]
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_tags([" one ", "Two", "two", ""])
+
+        mock_prop.assert_called_once_with("tags", ["one", "Two"], "update_text")
+        w._touch_updated_at.assert_called_once()
+
+    def test_set_tags_no_change_is_noop(self):
+        w = _make_text_window()
+        w.config.tags = ["One", "Two"]
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_tags(["One", "Two", "one"])
+
+        mock_prop.assert_not_called()
+        w._touch_updated_at.assert_not_called()
+
     def test_set_due_at_normalizes_date(self):
         w = _make_text_window()
         w.config.due_at = ""

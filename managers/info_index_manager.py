@@ -42,6 +42,7 @@ class InfoQuery:
     starred_only: bool = False
     open_tasks_only: bool = False
     include_archived: bool = False
+    archive_scope: Literal["active", "archived", "all"] = "active"
     due_filter: Literal["all", "today", "overdue", "upcoming", "dated", "undated"] = "all"
     mode_filter: Literal["all", "task", "note"] = "all"
     sort_by: Literal["updated", "due", "created", "title"] = "updated"
@@ -252,10 +253,22 @@ class InfoIndexManager:
             return True
         return any(query in tag.lower() for tag in tags)
 
+    @staticmethod
+    def _effective_archive_scope(query: InfoQuery) -> str:
+        scope = str(getattr(query, "archive_scope", "active") or "active").strip().lower()
+        if scope not in ("active", "archived", "all"):
+            scope = "active"
+        if scope == "active" and bool(getattr(query, "include_archived", False)):
+            return "all"
+        return scope
+
     def query_tasks(self, items: Sequence[TaskIndexItem], query: InfoQuery) -> List[TaskIndexItem]:
+        archive_scope = self._effective_archive_scope(query)
         out: List[TaskIndexItem] = []
         for item in list(items or []):
-            if not query.include_archived and item.is_archived:
+            if archive_scope == "active" and item.is_archived:
+                continue
+            if archive_scope == "archived" and not item.is_archived:
                 continue
             if not self._matches_mode(query.mode_filter, "task"):
                 continue
@@ -273,9 +286,12 @@ class InfoIndexManager:
         return self._sort_tasks(out, query)
 
     def query_notes(self, items: Sequence[NoteIndexItem], query: InfoQuery) -> List[NoteIndexItem]:
+        archive_scope = self._effective_archive_scope(query)
         out: List[NoteIndexItem] = []
         for item in list(items or []):
-            if not query.include_archived and item.is_archived:
+            if archive_scope == "active" and item.is_archived:
+                continue
+            if archive_scope == "archived" and not item.is_archived:
                 continue
             if not self._matches_mode(query.mode_filter, item.content_mode):
                 continue

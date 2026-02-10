@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from utils.font_dialog import choose_font
+from utils.tag_ops import parse_tags_csv
 from utils.translator import tr
 
 from .widgets import Gradient
@@ -174,6 +175,52 @@ class DatePickerDialog(BaseTranslatableDialog):
         dialog = cls(parent=parent, initial_text=initial_text)
         _ = dialog.exec()
         return dialog._picked_value
+
+
+class BulkTagEditDialog(BaseTranslatableDialog):
+    """Dialog for bulk add/remove tag editing."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("title_info_bulk_tags"))
+
+        layout = QVBoxLayout(self)
+        self.hint_label = QLabel(tr("label_info_bulk_tags_hint"))
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
+
+        form = QFormLayout()
+        self.edit_add = QLineEdit(self)
+        self.edit_remove = QLineEdit(self)
+        self.edit_add.setPlaceholderText(tr("placeholder_info_bulk_tags_add"))
+        self.edit_remove.setPlaceholderText(tr("placeholder_info_bulk_tags_remove"))
+        form.addRow(tr("label_info_bulk_tags_add"), self.edit_add)
+        form.addRow(tr("label_info_bulk_tags_remove"), self.edit_remove)
+        layout.addLayout(form)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+        self.setMinimumWidth(380)
+        self._connect_language_changed()
+
+    def refresh_ui_text(self) -> None:
+        self.setWindowTitle(tr("title_info_bulk_tags"))
+        self.hint_label.setText(tr("label_info_bulk_tags_hint"))
+        self.edit_add.setPlaceholderText(tr("placeholder_info_bulk_tags_add"))
+        self.edit_remove.setPlaceholderText(tr("placeholder_info_bulk_tags_remove"))
+
+    def get_values(self) -> tuple[list[str], list[str]]:
+        return parse_tags_csv(self.edit_add.text()), parse_tags_csv(self.edit_remove.text())
+
+    @classmethod
+    def ask(cls, parent: Optional[QWidget] = None) -> tuple[list[str], list[str]] | None:
+        dialog = cls(parent=parent)
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return dialog.get_values()
 
 
 class SliderSpinDialog(QDialog):

@@ -127,6 +127,38 @@ class TestInfoIndexManager:
         include_archived = manager.query_notes(notes, InfoQuery(include_archived=True))
         assert len(include_archived) == 2
 
+    def test_archive_scope_filters_notes(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="visible", content_mode="note", is_archived=False),
+            _make_window(uuid="n2", text="hidden", content_mode="note", is_archived=True),
+        ]
+        _, notes = manager.build_index(windows)
+
+        active = manager.query_notes(notes, InfoQuery(archive_scope="active"))
+        archived = manager.query_notes(notes, InfoQuery(archive_scope="archived"))
+        all_items = manager.query_notes(notes, InfoQuery(archive_scope="all"))
+
+        assert [item.window_uuid for item in active] == ["n1"]
+        assert [item.window_uuid for item in archived] == ["n2"]
+        assert len(all_items) == 2
+        assert {item.window_uuid for item in all_items} == {"n1", "n2"}
+
+    def test_archive_scope_prioritizes_over_include_archived_except_legacy_active(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="visible", content_mode="note", is_archived=False),
+            _make_window(uuid="n2", text="hidden", content_mode="note", is_archived=True),
+        ]
+        _, notes = manager.build_index(windows)
+
+        legacy_all = manager.query_notes(notes, InfoQuery(include_archived=True, archive_scope="active"))
+        forced_archived = manager.query_notes(notes, InfoQuery(include_archived=True, archive_scope="archived"))
+
+        assert len(legacy_all) == 2
+        assert {item.window_uuid for item in legacy_all} == {"n1", "n2"}
+        assert [item.window_uuid for item in forced_archived] == ["n2"]
+
     def test_query_tasks_due_filter_overdue(self):
         manager = InfoIndexManager()
         windows = [

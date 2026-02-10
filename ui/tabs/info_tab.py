@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from managers.info_index_manager import InfoIndexManager, InfoQuery, InfoStats, NoteIndexItem, TaskIndexItem
+from ui.dialogs import BulkTagEditDialog
 from utils.due_date import classify_due, display_due_iso
 from utils.translator import tr
 
@@ -41,8 +42,9 @@ class InfoTab(QWidget):
 
     _DUE_FILTER_VALUES = ("all", "today", "overdue", "upcoming", "dated", "undated")
     _MODE_FILTER_VALUES = ("all", "task", "note")
+    _ARCHIVE_SCOPE_VALUES = ("active", "archived", "all")
     _SORT_BY_VALUES = ("updated", "due", "created", "title")
-    _SMART_VIEW_KEYS = ("all", "open", "today", "overdue", "starred")
+    _SMART_VIEW_KEYS = ("all", "open", "today", "overdue", "starred", "archived")
 
     def __init__(self, main_window: Any):
         super().__init__()
@@ -103,6 +105,7 @@ class InfoTab(QWidget):
             ("today", "info_view_today"),
             ("overdue", "info_view_overdue"),
             ("starred", "info_view_starred"),
+            ("archived", "info_view_archived"),
         ]:
             btn = QPushButton(tr(text_key))
             btn.setCheckable(True)
@@ -151,6 +154,11 @@ class InfoTab(QWidget):
         self._reload_due_combo_items()
         self.cmb_due_filter.currentIndexChanged.connect(self._on_filter_controls_changed)
         filter_mode_layout.addWidget(self.cmb_due_filter, 1)
+        filter_mode_layout.addWidget(QLabel(tr("info_archive_scope_label")))
+        self.cmb_archive_scope = QComboBox()
+        self._reload_archive_scope_combo_items()
+        self.cmb_archive_scope.currentIndexChanged.connect(self._on_filter_controls_changed)
+        filter_mode_layout.addWidget(self.cmb_archive_scope, 1)
 
         self.cmb_sort_by = QComboBox()
         self._reload_sort_combo_items()
@@ -237,8 +245,42 @@ class InfoTab(QWidget):
         self.btn_archive_selected.clicked.connect(self._archive_selected)
         bulk_row.addWidget(self.btn_archive_selected)
 
+        self.btn_restore_selected = QPushButton(tr("info_bulk_restore_selected"))
+        self.btn_restore_selected.setObjectName("ActionBtn")
+        self.btn_restore_selected.clicked.connect(self._restore_selected)
+        bulk_row.addWidget(self.btn_restore_selected)
+
+        self.btn_star_selected = QPushButton(tr("info_bulk_star_selected"))
+        self.btn_star_selected.setObjectName("ActionBtn")
+        self.btn_star_selected.clicked.connect(lambda: self._apply_bulk_star(True))
+        bulk_row.addWidget(self.btn_star_selected)
+
+        self.btn_unstar_selected = QPushButton(tr("info_bulk_unstar_selected"))
+        self.btn_unstar_selected.setObjectName("ActionBtn")
+        self.btn_unstar_selected.clicked.connect(lambda: self._apply_bulk_star(False))
+        bulk_row.addWidget(self.btn_unstar_selected)
+
+        self.btn_edit_tags_selected = QPushButton(tr("info_bulk_edit_tags_selected"))
+        self.btn_edit_tags_selected.setObjectName("ActionBtn")
+        self.btn_edit_tags_selected.clicked.connect(self._edit_tags_selected)
+        bulk_row.addWidget(self.btn_edit_tags_selected)
+
         bulk_row.addStretch()
         layout.addLayout(bulk_row)
+
+        self.operations_group = QGroupBox(tr("info_recent_operations"))
+        operations_layout = QVBoxLayout(self.operations_group)
+        self.operations_list = QListWidget()
+        self.operations_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        operations_layout.addWidget(self.operations_list)
+        operation_btn_row = QHBoxLayout()
+        operation_btn_row.addStretch()
+        self.btn_clear_operations = QPushButton(tr("info_clear_operations"))
+        self.btn_clear_operations.setObjectName("ActionBtn")
+        self.btn_clear_operations.clicked.connect(self._clear_operation_logs)
+        operation_btn_row.addWidget(self.btn_clear_operations)
+        operations_layout.addLayout(operation_btn_row)
+        layout.addWidget(self.operations_group)
         layout.addStretch()
 
     @staticmethod
@@ -248,6 +290,7 @@ class InfoTab(QWidget):
             "tag": "",
             "starred_only": False,
             "open_tasks_only": False,
+            "archive_scope": "active",
             "due_filter": "all",
             "mode_filter": "all",
             "sort_by": "updated",
@@ -293,6 +336,12 @@ class InfoTab(QWidget):
                 filters={**dict(defaults), "starred_only": True},
                 smart_view="starred",
             ),
+            "builtin:archived": ViewPreset(
+                preset_id="builtin:archived",
+                name=tr("info_view_archived"),
+                filters={**dict(defaults), "archive_scope": "archived", "sort_by": "updated", "sort_desc": True},
+                smart_view="archived",
+            ),
         }
 
     def _sanitize_filters(self, raw: Any) -> dict[str, Any]:
@@ -305,6 +354,11 @@ class InfoTab(QWidget):
         out["tag"] = str(raw.get("tag", defaults["tag"]) or "").strip()
         out["starred_only"] = bool(raw.get("starred_only", defaults["starred_only"]))
         out["open_tasks_only"] = bool(raw.get("open_tasks_only", defaults["open_tasks_only"]))
+
+        archive_scope = str(raw.get("archive_scope", defaults["archive_scope"]) or "").strip().lower()
+        out["archive_scope"] = (
+            archive_scope if archive_scope in self._ARCHIVE_SCOPE_VALUES else defaults["archive_scope"]
+        )
 
         due_filter = str(raw.get("due_filter", defaults["due_filter"]) or "").strip().lower()
         out["due_filter"] = due_filter if due_filter in self._DUE_FILTER_VALUES else defaults["due_filter"]
@@ -403,6 +457,19 @@ class InfoTab(QWidget):
         self.cmb_due_filter.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_due_filter.blockSignals(False)
 
+    def _reload_archive_scope_combo_items(self) -> None:
+        selected_data = (
+            str(self.cmb_archive_scope.currentData() or "active") if hasattr(self, "cmb_archive_scope") else "active"
+        )
+        self.cmb_archive_scope.blockSignals(True)
+        self.cmb_archive_scope.clear()
+        self.cmb_archive_scope.addItem(tr("info_archive_scope_active"), "active")
+        self.cmb_archive_scope.addItem(tr("info_archive_scope_archived"), "archived")
+        self.cmb_archive_scope.addItem(tr("info_archive_scope_all"), "all")
+        idx = self.cmb_archive_scope.findData(selected_data)
+        self.cmb_archive_scope.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_archive_scope.blockSignals(False)
+
     def _reload_sort_combo_items(self) -> None:
         selected_data = str(self.cmb_sort_by.currentData() or "updated") if hasattr(self, "cmb_sort_by") else "updated"
         self.cmb_sort_by.blockSignals(True)
@@ -421,7 +488,14 @@ class InfoTab(QWidget):
         self.cmb_view_preset.blockSignals(True)
         self.cmb_view_preset.clear()
 
-        for preset_id in ["builtin:all", "builtin:open", "builtin:today", "builtin:overdue", "builtin:starred"]:
+        for preset_id in [
+            "builtin:all",
+            "builtin:open",
+            "builtin:today",
+            "builtin:overdue",
+            "builtin:starred",
+            "builtin:archived",
+        ]:
             preset = self._view_presets.get(preset_id)
             if preset is not None:
                 self.cmb_view_preset.addItem(preset.name, preset.preset_id)
@@ -464,6 +538,7 @@ class InfoTab(QWidget):
             self.edit_tag_filter.setText(str(sanitized["tag"]))
             self.chk_star_only.setChecked(bool(sanitized["starred_only"]))
             self.chk_open_only.setChecked(bool(sanitized["open_tasks_only"]))
+            self._set_combo_data(self.cmb_archive_scope, str(sanitized["archive_scope"]))
             self._set_combo_data(self.cmb_due_filter, str(sanitized["due_filter"]))
             self._set_combo_data(self.cmb_mode_filter, str(sanitized["mode_filter"]))
             self._set_combo_data(self.cmb_sort_by, str(sanitized["sort_by"]))
@@ -500,6 +575,7 @@ class InfoTab(QWidget):
                 "tag": self.edit_tag_filter.text().strip(),
                 "starred_only": self.chk_star_only.isChecked(),
                 "open_tasks_only": self.chk_open_only.isChecked(),
+                "archive_scope": str(self.cmb_archive_scope.currentData() or "active"),
                 "due_filter": str(self.cmb_due_filter.currentData() or "all"),
                 "mode_filter": str(self.cmb_mode_filter.currentData() or "all"),
                 "sort_by": str(self.cmb_sort_by.currentData() or "updated"),
@@ -573,6 +649,7 @@ class InfoTab(QWidget):
             starred_only=self.chk_star_only.isChecked(),
             open_tasks_only=self.chk_open_only.isChecked(),
             include_archived=False,
+            archive_scope=str(self.cmb_archive_scope.currentData() or "active"),
             due_filter=str(self.cmb_due_filter.currentData() or "all"),
             mode_filter=str(self.cmb_mode_filter.currentData() or "all"),
             sort_by=str(self.cmb_sort_by.currentData() or "updated"),
@@ -608,18 +685,26 @@ class InfoTab(QWidget):
             self._populate_tasks(filtered_tasks)
             self._populate_notes(filtered_notes)
             self._update_stats(stats)
+            self._populate_operation_logs()
         finally:
             self._is_refreshing = False
 
-    def _build_due_badges(self, due_state: str) -> list[str]:
+    def _build_due_badges(self, due_state: str, is_archived: bool = False, is_done_task: bool = False) -> list[str]:
+        badges: list[str] = []
+        if is_archived:
+            badges.append(f"[{tr('info_badge_archived')}]")
+        if is_done_task:
+            return badges
         if due_state == "today":
-            return [f"[{tr('info_badge_today')}]"]
+            badges.append(f"[{tr('info_badge_today')}]")
         if due_state == "overdue":
-            return [f"[{tr('info_badge_overdue')}]"]
-        return []
+            badges.append(f"[{tr('info_badge_overdue')}]")
+        return badges
 
     @staticmethod
-    def _due_color(due_state: str) -> Optional[QColor]:
+    def _item_color(due_state: str, is_archived: bool) -> Optional[QColor]:
+        if is_archived:
+            return QColor("#a0a0a0")
         if due_state == "today":
             return QColor("#f5c16c")
         if due_state == "overdue":
@@ -640,7 +725,9 @@ class InfoTab(QWidget):
                 text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
                 due_text = display_due_iso(item.due_at)
                 due_state = classify_due(item.due_at)
-                badges = self._build_due_badges(due_state) if not item.done else []
+                badges = self._build_due_badges(
+                    due_state, is_archived=bool(item.is_archived), is_done_task=bool(item.done)
+                )
                 if due_text:
                     text = f"{text}  ({tr('info_due_short_fmt').format(date=due_text)})"
                 if badges:
@@ -655,7 +742,7 @@ class InfoTab(QWidget):
                 lw_item.setData(Qt.ItemDataRole.UserRole + 1, bool(item.done))
                 lw_item.setData(Qt.ItemDataRole.UserRole + 2, item.window_uuid)
 
-                color = self._due_color(due_state) if not item.done else None
+                color = self._item_color(due_state, bool(item.is_archived))
                 if color is not None:
                     lw_item.setForeground(QBrush(color))
 
@@ -684,7 +771,7 @@ class InfoTab(QWidget):
                 )
                 due_text = display_due_iso(item.due_at)
                 due_state = classify_due(item.due_at)
-                badges = self._build_due_badges(due_state)
+                badges = self._build_due_badges(due_state, is_archived=bool(item.is_archived))
                 if due_text:
                     line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"
                 if badges:
@@ -698,7 +785,7 @@ class InfoTab(QWidget):
                 lw_item.setData(Qt.ItemDataRole.UserRole, item.window_uuid)
                 lw_item.setData(Qt.ItemDataRole.UserRole + 1, bool(item.is_starred))
 
-                color = self._due_color(due_state)
+                color = self._item_color(due_state, bool(item.is_archived))
                 if color is not None:
                     lw_item.setForeground(QBrush(color))
 
@@ -718,6 +805,45 @@ class InfoTab(QWidget):
                 starred=stats.starred_notes,
             )
         )
+
+    @staticmethod
+    def _log_action_label(action: str) -> str:
+        mapping = {
+            "bulk_complete": "info_log_action_bulk_complete",
+            "bulk_uncomplete": "info_log_action_bulk_uncomplete",
+            "bulk_archive": "info_log_action_bulk_archive",
+            "bulk_restore": "info_log_action_bulk_restore",
+            "bulk_star": "info_log_action_bulk_star",
+            "bulk_unstar": "info_log_action_bulk_unstar",
+            "bulk_tags_merge": "info_log_action_bulk_tags_merge",
+        }
+        text_key = mapping.get(str(action or "").strip().lower())
+        return tr(text_key) if text_key else str(action or "").strip()
+
+    def _populate_operation_logs(self) -> None:
+        self.operations_list.blockSignals(True)
+        try:
+            self.operations_list.clear()
+            main_controller = getattr(self.mw, "main_controller", None)
+            actions = getattr(main_controller, "info_actions", None)
+            logs = actions.get_operation_logs(limit=10) if actions is not None else []
+            if not logs:
+                empty = QListWidgetItem(tr("info_operation_empty"))
+                empty.setFlags(Qt.ItemFlag.NoItemFlags)
+                self.operations_list.addItem(empty)
+                return
+
+            for entry in reversed(list(logs)):
+                at = str(entry.get("at", "") or "").strip()
+                action = self._log_action_label(str(entry.get("action", "") or ""))
+                count = int(entry.get("target_count", 0) or 0)
+                detail = str(entry.get("detail", "") or "").strip()
+                line = tr("info_operation_item_fmt").format(at=at, action=action, count=count)
+                if detail:
+                    line = f"{line} - {detail}"
+                self.operations_list.addItem(QListWidgetItem(line))
+        finally:
+            self.operations_list.blockSignals(False)
 
     def _on_task_item_changed(self, item: QListWidgetItem) -> None:
         if self._is_refreshing:
@@ -801,19 +927,8 @@ class InfoTab(QWidget):
                 keys.append(item_key)
         return keys
 
-    def _apply_bulk_task_done(self, done: bool) -> None:
-        keys = self._selected_task_item_keys()
-        if not keys:
-            return
-        actions = getattr(self.mw.main_controller, "info_actions", None)
-        if actions is not None:
-            actions.bulk_set_task_done(keys, bool(done))
-            return
-        self.refresh_data(immediate=True)
-
-    def _archive_selected(self) -> None:
+    def _selected_window_uuids(self) -> list[str]:
         uuids: set[str] = set()
-
         for item in self.notes_list.selectedItems():
             window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
             if window_uuid:
@@ -827,13 +942,71 @@ class InfoTab(QWidget):
                     window_uuid = item_key.rsplit(":", 1)[0]
             if window_uuid:
                 uuids.add(window_uuid)
+        return sorted(uuids)
 
+    def _apply_bulk_task_done(self, done: bool) -> None:
+        keys = self._selected_task_item_keys()
+        if not keys:
+            return
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None:
+            actions.bulk_set_task_done(keys, bool(done))
+            return
+        self.refresh_data(immediate=True)
+
+    def _archive_selected(self) -> None:
+        uuids = self._selected_window_uuids()
         if not uuids:
             return
 
         actions = getattr(self.mw.main_controller, "info_actions", None)
         if actions is not None:
-            actions.bulk_archive(sorted(uuids), True)
+            actions.bulk_archive(uuids, True)
+            return
+        self.refresh_data(immediate=True)
+
+    def _restore_selected(self) -> None:
+        uuids = self._selected_window_uuids()
+        if not uuids:
+            return
+
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None:
+            actions.bulk_archive(uuids, False)
+            return
+        self.refresh_data(immediate=True)
+
+    def _apply_bulk_star(self, starred: bool) -> None:
+        uuids = self._selected_window_uuids()
+        if not uuids:
+            return
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None:
+            actions.bulk_set_star(uuids, bool(starred))
+            return
+        self.refresh_data(immediate=True)
+
+    def _edit_tags_selected(self) -> None:
+        uuids = self._selected_window_uuids()
+        if not uuids:
+            return
+        values = BulkTagEditDialog.ask(self)
+        if values is None:
+            return
+        add_tags, remove_tags = values
+        if not add_tags and not remove_tags:
+            return
+
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None:
+            actions.bulk_merge_tags(uuids, add_tags, remove_tags)
+            return
+        self.refresh_data(immediate=True)
+
+    def _clear_operation_logs(self) -> None:
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None and hasattr(actions, "clear_operation_logs"):
+            actions.clear_operation_logs()
             return
         self.refresh_data(immediate=True)
 
@@ -861,10 +1034,16 @@ class InfoTab(QWidget):
         self.btn_complete_selected.setText(tr("info_bulk_complete_selected"))
         self.btn_uncomplete_selected.setText(tr("info_bulk_uncomplete_selected"))
         self.btn_archive_selected.setText(tr("info_bulk_archive_selected"))
+        self.btn_restore_selected.setText(tr("info_bulk_restore_selected"))
+        self.btn_star_selected.setText(tr("info_bulk_star_selected"))
+        self.btn_unstar_selected.setText(tr("info_bulk_unstar_selected"))
+        self.btn_edit_tags_selected.setText(tr("info_bulk_edit_tags_selected"))
         self.btn_sort_desc.setText(tr("info_sort_desc"))
         self.btn_view_save.setText(tr("info_view_save"))
         self.btn_view_update.setText(tr("info_view_update"))
         self.btn_view_delete.setText(tr("info_view_delete"))
+        self.operations_group.setTitle(tr("info_recent_operations"))
+        self.btn_clear_operations.setText(tr("info_clear_operations"))
 
         builtin_presets = self._build_builtin_presets()
         for preset_id, preset in builtin_presets.items():
@@ -876,6 +1055,7 @@ class InfoTab(QWidget):
             ("today", "info_view_today"),
             ("overdue", "info_view_overdue"),
             ("starred", "info_view_starred"),
+            ("archived", "info_view_archived"),
         ]:
             btn = self._smart_view_buttons.get(key)
             if btn is not None:
@@ -883,6 +1063,7 @@ class InfoTab(QWidget):
 
         self._reload_mode_combo_items()
         self._reload_due_combo_items()
+        self._reload_archive_scope_combo_items()
         self._reload_sort_combo_items()
         self._reload_view_preset_combo_items()
         self._apply_preset_by_id(self._current_preset_id, refresh=False, persist_last=False)

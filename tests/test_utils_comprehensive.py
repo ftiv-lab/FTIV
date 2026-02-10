@@ -286,6 +286,7 @@ class TestAppSettings:
         assert s.glyph_cache_size == 512
         assert s.info_view_presets == []
         assert s.info_last_view_preset_id == "builtin:all"
+        assert s.info_operation_logs == []
 
     def test_save_and_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings, save_app_settings
@@ -304,6 +305,7 @@ class TestAppSettings:
                         "tag": "tag",
                         "starred_only": True,
                         "open_tasks_only": False,
+                        "archive_scope": "all",
                         "due_filter": "today",
                         "mode_filter": "task",
                         "sort_by": "due",
@@ -312,6 +314,14 @@ class TestAppSettings:
                 }
             ],
             info_last_view_preset_id="user:1",
+            info_operation_logs=[
+                {
+                    "at": "2026-02-10T12:00:00",
+                    "action": "bulk_archive",
+                    "target_count": 2,
+                    "detail": "archive",
+                }
+            ],
         )
         result = save_app_settings(None, str(tmp_path), settings)
         assert result is True
@@ -324,6 +334,9 @@ class TestAppSettings:
         assert loaded.info_last_view_preset_id == "user:1"
         assert len(loaded.info_view_presets) == 1
         assert loaded.info_view_presets[0]["id"] == "user:1"
+        assert loaded.info_view_presets[0]["filters"]["archive_scope"] == "all"
+        assert len(loaded.info_operation_logs) == 1
+        assert loaded.info_operation_logs[0]["action"] == "bulk_archive"
 
     def test_load_nonexistent_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings
@@ -366,6 +379,27 @@ class TestAppSettings:
         assert loaded.info_last_view_preset_id == "user:1"
         assert len(loaded.info_view_presets) == 1
         assert loaded.info_view_presets[0]["id"] == "user:1"
+
+    def test_load_invalid_info_operation_logs_skips_bad_entries(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {
+            "info_operation_logs": [
+                {"at": "2026-02-10T12:00:00", "action": "bulk_archive", "target_count": 2, "detail": "ok"},
+                {"at": "", "action": "bulk_archive", "target_count": 2, "detail": "missing at"},
+                {"at": "2026-02-10T12:00:00", "action": "", "target_count": 2, "detail": "missing action"},
+                {"at": "2026-02-10T12:00:00", "action": "bulk_star", "target_count": 0, "detail": "bad count"},
+                "invalid",
+            ]
+        }
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert len(loaded.info_operation_logs) == 1
+        assert loaded.info_operation_logs[0]["action"] == "bulk_archive"
 
     def test_get_settings_path_empty_base(self) -> None:
         from utils.app_settings import _get_settings_path

@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 _INFO_DUE_FILTERS = {"all", "today", "overdue", "upcoming", "dated", "undated"}
 _INFO_MODE_FILTERS = {"all", "task", "note"}
 _INFO_SORT_FIELDS = {"updated", "due", "created", "title"}
+_INFO_ARCHIVE_SCOPES = {"active", "archived", "all"}
 
 
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
@@ -27,6 +28,11 @@ def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
         "tag": str(raw.get("tag", "") or "").strip(),
         "starred_only": bool(raw.get("starred_only", False)),
         "open_tasks_only": bool(raw.get("open_tasks_only", False)),
+        "archive_scope": (
+            str(raw.get("archive_scope", "active")).strip().lower()
+            if str(raw.get("archive_scope", "active")).strip().lower() in _INFO_ARCHIVE_SCOPES
+            else "active"
+        ),
         "due_filter": (
             str(raw.get("due_filter", "all")).strip().lower()
             if str(raw.get("due_filter", "all")).strip().lower() in _INFO_DUE_FILTERS
@@ -69,6 +75,35 @@ def _sanitize_user_info_presets(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _sanitize_info_operation_logs(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        at = str(entry.get("at", "") or "").strip()
+        action = str(entry.get("action", "") or "").strip()
+        try:
+            target_count = int(entry.get("target_count", 0))
+        except Exception:
+            continue
+        detail = str(entry.get("detail", "") or "").strip()[:80]
+        if not at or not action or target_count < 1:
+            continue
+        out.append(
+            {
+                "at": at,
+                "action": action,
+                "target_count": target_count,
+                "detail": detail,
+            }
+        )
+
+    return out
+
+
 @dataclass
 class AppSettings:
     """アプリ全体の設定。"""
@@ -80,6 +115,7 @@ class AppSettings:
     glyph_cache_size: int = 512  # 文字キャッシュ数
     info_view_presets: list[dict[str, Any]] = field(default_factory=list)
     info_last_view_preset_id: str = "builtin:all"
+    info_operation_logs: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _get_settings_path(base_directory: str) -> str:
@@ -104,6 +140,7 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
             "glyph_cache_size": int(settings.glyph_cache_size),
             "info_view_presets": _sanitize_user_info_presets(settings.info_view_presets),
             "info_last_view_preset_id": str(settings.info_last_view_preset_id or "builtin:all"),
+            "info_operation_logs": _sanitize_info_operation_logs(settings.info_operation_logs)[-200:],
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -143,6 +180,7 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         raw_preset_id = str(data.get("info_last_view_preset_id", "") or "").strip()
         if raw_preset_id:
             s.info_last_view_preset_id = raw_preset_id
+        s.info_operation_logs = _sanitize_info_operation_logs(data.get("info_operation_logs", []))
 
         return s
 

@@ -1,8 +1,10 @@
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from PySide6.QtCore import Qt
 
 from ui.tabs.info_tab import InfoTab
+from utils.tag_ops import merge_tags
 from utils.translator import tr
 
 
@@ -49,14 +51,22 @@ class _DummyTaskWindow:
     def set_archived(self, value: bool) -> None:
         self.is_archived = bool(value)
 
+    def set_starred(self, value: bool) -> None:
+        self.is_starred = bool(value)
+
+    def set_tags(self, tags) -> None:
+        self.tags = list(tags)
+
 
 class _DummyNoteWindow:
-    def __init__(self, uuid: str = "nw-1", is_archived: bool = False) -> None:
+    def __init__(self, uuid: str = "nw-1", is_archived: bool = False, tags=None) -> None:
+        if tags is None:
+            tags = []
         self.uuid = uuid
         self.text = "note body"
         self.content_mode = "note"
         self.title = "Memo"
-        self.tags = []
+        self.tags = list(tags)
         self.is_starred = False
         self.created_at = ""
         self.updated_at = ""
@@ -69,6 +79,9 @@ class _DummyNoteWindow:
     def set_archived(self, value: bool) -> None:
         self.is_archived = bool(value)
 
+    def set_tags(self, tags) -> None:
+        self.tags = list(tags)
+
 
 class _DummyInfoActions:
     def __init__(self, tab: InfoTab, windows: list[object]) -> None:
@@ -76,6 +89,9 @@ class _DummyInfoActions:
         self.windows = windows
         self.last_bulk_archive: list[str] = []
         self.last_bulk_done: list[str] = []
+        self.last_bulk_star: list[str] = []
+        self.last_bulk_tags: tuple[list[str], list[str], list[str]] = ([], [], [])
+        self.logs: list[dict[str, object]] = []
 
     def _find(self, window_uuid: str):
         for w in self.windows:
@@ -103,6 +119,14 @@ class _DummyInfoActions:
             w = self._find(window_uuid)
             if w is not None and hasattr(w, "set_archived"):
                 w.set_archived(value)
+        self.logs.append(
+            {
+                "at": "2026-02-10T10:00:00",
+                "action": "bulk_archive" if value else "bulk_restore",
+                "target_count": len(list(window_uuids)),
+                "detail": "",
+            }
+        )
         self.tab.refresh_data(immediate=True)
 
     def bulk_set_task_done(self, item_keys: list[str], value: bool) -> None:
@@ -116,6 +140,52 @@ class _DummyInfoActions:
                 w.set_task_line_state(int(idx), value)
         self.tab.refresh_data(immediate=True)
 
+    def bulk_set_star(self, window_uuids: list[str], value: bool) -> None:
+        self.last_bulk_star = list(window_uuids)
+        for window_uuid in window_uuids:
+            w = self._find(window_uuid)
+            if w is not None and hasattr(w, "set_starred"):
+                w.set_starred(value)
+        self.logs.append(
+            {
+                "at": "2026-02-10T10:01:00",
+                "action": "bulk_star" if value else "bulk_unstar",
+                "target_count": len(list(window_uuids)),
+                "detail": "",
+            }
+        )
+        self.tab.refresh_data(immediate=True)
+
+    def bulk_merge_tags(self, window_uuids: list[str], add_tags: list[str], remove_tags: list[str]) -> None:
+        self.last_bulk_tags = (list(window_uuids), list(add_tags), list(remove_tags))
+        for window_uuid in window_uuids:
+            w = self._find(window_uuid)
+            if w is None:
+                continue
+            raw_tags = getattr(w, "tags", [])
+            current = list(raw_tags) if isinstance(raw_tags, list) else []
+            merged = merge_tags(current, add_tags, remove_tags)
+            if hasattr(w, "set_tags"):
+                w.set_tags(merged)
+        self.logs.append(
+            {
+                "at": "2026-02-10T10:02:00",
+                "action": "bulk_tags_merge",
+                "target_count": len(list(window_uuids)),
+                "detail": "tags",
+            }
+        )
+        self.tab.refresh_data(immediate=True)
+
+    def get_operation_logs(self, limit=None):
+        if limit is None:
+            return list(self.logs)
+        return list(self.logs[-int(limit) :])
+
+    def clear_operation_logs(self) -> None:
+        self.logs = []
+        self.tab.refresh_data(immediate=True)
+
     def focus_window(self, window_uuid: str) -> None:
         _ = window_uuid
 
@@ -127,7 +197,7 @@ def _make_main_window(task_windows=None, note_windows=None):
         note_windows = [_DummyNoteWindow()]
     text_windows = [*task_windows, *note_windows]
     wm = SimpleNamespace(text_windows=text_windows)
-    app_settings = SimpleNamespace(info_view_presets=[], info_last_view_preset_id="builtin:all")
+    app_settings = SimpleNamespace(info_view_presets=[], info_last_view_preset_id="builtin:all", info_operation_logs=[])
     settings_manager = SimpleNamespace(save_app_settings=lambda: None)
     mw = SimpleNamespace(window_manager=wm, app_settings=app_settings, settings_manager=settings_manager)
     return mw, text_windows
@@ -338,3 +408,121 @@ def test_overdue_badge_rendered_on_task_item(qapp):
     first = tab.tasks_list.item(0)
     assert first is not None
     assert f"[{tr('info_badge_overdue')}]" in first.text()
+
+
+def test_archive_scope_archived_filters_task_rows(qapp):
+    _ = qapp
+    active = _DummyTaskWindow(uuid="t-active", text="a", is_archived=False)
+    archived = _DummyTaskWindow(uuid="t-archived", text="b", is_archived=True)
+    mw, _ = _make_main_window(task_windows=[active, archived], note_windows=[])
+    tab = InfoTab(mw)
+
+    tab.cmb_archive_scope.setCurrentIndex(tab.cmb_archive_scope.findData("archived"))
+    tab.refresh_data(immediate=True)
+
+    assert _count_task_items(tab) == 1
+    first = tab.tasks_list.item(0)
+    assert first is not None
+    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-archived:")
+
+
+def test_builtin_archived_preset_sets_archive_scope(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    tab._apply_preset_by_id("builtin:archived")
+
+    assert str(tab.cmb_archive_scope.currentData()) == "archived"
+    assert tab._smart_view == "archived"
+
+
+def test_restore_selected_updates_windows(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1", is_archived=True)
+    mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    actions = _DummyInfoActions(tab, text_windows)
+    mw.main_controller = SimpleNamespace(info_actions=actions)
+
+    tab.cmb_archive_scope.setCurrentIndex(tab.cmb_archive_scope.findData("all"))
+    tab.refresh_data(immediate=True)
+    note_item = _find_note_item(tab, "n-1")
+    assert note_item is not None
+    note_item.setSelected(True)
+
+    tab._restore_selected()
+    assert note_window.is_archived is False
+    assert actions.last_bulk_archive == ["n-1"]
+
+
+def test_bulk_star_selected_updates_windows(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1")
+    mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    actions = _DummyInfoActions(tab, text_windows)
+    mw.main_controller = SimpleNamespace(info_actions=actions)
+
+    note_item = _find_note_item(tab, "n-1")
+    assert note_item is not None
+    note_item.setSelected(True)
+
+    tab._apply_bulk_star(True)
+    assert note_window.is_starred is True
+    assert actions.last_bulk_star == ["n-1"]
+
+
+def test_bulk_edit_tags_selected_calls_dialog_and_action(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1", tags=["old"])
+    mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    actions = _DummyInfoActions(tab, text_windows)
+    mw.main_controller = SimpleNamespace(info_actions=actions)
+
+    note_item = _find_note_item(tab, "n-1")
+    assert note_item is not None
+    note_item.setSelected(True)
+
+    with patch("ui.tabs.info_tab.BulkTagEditDialog.ask", return_value=(["new"], ["old"])):
+        tab._edit_tags_selected()
+
+    assert note_window.tags == ["new"]
+    assert actions.last_bulk_tags == (["n-1"], ["new"], ["old"])
+
+
+def test_archived_badge_rendered_on_note_item(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1", is_archived=True)
+    mw, _ = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    tab.cmb_archive_scope.setCurrentIndex(tab.cmb_archive_scope.findData("all"))
+    tab.refresh_data(immediate=True)
+
+    note_item = _find_note_item(tab, "n-1")
+    assert note_item is not None
+    assert f"[{tr('info_badge_archived')}]" in note_item.text()
+
+
+def test_operation_log_panel_renders_and_clears(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1")
+    mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    actions = _DummyInfoActions(tab, text_windows)
+    actions.logs = [
+        {"at": "2026-02-10T11:00:00", "action": "bulk_archive", "target_count": 1, "detail": ""},
+        {"at": "2026-02-10T11:01:00", "action": "bulk_star", "target_count": 1, "detail": ""},
+    ]
+    mw.main_controller = SimpleNamespace(info_actions=actions)
+
+    tab.refresh_data(immediate=True)
+    first = tab.operations_list.item(0)
+    assert first is not None
+    assert tr("info_log_action_bulk_star") in first.text()
+
+    tab._clear_operation_logs()
+    only_item = tab.operations_list.item(0)
+    assert only_item is not None
+    assert only_item.text() == tr("info_operation_empty")
