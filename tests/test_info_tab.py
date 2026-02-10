@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from PySide6.QtCore import Qt
 
 from ui.tabs.info_tab import InfoTab
+from utils.translator import tr
 
 
 class _DummyTaskWindow:
@@ -126,7 +127,9 @@ def _make_main_window(task_windows=None, note_windows=None):
         note_windows = [_DummyNoteWindow()]
     text_windows = [*task_windows, *note_windows]
     wm = SimpleNamespace(text_windows=text_windows)
-    mw = SimpleNamespace(window_manager=wm)
+    app_settings = SimpleNamespace(info_view_presets=[], info_last_view_preset_id="builtin:all")
+    settings_manager = SimpleNamespace(save_app_settings=lambda: None)
+    mw = SimpleNamespace(window_manager=wm, app_settings=app_settings, settings_manager=settings_manager)
     return mw, text_windows
 
 
@@ -189,7 +192,7 @@ def test_smart_view_overdue_filters_tasks(qapp):
     mw, _ = _make_main_window(task_windows=[overdue, future], note_windows=[])
     tab = InfoTab(mw)
 
-    tab._set_smart_view("overdue")
+    tab._apply_preset_by_id("builtin:overdue")
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
@@ -234,3 +237,104 @@ def test_bulk_complete_selected_updates_task_states(qapp):
     tab._apply_bulk_task_done(True)
     assert task_window._states == [True, True]
     assert len(actions.last_bulk_done) == 2
+
+
+def test_mode_filter_task_limits_note_list(qapp):
+    _ = qapp
+    task_window = _DummyTaskWindow(uuid="t-1")
+    note_window = _DummyNoteWindow(uuid="n-1")
+    mw, _ = _make_main_window(task_windows=[task_window], note_windows=[note_window])
+    tab = InfoTab(mw)
+
+    tab.cmb_mode_filter.setCurrentIndex(tab.cmb_mode_filter.findData("task"))
+    tab.refresh_data(immediate=True)
+
+    note_rows = []
+    for i in range(tab.notes_list.count()):
+        item = tab.notes_list.item(i)
+        if item is None:
+            continue
+        uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        if uuid:
+            note_rows.append(uuid)
+    assert note_rows == ["t-1"]
+
+
+def test_due_filter_upcoming_limits_tasks(qapp):
+    _ = qapp
+    overdue = _DummyTaskWindow(uuid="t-overdue", text="over", due_at="2001-01-01T00:00:00")
+    future = _DummyTaskWindow(uuid="t-future", text="future", due_at="2999-01-01T00:00:00")
+    mw, _ = _make_main_window(task_windows=[overdue, future], note_windows=[])
+    tab = InfoTab(mw)
+
+    tab.cmb_due_filter.setCurrentIndex(tab.cmb_due_filter.findData("upcoming"))
+    tab.refresh_data(immediate=True)
+
+    assert _count_task_items(tab) == 1
+    first = tab.tasks_list.item(0)
+    assert first is not None
+    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-future:")
+
+
+def test_smart_view_today_applies_due_sort_controls(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    tab._on_smart_view_clicked("today", True)
+
+    assert str(tab.cmb_due_filter.currentData()) == "today"
+    assert str(tab.cmb_sort_by.currentData()) == "due"
+    assert tab.btn_sort_desc.isChecked() is False
+
+
+def test_manual_control_change_marks_custom_smart_view(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    tab._apply_preset_by_id("builtin:all")
+    tab.cmb_due_filter.setCurrentIndex(tab.cmb_due_filter.findData("overdue"))
+
+    assert tab._smart_view == "custom"
+    assert all(not btn.isChecked() for btn in tab._smart_view_buttons.values())
+
+
+def test_view_preset_save_update_delete_syncs_settings(qapp):
+    _ = qapp
+    save_calls = {"count": 0}
+
+    def _save():
+        save_calls["count"] += 1
+
+    task_window = _DummyTaskWindow(uuid="t-1")
+    mw, _ = _make_main_window(task_windows=[task_window], note_windows=[])
+    mw.settings_manager = SimpleNamespace(save_app_settings=_save)
+    tab = InfoTab(mw)
+
+    tab.edit_search.setText("hello")
+    tab._save_new_view_preset()
+    assert len(mw.app_settings.info_view_presets) == 1
+    preset_id = mw.app_settings.info_view_presets[0]["id"]
+    assert preset_id.startswith("user:")
+    assert save_calls["count"] >= 1
+
+    tab.edit_search.setText("updated")
+    tab._update_current_view_preset()
+    assert mw.app_settings.info_view_presets[0]["filters"]["text"] == "updated"
+
+    tab._delete_current_view_preset()
+    assert mw.app_settings.info_view_presets == []
+    assert mw.app_settings.info_last_view_preset_id == "builtin:all"
+
+
+def test_overdue_badge_rendered_on_task_item(qapp):
+    _ = qapp
+    overdue = _DummyTaskWindow(uuid="t-overdue", text="over", due_at="2001-01-01T00:00:00")
+    mw, _ = _make_main_window(task_windows=[overdue], note_windows=[])
+    tab = InfoTab(mw)
+    tab.refresh_data(immediate=True)
+
+    first = tab.tasks_list.item(0)
+    assert first is not None
+    assert f"[{tr('info_badge_overdue')}]" in first.text()

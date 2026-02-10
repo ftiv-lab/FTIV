@@ -151,6 +151,63 @@ class TestInfoIndexManager:
         assert len(filtered) == 1
         assert filtered[0].window_uuid == "w1"
 
+    def test_query_tasks_due_filter_upcoming(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="t1",
+                content_mode="task",
+                due_at="2001-01-01T00:00:00",
+                task_refs=[_make_task_ref(0, "old", False)],
+            ),
+            _make_window(
+                uuid="w2",
+                text="t2",
+                content_mode="task",
+                due_at="2999-01-01T00:00:00",
+                task_refs=[_make_task_ref(0, "future", False)],
+            ),
+        ]
+        tasks, _ = manager.build_index(windows)
+
+        filtered = manager.query_tasks(tasks, InfoQuery(due_filter="upcoming"))
+        assert len(filtered) == 1
+        assert filtered[0].window_uuid == "w2"
+
+    def test_query_notes_due_filter_dated_and_undated(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="dated", content_mode="note", due_at="2026-03-01T00:00:00"),
+            _make_window(uuid="n2", text="undated", content_mode="note", due_at=""),
+        ]
+        _, notes = manager.build_index(windows)
+
+        dated = manager.query_notes(notes, InfoQuery(due_filter="dated"))
+        undated = manager.query_notes(notes, InfoQuery(due_filter="undated"))
+
+        assert [n.window_uuid for n in dated] == ["n1"]
+        assert [n.window_uuid for n in undated] == ["n2"]
+
+    def test_query_notes_mode_filter_task_and_note(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="memo", content_mode="note"),
+            _make_window(
+                uuid="t1",
+                text="task line",
+                content_mode="task",
+                task_refs=[_make_task_ref(0, "task line", False)],
+            ),
+        ]
+        _, notes = manager.build_index(windows)
+
+        only_task = manager.query_notes(notes, InfoQuery(mode_filter="task"))
+        only_note = manager.query_notes(notes, InfoQuery(mode_filter="note"))
+
+        assert [item.window_uuid for item in only_task] == ["t1"]
+        assert [item.window_uuid for item in only_note] == ["n1"]
+
     def test_query_notes_sort_by_due(self):
         manager = InfoIndexManager()
         windows = [

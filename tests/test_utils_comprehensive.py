@@ -5,6 +5,7 @@ Sprint 1: version, paths, edition, error_reporter, translator,
 app_settings, overlay_settings, logger, theme_manager のカバレッジ底上げ。
 """
 
+import json
 import logging
 import os
 from unittest.mock import MagicMock, patch
@@ -283,6 +284,8 @@ class TestAppSettings:
         assert s.render_debounce_ms == 25
         assert s.wheel_debounce_ms == 50
         assert s.glyph_cache_size == 512
+        assert s.info_view_presets == []
+        assert s.info_last_view_preset_id == "builtin:all"
 
     def test_save_and_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings, save_app_settings
@@ -292,6 +295,23 @@ class TestAppSettings:
             render_debounce_ms=100,
             wheel_debounce_ms=200,
             glyph_cache_size=1024,
+            info_view_presets=[
+                {
+                    "id": "user:1",
+                    "name": "My View",
+                    "filters": {
+                        "text": "abc",
+                        "tag": "tag",
+                        "starred_only": True,
+                        "open_tasks_only": False,
+                        "due_filter": "today",
+                        "mode_filter": "task",
+                        "sort_by": "due",
+                        "sort_desc": False,
+                    },
+                }
+            ],
+            info_last_view_preset_id="user:1",
         )
         result = save_app_settings(None, str(tmp_path), settings)
         assert result is True
@@ -301,6 +321,9 @@ class TestAppSettings:
         assert loaded.render_debounce_ms == 100
         assert loaded.wheel_debounce_ms == 200
         assert loaded.glyph_cache_size == 1024
+        assert loaded.info_last_view_preset_id == "user:1"
+        assert len(loaded.info_view_presets) == 1
+        assert loaded.info_view_presets[0]["id"] == "user:1"
 
     def test_load_nonexistent_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings
@@ -320,6 +343,29 @@ class TestAppSettings:
         with patch("utils.app_settings.QMessageBox"):
             loaded = load_app_settings(None, str(tmp_path))
         assert loaded.main_window_frontmost is True  # デフォルト
+
+    def test_load_invalid_info_presets_skips_bad_entries(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {
+            "info_view_presets": [
+                {"id": "builtin:all", "name": "bad", "filters": {}},
+                {"id": "user:1", "name": "ok", "filters": {"due_filter": "today"}},
+                {"id": "user:1", "name": "dup", "filters": {"due_filter": "overdue"}},
+                {"id": "", "name": "empty", "filters": {}},
+                "invalid",
+            ],
+            "info_last_view_preset_id": "user:1",
+        }
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.info_last_view_preset_id == "user:1"
+        assert len(loaded.info_view_presets) == 1
+        assert loaded.info_view_presets[0]["id"] == "user:1"
 
     def test_get_settings_path_empty_base(self) -> None:
         from utils.app_settings import _get_settings_path

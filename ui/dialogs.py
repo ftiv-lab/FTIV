@@ -5,10 +5,11 @@ import os
 import traceback
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from PySide6.QtCore import QEvent, QPoint, QSignalBlocker, QSize, Qt
+from PySide6.QtCore import QDate, QEvent, QPoint, QSignalBlocker, QSize, Qt
 from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QPixmap, QTextCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCalendarWidget,
     QColorDialog,
     QComboBox,
     QDialog,
@@ -108,6 +109,71 @@ class BaseTranslatableDialog(QDialog):
         """キャンセル時に languageChanged を切断して閉じる。"""
         self._disconnect_language_changed()
         super().reject()
+
+
+class DatePickerDialog(BaseTranslatableDialog):
+    """Small calendar dialog for due date input."""
+
+    def __init__(self, parent: Optional[QWidget] = None, initial_text: str = "") -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("title_pick_due_date"))
+        self._picked_value: str | None = None
+
+        layout = QVBoxLayout(self)
+
+        self.calendar = QCalendarWidget(self)
+        self.calendar.setGridVisible(True)
+        parsed = QDate.fromString(str(initial_text or "").strip(), "yyyy-MM-dd")
+        if parsed.isValid():
+            self.calendar.setSelectedDate(parsed)
+        else:
+            self.calendar.setSelectedDate(QDate.currentDate())
+        layout.addWidget(self.calendar)
+
+        buttons_row = QHBoxLayout()
+
+        self.btn_today = QPushButton(tr("btn_today"))
+        self.btn_today.clicked.connect(self._pick_today)
+        buttons_row.addWidget(self.btn_today)
+
+        self.btn_clear = QPushButton(tr("btn_clear"))
+        self.btn_clear.clicked.connect(self._pick_clear)
+        buttons_row.addWidget(self.btn_clear)
+
+        buttons_row.addStretch()
+        layout.addLayout(buttons_row)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.button_box.accepted.connect(self._pick_selected)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+        self.setMinimumWidth(320)
+        self._connect_language_changed()
+
+    def refresh_ui_text(self) -> None:
+        self.setWindowTitle(tr("title_pick_due_date"))
+        self.btn_today.setText(tr("btn_today"))
+        self.btn_clear.setText(tr("btn_clear"))
+
+    def _pick_selected(self) -> None:
+        self._picked_value = self.calendar.selectedDate().toString("yyyy-MM-dd")
+        self.accept()
+
+    def _pick_today(self) -> None:
+        self.calendar.setSelectedDate(QDate.currentDate())
+        self._picked_value = self.calendar.selectedDate().toString("yyyy-MM-dd")
+        self.accept()
+
+    def _pick_clear(self) -> None:
+        self._picked_value = ""
+        self.accept()
+
+    @classmethod
+    def pick_date(cls, parent: Optional[QWidget], initial_text: str = "") -> str | None:
+        dialog = cls(parent=parent, initial_text=initial_text)
+        _ = dialog.exec()
+        return dialog._picked_value
 
 
 class SliderSpinDialog(QDialog):

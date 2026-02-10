@@ -28,6 +28,7 @@ from ui.dialogs import (
     TextInputDialog,
     TextSpacingDialog,
 )
+from utils.due_date import normalize_due_iso
 from utils.font_dialog import choose_font
 from utils.translator import tr
 
@@ -520,17 +521,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
     @staticmethod
     def _normalize_due_iso(value: str) -> str | None:
-        raw = str(value or "").strip()
-        if not raw:
-            return None
-        try:
-            if len(raw) == 10:
-                due_day = datetime.strptime(raw, "%Y-%m-%d").date()
-            else:
-                due_day = datetime.fromisoformat(raw).date()
-            return f"{due_day.isoformat()}T00:00:00"
-        except Exception:
-            return None
+        return normalize_due_iso(value)
 
     def set_due_at(self, value: str) -> None:
         """期限を設定する（内部保存は YYYY-MM-DDT00:00:00）。"""

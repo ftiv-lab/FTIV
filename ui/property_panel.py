@@ -2,7 +2,6 @@
 
 import logging
 import typing
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union, cast
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -25,7 +24,9 @@ from PySide6.QtWidgets import (
 )
 
 from models.enums import ArrowStyle
+from ui.dialogs import DatePickerDialog
 from ui.widgets import CollapsibleBox
+from utils.due_date import display_due_iso, normalize_due_input_allow_empty
 from utils.font_dialog import choose_font
 from utils.translator import tr
 
@@ -97,6 +98,7 @@ class PropertyPanel(QWidget):
         self.edit_note_title = None
         self.edit_note_tags = None
         self.edit_note_due_at = None
+        self.btn_pick_note_due_at = None
         self.btn_note_star = None
         self.btn_note_archived = None
         self.btn_apply_note_meta = None
@@ -380,13 +382,7 @@ class PropertyPanel(QWidget):
                 self.edit_note_tags.setText(tag_text)
 
         if self.edit_note_due_at:
-            due_raw = str(getattr(t, "due_at", "") or "").strip()
-            due_text = ""
-            if due_raw:
-                try:
-                    due_text = datetime.fromisoformat(due_raw).date().isoformat()
-                except ValueError:
-                    due_text = due_raw
+            due_text = display_due_iso(str(getattr(t, "due_at", "") or ""))
             with QSignalBlocker(self.edit_note_due_at):
                 self.edit_note_due_at.setText(due_text)
 
@@ -489,6 +485,71 @@ class PropertyPanel(QWidget):
             self._update_outline_values(i, t)
 
         self._update_bg_outline_values(t)
+
+    def _pick_note_due_date(self) -> None:
+        if self.edit_note_due_at is None:
+            return
+        selected = DatePickerDialog.pick_date(self, self.edit_note_due_at.text())
+        if selected is None:
+            return
+        self.edit_note_due_at.setText(selected)
+
+    @staticmethod
+    def _parse_tags_csv(raw: str) -> list[str]:
+        tags: list[str] = []
+        seen: set[str] = set()
+        for token in str(raw or "").split(","):
+            tag = token.strip()
+            key = tag.lower()
+            if not tag or key in seen:
+                continue
+            tags.append(tag)
+            seen.add(key)
+        return tags
+
+    def _apply_note_metadata_to_target(self, target: Any) -> bool:
+        title = self.edit_note_title.text().strip() if self.edit_note_title is not None else ""
+        tags = self._parse_tags_csv(self.edit_note_tags.text() if self.edit_note_tags is not None else "")
+        due_raw = self.edit_note_due_at.text().strip() if self.edit_note_due_at is not None else ""
+        starred = self.btn_note_star.isChecked() if self.btn_note_star is not None else False
+        archived = self.btn_note_archived.isChecked() if self.btn_note_archived is not None else False
+
+        due_iso = normalize_due_input_allow_empty(due_raw)
+        if due_iso is None:
+            QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
+            return False
+
+        if hasattr(target, "set_title_and_tags"):
+            target.set_title_and_tags(title, tags)
+        else:
+            target.set_undoable_property("title", title, "update_text")
+            target.set_undoable_property("tags", tags, "update_text")
+
+        if hasattr(target, "set_starred"):
+            target.set_starred(starred)
+        else:
+            target.set_undoable_property("is_starred", bool(starred), "update_text")
+
+        if due_iso:
+            if hasattr(target, "set_due_at"):
+                target.set_due_at(due_iso)
+            else:
+                target.set_undoable_property("due_at", due_iso, "update_text")
+        else:
+            if hasattr(target, "clear_due_at"):
+                target.clear_due_at()
+            else:
+                target.set_undoable_property("due_at", "", "update_text")
+
+        if hasattr(target, "set_archived"):
+            target.set_archived(bool(archived))
+        else:
+            target.set_undoable_property("is_archived", bool(archived), "update_text")
+
+        self.update_property_values()
+        if self.mw and hasattr(self.mw, "info_tab"):
+            self.mw.info_tab.refresh_data()
+        return True
 
     def _update_outline_values(self, index: int, target: Any) -> None:
         """縁取り設定を同期します。"""
@@ -1051,16 +1112,20 @@ class PropertyPanel(QWidget):
             self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
             t_layout.addRow(tr("label_note_tags"), typing.cast(QWidget, self.edit_note_tags))
 
-            due_raw = str(getattr(target, "due_at", "") or "").strip()
-            due_text = ""
-            if due_raw:
-                try:
-                    due_text = datetime.fromisoformat(due_raw).date().isoformat()
-                except ValueError:
-                    due_text = due_raw
+            due_text = display_due_iso(str(getattr(target, "due_at", "") or ""))
             self.edit_note_due_at = QLineEdit(due_text)
             self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
-            t_layout.addRow(tr("label_note_due_at"), typing.cast(QWidget, self.edit_note_due_at))
+            self.btn_pick_note_due_at = QPushButton(tr("btn_pick_due_date"))
+            self.btn_pick_note_due_at.setProperty("class", "secondary-button")
+            self.btn_pick_note_due_at.clicked.connect(self._pick_note_due_date)
+
+            due_row = QWidget()
+            due_row_layout = QHBoxLayout(due_row)
+            due_row_layout.setContentsMargins(0, 0, 0, 0)
+            due_row_layout.setSpacing(4)
+            due_row_layout.addWidget(self.edit_note_due_at, 1)
+            due_row_layout.addWidget(self.btn_pick_note_due_at)
+            t_layout.addRow(tr("label_note_due_at"), due_row)
 
             self.btn_note_star = self.create_action_button(tr("label_note_star"), lambda: None, "toggle")
             self.btn_note_star.setCheckable(True)
@@ -1072,70 +1137,10 @@ class PropertyPanel(QWidget):
 
             self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
             self.btn_apply_note_meta.setProperty("class", "secondary-button")
-
-            def _parse_tags_csv(raw: str) -> list[str]:
-                tags: list[str] = []
-                seen: set[str] = set()
-                for token in str(raw or "").split(","):
-                    tag = token.strip()
-                    key = tag.lower()
-                    if not tag or key in seen:
-                        continue
-                    tags.append(tag)
-                    seen.add(key)
-                return tags
-
-            def _apply_note_meta() -> None:
-                title = self.edit_note_title.text().strip() if self.edit_note_title is not None else ""
-                tags = _parse_tags_csv(self.edit_note_tags.text() if self.edit_note_tags is not None else "")
-                due_raw = self.edit_note_due_at.text().strip() if self.edit_note_due_at is not None else ""
-                starred = self.btn_note_star.isChecked() if self.btn_note_star is not None else False
-                archived = self.btn_note_archived.isChecked() if self.btn_note_archived is not None else False
-
-                due_iso = ""
-                if due_raw:
-                    try:
-                        due_day = datetime.strptime(due_raw, "%Y-%m-%d").date()
-                        due_iso = f"{due_day.isoformat()}T00:00:00"
-                    except ValueError:
-                        QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
-                        return
-
-                if hasattr(target, "set_title_and_tags"):
-                    target.set_title_and_tags(title, tags)
-                else:
-                    target.set_undoable_property("title", title, "update_text")
-                    target.set_undoable_property("tags", tags, "update_text")
-
-                if hasattr(target, "set_starred"):
-                    target.set_starred(starred)
-                else:
-                    target.set_undoable_property("is_starred", bool(starred), "update_text")
-
-                if due_iso:
-                    if hasattr(target, "set_due_at"):
-                        target.set_due_at(due_iso)
-                    else:
-                        target.set_undoable_property("due_at", due_iso, "update_text")
-                else:
-                    if hasattr(target, "clear_due_at"):
-                        target.clear_due_at()
-                    else:
-                        target.set_undoable_property("due_at", "", "update_text")
-
-                if hasattr(target, "set_archived"):
-                    target.set_archived(bool(archived))
-                else:
-                    target.set_undoable_property("is_archived", bool(archived), "update_text")
-
-                self.update_property_values()
-                if self.mw and hasattr(self.mw, "info_tab"):
-                    self.mw.info_tab.refresh_data()
-
-            self.edit_note_title.returnPressed.connect(_apply_note_meta)
-            self.edit_note_tags.returnPressed.connect(_apply_note_meta)
-            self.edit_note_due_at.returnPressed.connect(_apply_note_meta)
-            self.btn_apply_note_meta.clicked.connect(_apply_note_meta)
+            self.edit_note_title.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
+            self.edit_note_tags.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
+            self.edit_note_due_at.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
+            self.btn_apply_note_meta.clicked.connect(lambda: self._apply_note_metadata_to_target(target))
 
             meta_btn_row = QWidget()
             meta_btn_layout = QHBoxLayout(meta_btn_row)

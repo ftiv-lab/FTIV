@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from utils.due_date import normalize_due_iso
 from utils.error_reporter import ErrorNotifyState, report_unexpected_error
 
 if TYPE_CHECKING:
@@ -53,20 +53,6 @@ class InfoActions:
         tab = getattr(self.mw, "info_tab", None)
         if tab is not None and hasattr(tab, "refresh_data"):
             tab.refresh_data()
-
-    @staticmethod
-    def _normalize_due_iso(value: str) -> str | None:
-        raw = str(value or "").strip()
-        if not raw:
-            return None
-        try:
-            if len(raw) == 10:
-                due_day = datetime.strptime(raw, "%Y-%m-%d").date()
-            else:
-                due_day = datetime.fromisoformat(raw).date()
-            return f"{due_day.isoformat()}T00:00:00"
-        except Exception:
-            return None
 
     def focus_window(self, window_uuid: str) -> None:
         """UUID指定のウィンドウを前面化・選択する。"""
@@ -152,7 +138,7 @@ class InfoActions:
             if window is None:
                 return
 
-            normalized = self._normalize_due_iso(due_iso)
+            normalized = normalize_due_iso(due_iso)
             if normalized is None:
                 return
 

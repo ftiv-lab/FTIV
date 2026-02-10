@@ -1,11 +1,11 @@
 import logging
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.dialogs import DatePickerDialog
+from utils.due_date import display_due_iso, normalize_due_input_allow_empty
 from utils.translator import tr
 
 logger = logging.getLogger(__name__)
@@ -323,6 +325,16 @@ class TextTab(QWidget):
         self.edit_note_due_at = QLineEdit()
         self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
         self.edit_note_due_at.returnPressed.connect(self._apply_note_metadata)
+        self.btn_pick_note_due_at = QPushButton(tr("btn_pick_due_date"))
+        self.btn_pick_note_due_at.setObjectName("ActionBtn")
+        self.btn_pick_note_due_at.clicked.connect(self._pick_due_date_for_note)
+
+        due_row = QWidget()
+        due_row_layout = QHBoxLayout(due_row)
+        due_row_layout.setContentsMargins(0, 0, 0, 0)
+        due_row_layout.setSpacing(4)
+        due_row_layout.addWidget(self.edit_note_due_at, 1)
+        due_row_layout.addWidget(self.btn_pick_note_due_at)
 
         self.chk_note_star = QCheckBox(tr("label_note_star"))
         self.chk_note_archived = QCheckBox(tr("label_note_archived"))
@@ -337,7 +349,7 @@ class TextTab(QWidget):
         grid_sel.addWidget(self.lbl_note_tags, 2, 0)
         grid_sel.addWidget(self.edit_note_tags, 2, 1)
         grid_sel.addWidget(self.lbl_note_due_at, 3, 0)
-        grid_sel.addWidget(self.edit_note_due_at, 3, 1)
+        grid_sel.addWidget(due_row, 3, 1)
         grid_sel.addWidget(self.chk_note_star, 4, 0)
         grid_sel.addWidget(self.chk_note_archived, 4, 1)
         grid_sel.addWidget(self.btn_apply_note_meta, 5, 0, 1, 2)
@@ -505,24 +517,20 @@ class TextTab(QWidget):
 
     @staticmethod
     def _normalize_due_input(raw: str) -> str | None:
-        text = str(raw or "").strip()
-        if not text:
-            return ""
-        try:
-            due_day = datetime.strptime(text, "%Y-%m-%d").date()
-            return f"{due_day.isoformat()}T00:00:00"
-        except ValueError:
-            return None
+        return normalize_due_input_allow_empty(raw)
 
     @staticmethod
     def _display_due_input(raw_iso: str) -> str:
-        raw = str(raw_iso or "").strip()
-        if not raw:
-            return ""
-        try:
-            return datetime.fromisoformat(raw).date().isoformat()
-        except ValueError:
-            return raw
+        return display_due_iso(raw_iso)
+
+    def _pick_due_date_for_note(self) -> None:
+        if self.edit_note_due_at is None:
+            return
+        initial_value = self.edit_note_due_at.text()
+        selected = DatePickerDialog.pick_date(self, initial_value)
+        if selected is None:
+            return
+        self.edit_note_due_at.setText(selected)
 
     def _apply_note_metadata(self) -> None:
         """選択中のTextWindowへ note metadata を適用する。"""
@@ -590,7 +598,7 @@ class TextTab(QWidget):
             if w is not None:
                 w.setEnabled(is_text_like)
 
-        for w in [self.edit_note_due_at, self.chk_note_archived]:
+        for w in [self.edit_note_due_at, self.btn_pick_note_due_at, self.chk_note_archived]:
             if w is not None:
                 w.setEnabled(is_text_window)
 
@@ -674,6 +682,7 @@ class TextTab(QWidget):
         self.chk_note_star.setText(tr("label_note_star"))
         self.chk_note_archived.setText(tr("label_note_archived"))
         self.btn_apply_note_meta.setText(tr("btn_apply_note_meta"))
+        self.btn_pick_note_due_at.setText(tr("btn_pick_due_date"))
         self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
         self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
         self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
@@ -764,6 +773,7 @@ class TextTab(QWidget):
             "txt_btn_manage_clone_selected",
             "txt_btn_manage_save_png_selected",
             "edit_note_due_at",
+            "btn_pick_note_due_at",
             "chk_note_archived",
         ]
 

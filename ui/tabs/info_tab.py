@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
@@ -23,11 +24,25 @@ from PySide6.QtWidgets import (
 )
 
 from managers.info_index_manager import InfoIndexManager, InfoQuery, InfoStats, NoteIndexItem, TaskIndexItem
+from utils.due_date import classify_due, display_due_iso
 from utils.translator import tr
+
+
+@dataclass(frozen=True)
+class ViewPreset:
+    preset_id: str
+    name: str
+    filters: dict[str, Any]
+    smart_view: str = "custom"
 
 
 class InfoTab(QWidget):
     """タスク/ノートを横断表示する情報管理タブ。"""
+
+    _DUE_FILTER_VALUES = ("all", "today", "overdue", "upcoming", "dated", "undated")
+    _MODE_FILTER_VALUES = ("all", "task", "note")
+    _SORT_BY_VALUES = ("updated", "due", "created", "title")
+    _SMART_VIEW_KEYS = ("all", "open", "today", "overdue", "starred")
 
     def __init__(self, main_window: Any):
         super().__init__()
@@ -38,6 +53,12 @@ class InfoTab(QWidget):
         self._is_refreshing = False
         self._smart_view = "all"
         self._smart_view_buttons: dict[str, QPushButton] = {}
+        self._view_presets: dict[str, ViewPreset] = {}
+        self._user_preset_ids: list[str] = []
+        self._current_preset_id: str = "builtin:all"
+        self._next_user_preset_number = 1
+        self._block_filter_events = False
+        self._block_preset_events = False
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -45,6 +66,9 @@ class InfoTab(QWidget):
         self._refresh_timer.timeout.connect(self._refresh_now)
 
         self._setup_ui()
+        self._load_presets_from_settings()
+        self._reload_view_preset_combo_items()
+        self._restore_last_preset()
         self.refresh_data(immediate=True)
 
     def _setup_ui(self) -> None:
@@ -55,20 +79,20 @@ class InfoTab(QWidget):
 
         self.edit_search = QLineEdit()
         self.edit_search.setPlaceholderText(tr("info_search_placeholder"))
-        self.edit_search.textChanged.connect(self.refresh_data)
+        self.edit_search.textChanged.connect(self._on_filter_controls_changed)
 
         self.edit_tag_filter = QLineEdit()
         self.edit_tag_filter.setPlaceholderText(tr("info_tag_placeholder"))
-        self.edit_tag_filter.textChanged.connect(self.refresh_data)
+        self.edit_tag_filter.textChanged.connect(self._on_filter_controls_changed)
 
         self.chk_open_only = QCheckBox(tr("info_open_tasks_only"))
-        self.chk_open_only.toggled.connect(self.refresh_data)
+        self.chk_open_only.toggled.connect(self._on_filter_controls_changed)
 
         self.chk_star_only = QCheckBox(tr("info_star_only"))
-        self.chk_star_only.toggled.connect(self.refresh_data)
+        self.chk_star_only.toggled.connect(self._on_filter_controls_changed)
 
         self._smart_view_group = QButtonGroup(self)
-        self._smart_view_group.setExclusive(True)
+        self._smart_view_group.setExclusive(False)
         smart_view_row = QWidget()
         smart_view_layout = QHBoxLayout(smart_view_row)
         smart_view_layout.setContentsMargins(0, 0, 0, 0)
@@ -83,21 +107,60 @@ class InfoTab(QWidget):
             btn = QPushButton(tr(text_key))
             btn.setCheckable(True)
             btn.setProperty("class", "toggle")
-            btn.clicked.connect(lambda checked, view_key=key: self._set_smart_view(view_key) if checked else None)
+            btn.clicked.connect(lambda checked, view_key=key: self._on_smart_view_clicked(view_key, checked))
             self._smart_view_group.addButton(btn)
             self._smart_view_buttons[key] = btn
             smart_view_layout.addWidget(btn)
-        self._set_smart_view("all")
+
+        preset_row = QWidget()
+        preset_layout = QHBoxLayout(preset_row)
+        preset_layout.setContentsMargins(0, 0, 0, 0)
+        preset_layout.setSpacing(4)
+        preset_layout.addWidget(QLabel(tr("info_view_preset_label")))
+
+        self.cmb_view_preset = QComboBox()
+        self.cmb_view_preset.currentIndexChanged.connect(self._on_view_preset_changed)
+        preset_layout.addWidget(self.cmb_view_preset, 1)
+
+        self.btn_view_save = QPushButton(tr("info_view_save"))
+        self.btn_view_save.setObjectName("ActionBtn")
+        self.btn_view_save.clicked.connect(self._save_new_view_preset)
+        preset_layout.addWidget(self.btn_view_save)
+
+        self.btn_view_update = QPushButton(tr("info_view_update"))
+        self.btn_view_update.setObjectName("ActionBtn")
+        self.btn_view_update.clicked.connect(self._update_current_view_preset)
+        preset_layout.addWidget(self.btn_view_update)
+
+        self.btn_view_delete = QPushButton(tr("info_view_delete"))
+        self.btn_view_delete.setObjectName("ActionBtn")
+        self.btn_view_delete.clicked.connect(self._delete_current_view_preset)
+        preset_layout.addWidget(self.btn_view_delete)
+
+        filter_mode_row = QWidget()
+        filter_mode_layout = QHBoxLayout(filter_mode_row)
+        filter_mode_layout.setContentsMargins(0, 0, 0, 0)
+        filter_mode_layout.setSpacing(4)
+        filter_mode_layout.addWidget(QLabel(tr("info_mode_label")))
+        self.cmb_mode_filter = QComboBox()
+        self._reload_mode_combo_items()
+        self.cmb_mode_filter.currentIndexChanged.connect(self._on_filter_controls_changed)
+        filter_mode_layout.addWidget(self.cmb_mode_filter, 1)
+        filter_mode_layout.addWidget(QLabel(tr("info_due_filter_label")))
+        self.cmb_due_filter = QComboBox()
+        self._reload_due_combo_items()
+        self.cmb_due_filter.currentIndexChanged.connect(self._on_filter_controls_changed)
+        filter_mode_layout.addWidget(self.cmb_due_filter, 1)
 
         self.cmb_sort_by = QComboBox()
         self._reload_sort_combo_items()
-        self.cmb_sort_by.currentIndexChanged.connect(self.refresh_data)
+        self.cmb_sort_by.currentIndexChanged.connect(self._on_filter_controls_changed)
 
         self.btn_sort_desc = QPushButton(tr("info_sort_desc"))
         self.btn_sort_desc.setCheckable(True)
         self.btn_sort_desc.setChecked(True)
         self.btn_sort_desc.setProperty("class", "toggle")
-        self.btn_sort_desc.toggled.connect(self.refresh_data)
+        self.btn_sort_desc.toggled.connect(self._on_filter_controls_changed)
 
         sort_row = QWidget()
         sort_layout = QHBoxLayout(sort_row)
@@ -120,8 +183,10 @@ class InfoTab(QWidget):
         filter_layout.addWidget(self.chk_star_only, 2, 1)
         filter_layout.addWidget(self.btn_refresh, 2, 2)
         filter_layout.addWidget(smart_view_row, 3, 0, 1, 3)
-        filter_layout.addWidget(sort_row, 4, 0, 1, 3)
-        filter_layout.addWidget(self.lbl_stats, 5, 0, 1, 3)
+        filter_layout.addWidget(preset_row, 4, 0, 1, 3)
+        filter_layout.addWidget(filter_mode_row, 5, 0, 1, 3)
+        filter_layout.addWidget(sort_row, 6, 0, 1, 3)
+        filter_layout.addWidget(self.lbl_stats, 7, 0, 1, 3)
 
         layout.addWidget(self.filter_group)
 
@@ -176,6 +241,168 @@ class InfoTab(QWidget):
         layout.addLayout(bulk_row)
         layout.addStretch()
 
+    @staticmethod
+    def _default_filters() -> dict[str, Any]:
+        return {
+            "text": "",
+            "tag": "",
+            "starred_only": False,
+            "open_tasks_only": False,
+            "due_filter": "all",
+            "mode_filter": "all",
+            "sort_by": "updated",
+            "sort_desc": True,
+        }
+
+    def _build_builtin_presets(self) -> dict[str, ViewPreset]:
+        defaults = self._default_filters()
+        return {
+            "builtin:all": ViewPreset(
+                preset_id="builtin:all",
+                name=tr("info_view_all"),
+                filters=dict(defaults),
+                smart_view="all",
+            ),
+            "builtin:open": ViewPreset(
+                preset_id="builtin:open",
+                name=tr("info_view_open"),
+                filters={**dict(defaults), "open_tasks_only": True},
+                smart_view="open",
+            ),
+            "builtin:today": ViewPreset(
+                preset_id="builtin:today",
+                name=tr("info_view_today"),
+                filters={**dict(defaults), "due_filter": "today", "sort_by": "due", "sort_desc": False},
+                smart_view="today",
+            ),
+            "builtin:overdue": ViewPreset(
+                preset_id="builtin:overdue",
+                name=tr("info_view_overdue"),
+                filters={
+                    **dict(defaults),
+                    "open_tasks_only": True,
+                    "due_filter": "overdue",
+                    "sort_by": "due",
+                    "sort_desc": False,
+                },
+                smart_view="overdue",
+            ),
+            "builtin:starred": ViewPreset(
+                preset_id="builtin:starred",
+                name=tr("info_view_starred"),
+                filters={**dict(defaults), "starred_only": True},
+                smart_view="starred",
+            ),
+        }
+
+    def _sanitize_filters(self, raw: Any) -> dict[str, Any]:
+        defaults = self._default_filters()
+        if not isinstance(raw, dict):
+            return defaults
+
+        out = dict(defaults)
+        out["text"] = str(raw.get("text", defaults["text"]) or "").strip()
+        out["tag"] = str(raw.get("tag", defaults["tag"]) or "").strip()
+        out["starred_only"] = bool(raw.get("starred_only", defaults["starred_only"]))
+        out["open_tasks_only"] = bool(raw.get("open_tasks_only", defaults["open_tasks_only"]))
+
+        due_filter = str(raw.get("due_filter", defaults["due_filter"]) or "").strip().lower()
+        out["due_filter"] = due_filter if due_filter in self._DUE_FILTER_VALUES else defaults["due_filter"]
+
+        mode_filter = str(raw.get("mode_filter", defaults["mode_filter"]) or "").strip().lower()
+        out["mode_filter"] = mode_filter if mode_filter in self._MODE_FILTER_VALUES else defaults["mode_filter"]
+
+        sort_by = str(raw.get("sort_by", defaults["sort_by"]) or "").strip().lower()
+        out["sort_by"] = sort_by if sort_by in self._SORT_BY_VALUES else defaults["sort_by"]
+        out["sort_desc"] = bool(raw.get("sort_desc", defaults["sort_desc"]))
+        return out
+
+    def _sanitize_user_preset(self, raw: Any) -> Optional[ViewPreset]:
+        if not isinstance(raw, dict):
+            return None
+        preset_id = str(raw.get("id", "") or "").strip()
+        if not preset_id.startswith("user:"):
+            return None
+        name = str(raw.get("name", "") or "").strip()[:32]
+        if not name:
+            name = preset_id.replace("user:", "", 1) or tr("info_view_user_prefix")
+        filters = self._sanitize_filters(raw.get("filters", {}))
+        return ViewPreset(preset_id=preset_id, name=name, filters=filters, smart_view="custom")
+
+    def _load_presets_from_settings(self) -> None:
+        self._view_presets = self._build_builtin_presets()
+        self._user_preset_ids.clear()
+
+        settings = getattr(self.mw, "app_settings", None)
+        raw_user_presets = list(getattr(settings, "info_view_presets", []) or []) if settings is not None else []
+        sanitized_for_save: list[dict[str, Any]] = []
+        max_numeric = 0
+
+        for raw in raw_user_presets:
+            preset = self._sanitize_user_preset(raw)
+            if preset is None or preset.preset_id in self._view_presets:
+                continue
+            self._view_presets[preset.preset_id] = preset
+            self._user_preset_ids.append(preset.preset_id)
+            sanitized_for_save.append({"id": preset.preset_id, "name": preset.name, "filters": dict(preset.filters)})
+            suffix = preset.preset_id.replace("user:", "", 1)
+            if suffix.isdigit():
+                max_numeric = max(max_numeric, int(suffix))
+
+        self._next_user_preset_number = max(1, max_numeric + 1)
+        if settings is not None:
+            settings.info_view_presets = sanitized_for_save
+
+    def _persist_presets_to_settings(self) -> None:
+        settings = getattr(self.mw, "app_settings", None)
+        settings_manager = getattr(self.mw, "settings_manager", None)
+        if settings is None:
+            return
+
+        serialized_user: list[dict[str, Any]] = []
+        for preset_id in list(self._user_preset_ids):
+            preset = self._view_presets.get(preset_id)
+            if preset is None:
+                continue
+            serialized_user.append({"id": preset.preset_id, "name": preset.name, "filters": dict(preset.filters)})
+
+        settings.info_view_presets = serialized_user
+        settings.info_last_view_preset_id = self._current_preset_id or "builtin:all"
+        if settings_manager is not None and hasattr(settings_manager, "save_app_settings"):
+            settings_manager.save_app_settings()
+
+    def _restore_last_preset(self) -> None:
+        settings = getattr(self.mw, "app_settings", None)
+        last_id = str(getattr(settings, "info_last_view_preset_id", "") or "builtin:all")
+        if last_id not in self._view_presets:
+            last_id = "builtin:all"
+        self._apply_preset_by_id(last_id, refresh=False, persist_last=False)
+
+    def _reload_mode_combo_items(self) -> None:
+        selected_data = str(self.cmb_mode_filter.currentData() or "all") if hasattr(self, "cmb_mode_filter") else "all"
+        self.cmb_mode_filter.blockSignals(True)
+        self.cmb_mode_filter.clear()
+        self.cmb_mode_filter.addItem(tr("info_mode_all"), "all")
+        self.cmb_mode_filter.addItem(tr("info_mode_task"), "task")
+        self.cmb_mode_filter.addItem(tr("info_mode_note"), "note")
+        idx = self.cmb_mode_filter.findData(selected_data)
+        self.cmb_mode_filter.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_mode_filter.blockSignals(False)
+
+    def _reload_due_combo_items(self) -> None:
+        selected_data = str(self.cmb_due_filter.currentData() or "all") if hasattr(self, "cmb_due_filter") else "all"
+        self.cmb_due_filter.blockSignals(True)
+        self.cmb_due_filter.clear()
+        self.cmb_due_filter.addItem(tr("info_due_all"), "all")
+        self.cmb_due_filter.addItem(tr("info_due_today"), "today")
+        self.cmb_due_filter.addItem(tr("info_due_overdue"), "overdue")
+        self.cmb_due_filter.addItem(tr("info_due_upcoming"), "upcoming")
+        self.cmb_due_filter.addItem(tr("info_due_dated"), "dated")
+        self.cmb_due_filter.addItem(tr("info_due_undated"), "undated")
+        idx = self.cmb_due_filter.findData(selected_data)
+        self.cmb_due_filter.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_due_filter.blockSignals(False)
+
     def _reload_sort_combo_items(self) -> None:
         selected_data = str(self.cmb_sort_by.currentData() or "updated") if hasattr(self, "cmb_sort_by") else "updated"
         self.cmb_sort_by.blockSignals(True)
@@ -188,43 +415,167 @@ class InfoTab(QWidget):
         self.cmb_sort_by.setCurrentIndex(idx if idx >= 0 else 0)
         self.cmb_sort_by.blockSignals(False)
 
-    def _set_smart_view(self, view_key: str) -> None:
+    def _reload_view_preset_combo_items(self) -> None:
+        selected_id = self._current_preset_id
+        self._block_preset_events = True
+        self.cmb_view_preset.blockSignals(True)
+        self.cmb_view_preset.clear()
+
+        for preset_id in ["builtin:all", "builtin:open", "builtin:today", "builtin:overdue", "builtin:starred"]:
+            preset = self._view_presets.get(preset_id)
+            if preset is not None:
+                self.cmb_view_preset.addItem(preset.name, preset.preset_id)
+        for preset_id in self._user_preset_ids:
+            preset = self._view_presets.get(preset_id)
+            if preset is not None:
+                self.cmb_view_preset.addItem(preset.name, preset.preset_id)
+
+        idx = self.cmb_view_preset.findData(selected_id)
+        self.cmb_view_preset.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_view_preset.blockSignals(False)
+        self._block_preset_events = False
+
+    def _on_smart_view_clicked(self, view_key: str, checked: bool) -> None:
+        if not checked:
+            if self._smart_view != "custom":
+                self._set_smart_view_indicator("custom")
+            return
+        self._apply_preset_by_id(f"builtin:{view_key}")
+
+    def _set_smart_view_indicator(self, view_key: str) -> None:
         normalized = str(view_key or "").strip().lower()
-        if normalized not in self._smart_view_buttons:
-            normalized = "all"
+        if normalized not in self._SMART_VIEW_KEYS:
+            normalized = "custom"
         self._smart_view = normalized
         for key, btn in self._smart_view_buttons.items():
             btn.blockSignals(True)
-            btn.setChecked(key == normalized)
+            btn.setChecked(normalized == key)
             btn.blockSignals(False)
+
+    def _set_combo_data(self, combo: QComboBox, data: str) -> None:
+        idx = combo.findData(data)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def _apply_filters_to_controls(self, filters: dict[str, Any]) -> None:
+        sanitized = self._sanitize_filters(filters)
+        self._block_filter_events = True
+        try:
+            self.edit_search.setText(str(sanitized["text"]))
+            self.edit_tag_filter.setText(str(sanitized["tag"]))
+            self.chk_star_only.setChecked(bool(sanitized["starred_only"]))
+            self.chk_open_only.setChecked(bool(sanitized["open_tasks_only"]))
+            self._set_combo_data(self.cmb_due_filter, str(sanitized["due_filter"]))
+            self._set_combo_data(self.cmb_mode_filter, str(sanitized["mode_filter"]))
+            self._set_combo_data(self.cmb_sort_by, str(sanitized["sort_by"]))
+            self.btn_sort_desc.setChecked(bool(sanitized["sort_desc"]))
+        finally:
+            self._block_filter_events = False
+
+    def _apply_preset_by_id(self, preset_id: str, refresh: bool = True, persist_last: bool = True) -> None:
+        target_id = str(preset_id or "").strip()
+        if target_id not in self._view_presets:
+            target_id = "builtin:all"
+        preset = self._view_presets[target_id]
+
+        self._apply_filters_to_controls(preset.filters)
+        self._set_smart_view_indicator(preset.smart_view)
+        self._current_preset_id = preset.preset_id
+
+        idx = self.cmb_view_preset.findData(preset.preset_id)
+        self._block_preset_events = True
+        self.cmb_view_preset.blockSignals(True)
+        self.cmb_view_preset.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_view_preset.blockSignals(False)
+        self._block_preset_events = False
+
+        if persist_last:
+            self._persist_presets_to_settings()
+        if refresh:
+            self.refresh_data()
+
+    def _collect_filter_state(self) -> dict[str, Any]:
+        return self._sanitize_filters(
+            {
+                "text": self.edit_search.text().strip(),
+                "tag": self.edit_tag_filter.text().strip(),
+                "starred_only": self.chk_star_only.isChecked(),
+                "open_tasks_only": self.chk_open_only.isChecked(),
+                "due_filter": str(self.cmb_due_filter.currentData() or "all"),
+                "mode_filter": str(self.cmb_mode_filter.currentData() or "all"),
+                "sort_by": str(self.cmb_sort_by.currentData() or "updated"),
+                "sort_desc": self.btn_sort_desc.isChecked(),
+            }
+        )
+
+    def _on_filter_controls_changed(self, *_: Any) -> None:
+        if self._block_filter_events:
+            return
+        self._set_smart_view_indicator("custom")
         self.refresh_data()
 
+    def _on_view_preset_changed(self, *_: Any) -> None:
+        if self._block_preset_events:
+            return
+        preset_id = str(self.cmb_view_preset.currentData() or "")
+        if preset_id:
+            self._apply_preset_by_id(preset_id)
+
+    def _generate_next_user_preset_identity(self) -> tuple[str, str]:
+        while True:
+            num = self._next_user_preset_number
+            self._next_user_preset_number += 1
+            preset_id = f"user:{num}"
+            if preset_id in self._view_presets:
+                continue
+            return preset_id, f"{tr('info_view_user_prefix')} {num}"
+
+    def _save_new_view_preset(self) -> None:
+        filters = self._collect_filter_state()
+        preset_id, name = self._generate_next_user_preset_identity()
+        preset = ViewPreset(preset_id=preset_id, name=name[:32], filters=filters, smart_view="custom")
+        self._view_presets[preset_id] = preset
+        self._user_preset_ids.append(preset_id)
+        self._current_preset_id = preset_id
+        self._reload_view_preset_combo_items()
+        self._apply_preset_by_id(preset_id, refresh=False, persist_last=True)
+        self.refresh_data()
+
+    def _update_current_view_preset(self) -> None:
+        preset_id = self._current_preset_id
+        if not preset_id.startswith("user:") or preset_id not in self._view_presets:
+            self._save_new_view_preset()
+            return
+        current = self._view_presets[preset_id]
+        self._view_presets[preset_id] = ViewPreset(
+            preset_id=current.preset_id,
+            name=current.name,
+            filters=self._collect_filter_state(),
+            smart_view="custom",
+        )
+        self._persist_presets_to_settings()
+        self.refresh_data()
+
+    def _delete_current_view_preset(self) -> None:
+        preset_id = self._current_preset_id
+        if not preset_id.startswith("user:"):
+            return
+        if preset_id in self._view_presets:
+            del self._view_presets[preset_id]
+        self._user_preset_ids = [pid for pid in self._user_preset_ids if pid != preset_id]
+        self._current_preset_id = "builtin:all"
+        self._reload_view_preset_combo_items()
+        self._apply_preset_by_id("builtin:all", refresh=True, persist_last=True)
+
     def _build_query(self) -> InfoQuery:
-        due_filter = "all"
-        open_only = self.chk_open_only.isChecked()
-        starred_only = self.chk_star_only.isChecked()
-
-        if self._smart_view == "open":
-            open_only = True
-        elif self._smart_view == "today":
-            due_filter = "today"
-        elif self._smart_view == "overdue":
-            due_filter = "overdue"
-            open_only = True
-        elif self._smart_view == "starred":
-            starred_only = True
-
-        sort_by = str(self.cmb_sort_by.currentData() or "updated")
-
         return InfoQuery(
             text=self.edit_search.text().strip(),
             tag=self.edit_tag_filter.text().strip(),
-            starred_only=starred_only,
-            open_tasks_only=open_only,
+            starred_only=self.chk_star_only.isChecked(),
+            open_tasks_only=self.chk_open_only.isChecked(),
             include_archived=False,
-            due_filter=due_filter,
-            mode_filter="all",
-            sort_by=sort_by,
+            due_filter=str(self.cmb_due_filter.currentData() or "all"),
+            mode_filter=str(self.cmb_mode_filter.currentData() or "all"),
+            sort_by=str(self.cmb_sort_by.currentData() or "updated"),
             sort_desc=self.btn_sort_desc.isChecked(),
         )
 
@@ -260,15 +611,20 @@ class InfoTab(QWidget):
         finally:
             self._is_refreshing = False
 
+    def _build_due_badges(self, due_state: str) -> list[str]:
+        if due_state == "today":
+            return [f"[{tr('info_badge_today')}]"]
+        if due_state == "overdue":
+            return [f"[{tr('info_badge_overdue')}]"]
+        return []
+
     @staticmethod
-    def _due_label_text(due_at: str) -> str:
-        raw = str(due_at or "").strip()
-        if not raw:
-            return ""
-        try:
-            return datetime.fromisoformat(raw).date().isoformat()
-        except Exception:
-            return raw
+    def _due_color(due_state: str) -> Optional[QColor]:
+        if due_state == "today":
+            return QColor("#f5c16c")
+        if due_state == "overdue":
+            return QColor("#ff9a9a")
+        return None
 
     def _populate_tasks(self, items: list[TaskIndexItem]) -> None:
         self.tasks_list.blockSignals(True)
@@ -282,9 +638,13 @@ class InfoTab(QWidget):
 
             for item in items:
                 text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
-                due_text = self._due_label_text(item.due_at)
+                due_text = display_due_iso(item.due_at)
+                due_state = classify_due(item.due_at)
+                badges = self._build_due_badges(due_state) if not item.done else []
                 if due_text:
                     text = f"{text}  ({tr('info_due_short_fmt').format(date=due_text)})"
+                if badges:
+                    text = f"{text} {' '.join(badges)}"
 
                 lw_item = QListWidgetItem(text)
                 lw_item.setFlags(
@@ -294,6 +654,11 @@ class InfoTab(QWidget):
                 lw_item.setData(Qt.ItemDataRole.UserRole, item.item_key)
                 lw_item.setData(Qt.ItemDataRole.UserRole + 1, bool(item.done))
                 lw_item.setData(Qt.ItemDataRole.UserRole + 2, item.window_uuid)
+
+                color = self._due_color(due_state) if not item.done else None
+                if color is not None:
+                    lw_item.setForeground(QBrush(color))
+
                 self.tasks_list.addItem(lw_item)
         finally:
             self.tasks_list.blockSignals(False)
@@ -317,9 +682,13 @@ class InfoTab(QWidget):
                     mode=mode_text,
                     first_line=item.first_line,
                 )
-                due_text = self._due_label_text(item.due_at)
+                due_text = display_due_iso(item.due_at)
+                due_state = classify_due(item.due_at)
+                badges = self._build_due_badges(due_state)
                 if due_text:
                     line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"
+                if badges:
+                    line = f"{line} {' '.join(badges)}"
 
                 lw_item = QListWidgetItem(line)
                 lw_item.setFlags(
@@ -328,6 +697,11 @@ class InfoTab(QWidget):
                 lw_item.setCheckState(Qt.CheckState.Checked if item.is_starred else Qt.CheckState.Unchecked)
                 lw_item.setData(Qt.ItemDataRole.UserRole, item.window_uuid)
                 lw_item.setData(Qt.ItemDataRole.UserRole + 1, bool(item.is_starred))
+
+                color = self._due_color(due_state)
+                if color is not None:
+                    lw_item.setForeground(QBrush(color))
+
                 self.notes_list.addItem(lw_item)
 
                 if item.window_uuid and item.window_uuid == self._current_selected_uuid:
@@ -488,6 +862,13 @@ class InfoTab(QWidget):
         self.btn_uncomplete_selected.setText(tr("info_bulk_uncomplete_selected"))
         self.btn_archive_selected.setText(tr("info_bulk_archive_selected"))
         self.btn_sort_desc.setText(tr("info_sort_desc"))
+        self.btn_view_save.setText(tr("info_view_save"))
+        self.btn_view_update.setText(tr("info_view_update"))
+        self.btn_view_delete.setText(tr("info_view_delete"))
+
+        builtin_presets = self._build_builtin_presets()
+        for preset_id, preset in builtin_presets.items():
+            self._view_presets[preset_id] = preset
 
         for key, text_key in [
             ("all", "info_view_all"),
@@ -500,7 +881,11 @@ class InfoTab(QWidget):
             if btn is not None:
                 btn.setText(tr(text_key))
 
+        self._reload_mode_combo_items()
+        self._reload_due_combo_items()
         self._reload_sort_combo_items()
+        self._reload_view_preset_combo_items()
+        self._apply_preset_by_id(self._current_preset_id, refresh=False, persist_last=False)
 
         self.subtabs.setTabText(0, tr("info_tasks_tab"))
         self.subtabs.setTabText(1, tr("info_notes_tab"))
