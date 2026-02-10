@@ -328,6 +328,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         # self.setStyleSheet(self._get_stylesheet())  # Removed for Global Style System
 
         self.tabs = QTabWidget()
+        tab_bar = self.tabs.tabBar()
+        tab_bar.setExpanding(False)
+        tab_bar.setUsesScrollButtons(True)
+        tab_bar.setElideMode(Qt.TextElideMode.ElideRight)
         main_layout.addWidget(self.tabs)
         self._build_main_tabs()
 

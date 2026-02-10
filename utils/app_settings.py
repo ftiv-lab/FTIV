@@ -18,6 +18,7 @@ _INFO_DUE_FILTERS = {"all", "today", "overdue", "upcoming", "dated", "undated"}
 _INFO_MODE_FILTERS = {"all", "task", "note"}
 _INFO_SORT_FIELDS = {"updated", "due", "created", "title"}
 _INFO_ARCHIVE_SCOPES = {"active", "archived", "all"}
+_INFO_LAYOUT_MODES = {"auto", "compact", "regular"}
 
 
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
@@ -104,6 +105,13 @@ def _sanitize_info_operation_logs(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _sanitize_info_layout_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    if mode not in _INFO_LAYOUT_MODES:
+        return "auto"
+    return mode
+
+
 @dataclass
 class AppSettings:
     """アプリ全体の設定。"""
@@ -116,6 +124,9 @@ class AppSettings:
     info_view_presets: list[dict[str, Any]] = field(default_factory=list)
     info_last_view_preset_id: str = "builtin:all"
     info_operation_logs: list[dict[str, Any]] = field(default_factory=list)
+    info_layout_mode: str = "auto"
+    info_advanced_filters_expanded: bool = False
+    info_operations_expanded: bool = False
 
 
 def _get_settings_path(base_directory: str) -> str:
@@ -141,6 +152,9 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
             "info_view_presets": _sanitize_user_info_presets(settings.info_view_presets),
             "info_last_view_preset_id": str(settings.info_last_view_preset_id or "builtin:all"),
             "info_operation_logs": _sanitize_info_operation_logs(settings.info_operation_logs)[-200:],
+            "info_layout_mode": _sanitize_info_layout_mode(getattr(settings, "info_layout_mode", "auto")),
+            "info_advanced_filters_expanded": bool(getattr(settings, "info_advanced_filters_expanded", False)),
+            "info_operations_expanded": bool(getattr(settings, "info_operations_expanded", False)),
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -181,6 +195,9 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         if raw_preset_id:
             s.info_last_view_preset_id = raw_preset_id
         s.info_operation_logs = _sanitize_info_operation_logs(data.get("info_operation_logs", []))
+        s.info_layout_mode = _sanitize_info_layout_mode(data.get("info_layout_mode", "auto"))
+        s.info_advanced_filters_expanded = bool(data.get("info_advanced_filters_expanded", False))
+        s.info_operations_expanded = bool(data.get("info_operations_expanded", False))
 
         return s
 

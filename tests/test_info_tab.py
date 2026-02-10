@@ -197,7 +197,14 @@ def _make_main_window(task_windows=None, note_windows=None):
         note_windows = [_DummyNoteWindow()]
     text_windows = [*task_windows, *note_windows]
     wm = SimpleNamespace(text_windows=text_windows)
-    app_settings = SimpleNamespace(info_view_presets=[], info_last_view_preset_id="builtin:all", info_operation_logs=[])
+    app_settings = SimpleNamespace(
+        info_view_presets=[],
+        info_last_view_preset_id="builtin:all",
+        info_operation_logs=[],
+        info_layout_mode="auto",
+        info_advanced_filters_expanded=False,
+        info_operations_expanded=False,
+    )
     settings_manager = SimpleNamespace(save_app_settings=lambda: None)
     mw = SimpleNamespace(window_manager=wm, app_settings=app_settings, settings_manager=settings_manager)
     return mw, text_windows
@@ -526,3 +533,105 @@ def test_operation_log_panel_renders_and_clears(qapp):
     only_item = tab.operations_list.item(0)
     assert only_item is not None
     assert only_item.text() == tr("info_operation_empty")
+
+
+def test_layout_mode_compact_from_settings_applies_short_labels(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    mw.app_settings.info_layout_mode = "compact"
+
+    tab = InfoTab(mw)
+
+    assert tab._effective_layout_mode == "compact"
+    assert tab.btn_refresh.text() == tr("info_refresh_short")
+    assert tab.btn_bulk_actions.text() == tr("info_bulk_actions_short")
+
+
+def test_layout_mode_auto_switches_compact_and_regular(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    mw.app_settings.info_layout_mode = "auto"
+    tab = InfoTab(mw)
+
+    tab.resize(320, 600)
+    tab._apply_layout_mode(force=True)
+    assert tab._effective_layout_mode == "compact"
+
+    tab.resize(420, 600)
+    tab._apply_layout_mode(force=True)
+    assert tab._effective_layout_mode == "regular"
+
+
+def test_advanced_and_operation_expand_state_restored_from_settings(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    mw.app_settings.info_advanced_filters_expanded = True
+    mw.app_settings.info_operations_expanded = True
+
+    tab = InfoTab(mw)
+
+    assert tab.advanced_filters_box.toggle_button.isChecked() is True
+    assert tab.operations_detail_widget.isHidden() is False
+
+
+def test_bulk_menu_action_uses_existing_bulk_handler(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1")
+    mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    actions = _DummyInfoActions(tab, text_windows)
+    mw.main_controller = SimpleNamespace(info_actions=actions)
+
+    note_item = _find_note_item(tab, "n-1")
+    assert note_item is not None
+    note_item.setSelected(True)
+
+    tab.btn_star_selected.trigger()
+    assert note_window.is_starred is True
+    assert actions.last_bulk_star == ["n-1"]
+
+
+def test_preset_action_menu_save_creates_user_preset(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    tab.edit_search.setText("hello")
+    tab.btn_view_save.trigger()
+
+    assert len(mw.app_settings.info_view_presets) == 1
+    assert str(mw.app_settings.info_view_presets[0]["id"]).startswith("user:")
+
+
+def test_operation_summary_and_toggle_panel(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1")
+    mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    actions = _DummyInfoActions(tab, text_windows)
+    actions.logs = [
+        {"at": "2026-02-10T11:00:00", "action": "bulk_archive", "target_count": 1, "detail": ""},
+        {"at": "2026-02-10T11:01:00", "action": "bulk_star", "target_count": 1, "detail": ""},
+    ]
+    mw.main_controller = SimpleNamespace(info_actions=actions)
+
+    tab.refresh_data(immediate=True)
+    assert tr("info_log_action_bulk_star") in tab.lbl_operation_summary.text()
+    assert tab.operations_detail_widget.isHidden() is True
+
+    tab.btn_toggle_operations.click()
+    assert tab.operations_detail_widget.isHidden() is False
+
+
+def test_info_tab_core_controls_visible_on_320px_width(qapp):
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+    tab.resize(320, 600)
+    tab.show()
+    qapp.processEvents()
+    tab._apply_layout_mode(force=True)
+
+    assert tab.cmb_view_preset.isVisible() is True
+    assert tab.cmb_smart_view.isVisible() is True
+    assert tab.cmb_archive_scope.isVisible() is True
+    assert tab.btn_bulk_actions.isVisible() is True

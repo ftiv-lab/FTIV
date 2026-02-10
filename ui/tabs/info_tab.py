@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QAction, QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QButtonGroup,
     QCheckBox,
     QComboBox,
     QGridLayout,
@@ -17,14 +16,17 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QPushButton,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from managers.info_index_manager import InfoIndexManager, InfoQuery, InfoStats, NoteIndexItem, TaskIndexItem
 from ui.dialogs import BulkTagEditDialog
+from ui.widgets import CollapsibleBox
 from utils.due_date import classify_due, display_due_iso
 from utils.translator import tr
 
@@ -45,6 +47,7 @@ class InfoTab(QWidget):
     _ARCHIVE_SCOPE_VALUES = ("active", "archived", "all")
     _SORT_BY_VALUES = ("updated", "due", "created", "title")
     _SMART_VIEW_KEYS = ("all", "open", "today", "overdue", "starred", "archived")
+    _LAYOUT_MODE_VALUES = ("auto", "compact", "regular")
 
     def __init__(self, main_window: Any):
         super().__init__()
@@ -61,6 +64,11 @@ class InfoTab(QWidget):
         self._next_user_preset_number = 1
         self._block_filter_events = False
         self._block_preset_events = False
+        self._block_smart_view_events = False
+        self._block_layout_mode_events = False
+        self._suspend_ui_state_persist = False
+        self._layout_mode = "auto"
+        self._effective_layout_mode = "regular"
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -68,133 +76,145 @@ class InfoTab(QWidget):
         self._refresh_timer.timeout.connect(self._refresh_now)
 
         self._setup_ui()
+        self._load_ui_state_from_settings()
         self._load_presets_from_settings()
         self._reload_view_preset_combo_items()
         self._restore_last_preset()
+        self._apply_layout_mode(force=True)
         self.refresh_data(immediate=True)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         self.filter_group = QGroupBox(tr("grp_info_filters"))
-        filter_layout = QGridLayout(self.filter_group)
+        filter_layout = QVBoxLayout(self.filter_group)
+        filter_layout.setSpacing(6)
 
+        self.lbl_quick_search = QLabel(tr("info_quick_search"))
+        self.lbl_quick_search.setProperty("class", "info-label")
+        filter_layout.addWidget(self.lbl_quick_search)
+
+        quick_search_row = QWidget()
+        quick_search_layout = QHBoxLayout(quick_search_row)
+        quick_search_layout.setContentsMargins(0, 0, 0, 0)
+        quick_search_layout.setSpacing(4)
         self.edit_search = QLineEdit()
         self.edit_search.setPlaceholderText(tr("info_search_placeholder"))
         self.edit_search.textChanged.connect(self._on_filter_controls_changed)
+        quick_search_layout.addWidget(self.edit_search, 1)
+
+        self.btn_refresh = QPushButton(tr("info_refresh"))
+        self.btn_refresh.setObjectName("ActionBtn")
+        self.btn_refresh.clicked.connect(lambda: self.refresh_data(immediate=True))
+        quick_search_layout.addWidget(self.btn_refresh)
+
+        self.lbl_layout_mode = QLabel(tr("info_layout_mode_label"))
+        quick_search_layout.addWidget(self.lbl_layout_mode)
+        self.cmb_layout_mode = QComboBox()
+        self._reload_layout_mode_combo_items()
+        self.cmb_layout_mode.currentIndexChanged.connect(self._on_layout_mode_changed)
+        quick_search_layout.addWidget(self.cmb_layout_mode)
+        filter_layout.addWidget(quick_search_row)
+
+        self.lbl_quick_view = QLabel(tr("info_quick_view"))
+        self.lbl_quick_view.setProperty("class", "info-label")
+        filter_layout.addWidget(self.lbl_quick_view)
+
+        quick_view_row = QWidget()
+        quick_view_layout = QGridLayout(quick_view_row)
+        quick_view_layout.setContentsMargins(0, 0, 0, 0)
+        quick_view_layout.setHorizontalSpacing(4)
+        quick_view_layout.setVerticalSpacing(4)
+
+        self.lbl_preset = QLabel(tr("info_view_preset_label"))
+        quick_view_layout.addWidget(self.lbl_preset, 0, 0)
+        self.cmb_view_preset = QComboBox()
+        self.cmb_view_preset.currentIndexChanged.connect(self._on_view_preset_changed)
+        quick_view_layout.addWidget(self.cmb_view_preset, 0, 1, 1, 2)
+
+        self.btn_preset_actions = QToolButton()
+        self.btn_preset_actions.setObjectName("ActionBtn")
+        self.btn_preset_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.menu_preset_actions = QMenu(self.btn_preset_actions)
+        self.btn_view_save = QAction(tr("info_view_save"), self)
+        self.btn_view_save.triggered.connect(self._save_new_view_preset)
+        self.menu_preset_actions.addAction(self.btn_view_save)
+        self.btn_view_update = QAction(tr("info_view_update"), self)
+        self.btn_view_update.triggered.connect(self._update_current_view_preset)
+        self.menu_preset_actions.addAction(self.btn_view_update)
+        self.btn_view_delete = QAction(tr("info_view_delete"), self)
+        self.btn_view_delete.triggered.connect(self._delete_current_view_preset)
+        self.menu_preset_actions.addAction(self.btn_view_delete)
+        self.btn_preset_actions.setMenu(self.menu_preset_actions)
+        quick_view_layout.addWidget(self.btn_preset_actions, 0, 3)
+
+        self.lbl_smart_view = QLabel(tr("info_smart_view_label"))
+        quick_view_layout.addWidget(self.lbl_smart_view, 1, 0)
+        self.cmb_smart_view = QComboBox()
+        self._reload_smart_view_combo_items()
+        self.cmb_smart_view.currentIndexChanged.connect(self._on_smart_view_combo_changed)
+        quick_view_layout.addWidget(self.cmb_smart_view, 1, 1)
+
+        self.lbl_archive_scope = QLabel(tr("info_archive_scope_label"))
+        quick_view_layout.addWidget(self.lbl_archive_scope, 1, 2)
+        self.cmb_archive_scope = QComboBox()
+        self._reload_archive_scope_combo_items()
+        self.cmb_archive_scope.currentIndexChanged.connect(self._on_filter_controls_changed)
+        quick_view_layout.addWidget(self.cmb_archive_scope, 1, 3)
+        filter_layout.addWidget(quick_view_row)
+
+        self.advanced_filters_box = CollapsibleBox(tr("info_advanced_filters"))
+        self.advanced_filters_box.toggle_button.toggled.connect(self._on_advanced_filters_toggled)
+        advanced_layout = QGridLayout()
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_layout.setHorizontalSpacing(4)
+        advanced_layout.setVerticalSpacing(4)
 
         self.edit_tag_filter = QLineEdit()
         self.edit_tag_filter.setPlaceholderText(tr("info_tag_placeholder"))
         self.edit_tag_filter.textChanged.connect(self._on_filter_controls_changed)
+        advanced_layout.addWidget(self.edit_tag_filter, 0, 0, 1, 4)
 
         self.chk_open_only = QCheckBox(tr("info_open_tasks_only"))
         self.chk_open_only.toggled.connect(self._on_filter_controls_changed)
-
+        advanced_layout.addWidget(self.chk_open_only, 1, 0)
         self.chk_star_only = QCheckBox(tr("info_star_only"))
         self.chk_star_only.toggled.connect(self._on_filter_controls_changed)
+        advanced_layout.addWidget(self.chk_star_only, 1, 1)
 
-        self._smart_view_group = QButtonGroup(self)
-        self._smart_view_group.setExclusive(False)
-        smart_view_row = QWidget()
-        smart_view_layout = QHBoxLayout(smart_view_row)
-        smart_view_layout.setContentsMargins(0, 0, 0, 0)
-        smart_view_layout.setSpacing(4)
-        for key, text_key in [
-            ("all", "info_view_all"),
-            ("open", "info_view_open"),
-            ("today", "info_view_today"),
-            ("overdue", "info_view_overdue"),
-            ("starred", "info_view_starred"),
-            ("archived", "info_view_archived"),
-        ]:
-            btn = QPushButton(tr(text_key))
-            btn.setCheckable(True)
-            btn.setProperty("class", "toggle")
-            btn.clicked.connect(lambda checked, view_key=key: self._on_smart_view_clicked(view_key, checked))
-            self._smart_view_group.addButton(btn)
-            self._smart_view_buttons[key] = btn
-            smart_view_layout.addWidget(btn)
-
-        preset_row = QWidget()
-        preset_layout = QHBoxLayout(preset_row)
-        preset_layout.setContentsMargins(0, 0, 0, 0)
-        preset_layout.setSpacing(4)
-        preset_layout.addWidget(QLabel(tr("info_view_preset_label")))
-
-        self.cmb_view_preset = QComboBox()
-        self.cmb_view_preset.currentIndexChanged.connect(self._on_view_preset_changed)
-        preset_layout.addWidget(self.cmb_view_preset, 1)
-
-        self.btn_view_save = QPushButton(tr("info_view_save"))
-        self.btn_view_save.setObjectName("ActionBtn")
-        self.btn_view_save.clicked.connect(self._save_new_view_preset)
-        preset_layout.addWidget(self.btn_view_save)
-
-        self.btn_view_update = QPushButton(tr("info_view_update"))
-        self.btn_view_update.setObjectName("ActionBtn")
-        self.btn_view_update.clicked.connect(self._update_current_view_preset)
-        preset_layout.addWidget(self.btn_view_update)
-
-        self.btn_view_delete = QPushButton(tr("info_view_delete"))
-        self.btn_view_delete.setObjectName("ActionBtn")
-        self.btn_view_delete.clicked.connect(self._delete_current_view_preset)
-        preset_layout.addWidget(self.btn_view_delete)
-
-        filter_mode_row = QWidget()
-        filter_mode_layout = QHBoxLayout(filter_mode_row)
-        filter_mode_layout.setContentsMargins(0, 0, 0, 0)
-        filter_mode_layout.setSpacing(4)
-        filter_mode_layout.addWidget(QLabel(tr("info_mode_label")))
+        self.lbl_mode = QLabel(tr("info_mode_label"))
+        advanced_layout.addWidget(self.lbl_mode, 2, 0)
         self.cmb_mode_filter = QComboBox()
         self._reload_mode_combo_items()
         self.cmb_mode_filter.currentIndexChanged.connect(self._on_filter_controls_changed)
-        filter_mode_layout.addWidget(self.cmb_mode_filter, 1)
-        filter_mode_layout.addWidget(QLabel(tr("info_due_filter_label")))
+        advanced_layout.addWidget(self.cmb_mode_filter, 2, 1)
+
+        self.lbl_due_filter = QLabel(tr("info_due_filter_label"))
+        advanced_layout.addWidget(self.lbl_due_filter, 2, 2)
         self.cmb_due_filter = QComboBox()
         self._reload_due_combo_items()
         self.cmb_due_filter.currentIndexChanged.connect(self._on_filter_controls_changed)
-        filter_mode_layout.addWidget(self.cmb_due_filter, 1)
-        filter_mode_layout.addWidget(QLabel(tr("info_archive_scope_label")))
-        self.cmb_archive_scope = QComboBox()
-        self._reload_archive_scope_combo_items()
-        self.cmb_archive_scope.currentIndexChanged.connect(self._on_filter_controls_changed)
-        filter_mode_layout.addWidget(self.cmb_archive_scope, 1)
+        advanced_layout.addWidget(self.cmb_due_filter, 2, 3)
 
+        self.lbl_sort = QLabel(tr("info_sort_label"))
+        advanced_layout.addWidget(self.lbl_sort, 3, 0)
         self.cmb_sort_by = QComboBox()
         self._reload_sort_combo_items()
         self.cmb_sort_by.currentIndexChanged.connect(self._on_filter_controls_changed)
+        advanced_layout.addWidget(self.cmb_sort_by, 3, 1, 1, 2)
 
         self.btn_sort_desc = QPushButton(tr("info_sort_desc"))
         self.btn_sort_desc.setCheckable(True)
         self.btn_sort_desc.setChecked(True)
         self.btn_sort_desc.setProperty("class", "toggle")
         self.btn_sort_desc.toggled.connect(self._on_filter_controls_changed)
-
-        sort_row = QWidget()
-        sort_layout = QHBoxLayout(sort_row)
-        sort_layout.setContentsMargins(0, 0, 0, 0)
-        sort_layout.setSpacing(4)
-        sort_layout.addWidget(QLabel(tr("info_sort_label")))
-        sort_layout.addWidget(self.cmb_sort_by, 1)
-        sort_layout.addWidget(self.btn_sort_desc)
+        advanced_layout.addWidget(self.btn_sort_desc, 3, 3)
 
         self.lbl_stats = QLabel("")
         self.lbl_stats.setProperty("class", "info-label")
-
-        self.btn_refresh = QPushButton(tr("info_refresh"))
-        self.btn_refresh.setObjectName("ActionBtn")
-        self.btn_refresh.clicked.connect(lambda: self.refresh_data(immediate=True))
-
-        filter_layout.addWidget(self.edit_search, 0, 0, 1, 3)
-        filter_layout.addWidget(self.edit_tag_filter, 1, 0, 1, 3)
-        filter_layout.addWidget(self.chk_open_only, 2, 0)
-        filter_layout.addWidget(self.chk_star_only, 2, 1)
-        filter_layout.addWidget(self.btn_refresh, 2, 2)
-        filter_layout.addWidget(smart_view_row, 3, 0, 1, 3)
-        filter_layout.addWidget(preset_row, 4, 0, 1, 3)
-        filter_layout.addWidget(filter_mode_row, 5, 0, 1, 3)
-        filter_layout.addWidget(sort_row, 6, 0, 1, 3)
-        filter_layout.addWidget(self.lbl_stats, 7, 0, 1, 3)
+        advanced_layout.addWidget(self.lbl_stats, 4, 0, 1, 4)
+        self.advanced_filters_box.setContentLayout(advanced_layout)
+        filter_layout.addWidget(self.advanced_filters_box)
 
         layout.addWidget(self.filter_group)
 
@@ -229,57 +249,73 @@ class InfoTab(QWidget):
         self.subtabs.addTab(self.notes_tab, tr("info_notes_tab"))
         layout.addWidget(self.subtabs)
 
-        bulk_row = QHBoxLayout()
-        self.btn_complete_selected = QPushButton(tr("info_bulk_complete_selected"))
-        self.btn_complete_selected.setObjectName("ActionBtn")
-        self.btn_complete_selected.clicked.connect(lambda: self._apply_bulk_task_done(True))
-        bulk_row.addWidget(self.btn_complete_selected)
-
-        self.btn_uncomplete_selected = QPushButton(tr("info_bulk_uncomplete_selected"))
-        self.btn_uncomplete_selected.setObjectName("ActionBtn")
-        self.btn_uncomplete_selected.clicked.connect(lambda: self._apply_bulk_task_done(False))
-        bulk_row.addWidget(self.btn_uncomplete_selected)
-
-        self.btn_archive_selected = QPushButton(tr("info_bulk_archive_selected"))
-        self.btn_archive_selected.setObjectName("ActionBtn")
-        self.btn_archive_selected.clicked.connect(self._archive_selected)
-        bulk_row.addWidget(self.btn_archive_selected)
-
-        self.btn_restore_selected = QPushButton(tr("info_bulk_restore_selected"))
-        self.btn_restore_selected.setObjectName("ActionBtn")
-        self.btn_restore_selected.clicked.connect(self._restore_selected)
-        bulk_row.addWidget(self.btn_restore_selected)
-
-        self.btn_star_selected = QPushButton(tr("info_bulk_star_selected"))
-        self.btn_star_selected.setObjectName("ActionBtn")
-        self.btn_star_selected.clicked.connect(lambda: self._apply_bulk_star(True))
-        bulk_row.addWidget(self.btn_star_selected)
-
-        self.btn_unstar_selected = QPushButton(tr("info_bulk_unstar_selected"))
-        self.btn_unstar_selected.setObjectName("ActionBtn")
-        self.btn_unstar_selected.clicked.connect(lambda: self._apply_bulk_star(False))
-        bulk_row.addWidget(self.btn_unstar_selected)
-
-        self.btn_edit_tags_selected = QPushButton(tr("info_bulk_edit_tags_selected"))
-        self.btn_edit_tags_selected.setObjectName("ActionBtn")
-        self.btn_edit_tags_selected.clicked.connect(self._edit_tags_selected)
-        bulk_row.addWidget(self.btn_edit_tags_selected)
-
-        bulk_row.addStretch()
-        layout.addLayout(bulk_row)
+        bulk_row = QWidget()
+        bulk_layout = QHBoxLayout(bulk_row)
+        bulk_layout.setContentsMargins(0, 0, 0, 0)
+        bulk_layout.setSpacing(4)
+        self.lbl_bulk_actions = QLabel(tr("info_bulk_actions_menu"))
+        self.lbl_bulk_actions.setProperty("class", "info-label")
+        bulk_layout.addWidget(self.lbl_bulk_actions)
+        self.btn_bulk_actions = QToolButton()
+        self.btn_bulk_actions.setObjectName("ActionBtn")
+        self.btn_bulk_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.menu_bulk_actions = QMenu(self.btn_bulk_actions)
+        self.btn_complete_selected = QAction(tr("info_bulk_complete_selected"), self)
+        self.btn_complete_selected.triggered.connect(lambda: self._apply_bulk_task_done(True))
+        self.menu_bulk_actions.addAction(self.btn_complete_selected)
+        self.btn_uncomplete_selected = QAction(tr("info_bulk_uncomplete_selected"), self)
+        self.btn_uncomplete_selected.triggered.connect(lambda: self._apply_bulk_task_done(False))
+        self.menu_bulk_actions.addAction(self.btn_uncomplete_selected)
+        self.btn_archive_selected = QAction(tr("info_bulk_archive_selected"), self)
+        self.btn_archive_selected.triggered.connect(self._archive_selected)
+        self.menu_bulk_actions.addAction(self.btn_archive_selected)
+        self.btn_restore_selected = QAction(tr("info_bulk_restore_selected"), self)
+        self.btn_restore_selected.triggered.connect(self._restore_selected)
+        self.menu_bulk_actions.addAction(self.btn_restore_selected)
+        self.btn_star_selected = QAction(tr("info_bulk_star_selected"), self)
+        self.btn_star_selected.triggered.connect(lambda: self._apply_bulk_star(True))
+        self.menu_bulk_actions.addAction(self.btn_star_selected)
+        self.btn_unstar_selected = QAction(tr("info_bulk_unstar_selected"), self)
+        self.btn_unstar_selected.triggered.connect(lambda: self._apply_bulk_star(False))
+        self.menu_bulk_actions.addAction(self.btn_unstar_selected)
+        self.btn_edit_tags_selected = QAction(tr("info_bulk_edit_tags_selected"), self)
+        self.btn_edit_tags_selected.triggered.connect(self._edit_tags_selected)
+        self.menu_bulk_actions.addAction(self.btn_edit_tags_selected)
+        self.btn_bulk_actions.setMenu(self.menu_bulk_actions)
+        bulk_layout.addWidget(self.btn_bulk_actions)
+        bulk_layout.addStretch()
+        layout.addWidget(bulk_row)
 
         self.operations_group = QGroupBox(tr("info_recent_operations"))
         operations_layout = QVBoxLayout(self.operations_group)
+        operations_layout.setSpacing(4)
+        operations_header = QHBoxLayout()
+        operations_header.setContentsMargins(0, 0, 0, 0)
+        self.lbl_operation_summary = QLabel(tr("info_operation_empty"))
+        self.lbl_operation_summary.setProperty("class", "info-label")
+        operations_header.addWidget(self.lbl_operation_summary, 1)
+        self.btn_toggle_operations = QPushButton("▶")
+        self.btn_toggle_operations.setProperty("class", "toggle")
+        self.btn_toggle_operations.setCheckable(True)
+        self.btn_toggle_operations.toggled.connect(self._on_operations_toggled)
+        operations_header.addWidget(self.btn_toggle_operations)
+        operations_layout.addLayout(operations_header)
+
+        self.operations_detail_widget = QWidget()
+        operations_detail_layout = QVBoxLayout(self.operations_detail_widget)
+        operations_detail_layout.setContentsMargins(0, 0, 0, 0)
+        operations_detail_layout.setSpacing(4)
         self.operations_list = QListWidget()
         self.operations_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        operations_layout.addWidget(self.operations_list)
+        operations_detail_layout.addWidget(self.operations_list)
         operation_btn_row = QHBoxLayout()
         operation_btn_row.addStretch()
         self.btn_clear_operations = QPushButton(tr("info_clear_operations"))
         self.btn_clear_operations.setObjectName("ActionBtn")
         self.btn_clear_operations.clicked.connect(self._clear_operation_logs)
-        operation_btn_row.addWidget(self.btn_clear_operations)
-        operations_layout.addLayout(operation_btn_row)
+        operation_btn_row.addWidget(self.btn_clear_operations, 0, Qt.AlignmentFlag.AlignRight)
+        operations_detail_layout.addLayout(operation_btn_row)
+        operations_layout.addWidget(self.operations_detail_widget)
         layout.addWidget(self.operations_group)
         layout.addStretch()
 
@@ -432,6 +468,131 @@ class InfoTab(QWidget):
             last_id = "builtin:all"
         self._apply_preset_by_id(last_id, refresh=False, persist_last=False)
 
+    def _load_ui_state_from_settings(self) -> None:
+        settings = getattr(self.mw, "app_settings", None)
+        mode = str(getattr(settings, "info_layout_mode", "auto") or "auto").strip().lower()
+        if mode not in self._LAYOUT_MODE_VALUES:
+            mode = "auto"
+        advanced_expanded = bool(getattr(settings, "info_advanced_filters_expanded", False))
+        operations_expanded = bool(getattr(settings, "info_operations_expanded", False))
+
+        self._suspend_ui_state_persist = True
+        try:
+            self._layout_mode = mode
+            self._reload_layout_mode_combo_items()
+            self._set_combo_data(self.cmb_layout_mode, mode)
+            self.advanced_filters_box.toggle_button.setChecked(advanced_expanded)
+            self._set_operations_expanded(operations_expanded)
+        finally:
+            self._suspend_ui_state_persist = False
+
+    def _persist_ui_state_to_settings(self) -> None:
+        if self._suspend_ui_state_persist:
+            return
+        settings = getattr(self.mw, "app_settings", None)
+        settings_manager = getattr(self.mw, "settings_manager", None)
+        if settings is None:
+            return
+
+        settings.info_layout_mode = self._layout_mode
+        settings.info_advanced_filters_expanded = bool(self.advanced_filters_box.toggle_button.isChecked())
+        settings.info_operations_expanded = bool(self.btn_toggle_operations.isChecked())
+        if settings_manager is not None and hasattr(settings_manager, "save_app_settings"):
+            settings_manager.save_app_settings()
+
+    def _set_operations_expanded(self, expanded: bool) -> None:
+        checked = bool(expanded)
+        self.btn_toggle_operations.blockSignals(True)
+        self.btn_toggle_operations.setChecked(checked)
+        self.btn_toggle_operations.blockSignals(False)
+        self.operations_detail_widget.setVisible(checked)
+        self.btn_toggle_operations.setText("▼" if checked else "▶")
+
+    def _on_operations_toggled(self, checked: bool) -> None:
+        self._set_operations_expanded(bool(checked))
+        self._persist_ui_state_to_settings()
+
+    def _on_advanced_filters_toggled(self, _: bool) -> None:
+        self._persist_ui_state_to_settings()
+
+    def _reload_layout_mode_combo_items(self) -> None:
+        selected_data = str(self.cmb_layout_mode.currentData() or self._layout_mode or "auto")
+        self._block_layout_mode_events = True
+        self.cmb_layout_mode.blockSignals(True)
+        self.cmb_layout_mode.clear()
+        self.cmb_layout_mode.addItem(tr("info_layout_mode_auto"), "auto")
+        self.cmb_layout_mode.addItem(tr("info_layout_mode_compact"), "compact")
+        self.cmb_layout_mode.addItem(tr("info_layout_mode_regular"), "regular")
+        idx = self.cmb_layout_mode.findData(selected_data)
+        self.cmb_layout_mode.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_layout_mode.blockSignals(False)
+        self._block_layout_mode_events = False
+
+    def _reload_smart_view_combo_items(self) -> None:
+        selected_data = str(self.cmb_smart_view.currentData() or self._smart_view or "all")
+        self._block_smart_view_events = True
+        self.cmb_smart_view.blockSignals(True)
+        self.cmb_smart_view.clear()
+        self.cmb_smart_view.addItem(tr("info_view_all"), "all")
+        self.cmb_smart_view.addItem(tr("info_view_open"), "open")
+        self.cmb_smart_view.addItem(tr("info_view_today"), "today")
+        self.cmb_smart_view.addItem(tr("info_view_overdue"), "overdue")
+        self.cmb_smart_view.addItem(tr("info_view_starred"), "starred")
+        self.cmb_smart_view.addItem(tr("info_view_archived"), "archived")
+        self.cmb_smart_view.addItem(tr("info_view_custom"), "custom")
+        idx = self.cmb_smart_view.findData(selected_data)
+        self.cmb_smart_view.setCurrentIndex(idx if idx >= 0 else self.cmb_smart_view.findData("custom"))
+        self.cmb_smart_view.blockSignals(False)
+        self._block_smart_view_events = False
+
+    def _on_smart_view_combo_changed(self, *_: Any) -> None:
+        if self._block_smart_view_events:
+            return
+        view_key = str(self.cmb_smart_view.currentData() or "custom")
+        if view_key in self._SMART_VIEW_KEYS:
+            self._on_smart_view_clicked(view_key, True)
+            return
+        if self._smart_view != "custom":
+            self._set_smart_view_indicator("custom")
+
+    def _on_layout_mode_changed(self, *_: Any) -> None:
+        if self._block_layout_mode_events:
+            return
+        mode = str(self.cmb_layout_mode.currentData() or "auto").strip().lower()
+        if mode not in self._LAYOUT_MODE_VALUES:
+            mode = "auto"
+        self._layout_mode = mode
+        self._apply_layout_mode(force=True)
+        self._persist_ui_state_to_settings()
+
+    def _apply_layout_mode(self, force: bool = False) -> None:
+        effective = self._layout_mode
+        if effective == "auto":
+            effective = "compact" if self.width() < 360 else "regular"
+        if not force and effective == self._effective_layout_mode:
+            return
+        self._effective_layout_mode = effective
+        compact = effective == "compact"
+
+        self.btn_refresh.setText(tr("info_refresh_short") if compact else tr("info_refresh"))
+        self.btn_refresh.setToolTip(tr("info_refresh"))
+        self.lbl_layout_mode.setText(tr("info_layout_mode_label_short") if compact else tr("info_layout_mode_label"))
+        self.lbl_preset.setText(tr("info_view_preset_label_short") if compact else tr("info_view_preset_label"))
+        self.lbl_smart_view.setText(tr("info_smart_view_label_short") if compact else tr("info_smart_view_label"))
+        self.lbl_archive_scope.setText(
+            tr("info_archive_scope_label_short") if compact else tr("info_archive_scope_label")
+        )
+        self.btn_preset_actions.setText(tr("info_view_actions_short") if compact else tr("info_view_actions"))
+        self.btn_preset_actions.setToolTip(tr("info_view_actions"))
+        self.lbl_bulk_actions.setText(tr("info_bulk_actions_short") if compact else tr("info_bulk_actions_menu"))
+        self.btn_bulk_actions.setText(tr("info_bulk_actions_short") if compact else tr("info_bulk_actions_menu"))
+        self.btn_bulk_actions.setToolTip(tr("info_bulk_actions_menu"))
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        if self._layout_mode == "auto":
+            self._apply_layout_mode()
+
     def _reload_mode_combo_items(self) -> None:
         selected_data = str(self.cmb_mode_filter.currentData() or "all") if hasattr(self, "cmb_mode_filter") else "all"
         self.cmb_mode_filter.blockSignals(True)
@@ -521,6 +682,13 @@ class InfoTab(QWidget):
         if normalized not in self._SMART_VIEW_KEYS:
             normalized = "custom"
         self._smart_view = normalized
+        if hasattr(self, "cmb_smart_view"):
+            self._block_smart_view_events = True
+            self.cmb_smart_view.blockSignals(True)
+            idx = self.cmb_smart_view.findData(normalized)
+            self.cmb_smart_view.setCurrentIndex(idx if idx >= 0 else self.cmb_smart_view.findData("custom"))
+            self.cmb_smart_view.blockSignals(False)
+            self._block_smart_view_events = False
         for key, btn in self._smart_view_buttons.items():
             btn.blockSignals(True)
             btn.setChecked(normalized == key)
@@ -820,6 +988,16 @@ class InfoTab(QWidget):
         text_key = mapping.get(str(action or "").strip().lower())
         return tr(text_key) if text_key else str(action or "").strip()
 
+    def _format_operation_entry(self, entry: dict[str, Any]) -> str:
+        at = str(entry.get("at", "") or "").strip()
+        action = self._log_action_label(str(entry.get("action", "") or ""))
+        count = int(entry.get("target_count", 0) or 0)
+        detail = str(entry.get("detail", "") or "").strip()
+        line = tr("info_operation_item_fmt").format(at=at, action=action, count=count)
+        if detail:
+            line = f"{line} - {detail}"
+        return line
+
     def _populate_operation_logs(self) -> None:
         self.operations_list.blockSignals(True)
         try:
@@ -831,17 +1009,18 @@ class InfoTab(QWidget):
                 empty = QListWidgetItem(tr("info_operation_empty"))
                 empty.setFlags(Qt.ItemFlag.NoItemFlags)
                 self.operations_list.addItem(empty)
+                summary = tr("info_operation_empty")
+                self.lbl_operation_summary.setText(summary)
+                self.lbl_operation_summary.setToolTip(summary)
                 return
 
+            latest_line = self._format_operation_entry(dict(logs[-1]))
+            summary = tr("info_operation_summary_fmt").format(text=latest_line)
+            self.lbl_operation_summary.setText(summary)
+            self.lbl_operation_summary.setToolTip(latest_line)
+
             for entry in reversed(list(logs)):
-                at = str(entry.get("at", "") or "").strip()
-                action = self._log_action_label(str(entry.get("action", "") or ""))
-                count = int(entry.get("target_count", 0) or 0)
-                detail = str(entry.get("detail", "") or "").strip()
-                line = tr("info_operation_item_fmt").format(at=at, action=action, count=count)
-                if detail:
-                    line = f"{line} - {detail}"
-                self.operations_list.addItem(QListWidgetItem(line))
+                self.operations_list.addItem(QListWidgetItem(self._format_operation_entry(dict(entry))))
         finally:
             self.operations_list.blockSignals(False)
 
@@ -1025,12 +1204,20 @@ class InfoTab(QWidget):
 
     def refresh_ui(self) -> None:
         self.filter_group.setTitle(tr("grp_info_filters"))
+        self.lbl_quick_search.setText(tr("info_quick_search"))
+        self.lbl_quick_view.setText(tr("info_quick_view"))
+        self.lbl_layout_mode.setText(tr("info_layout_mode_label"))
         self.edit_search.setPlaceholderText(tr("info_search_placeholder"))
         self.edit_tag_filter.setPlaceholderText(tr("info_tag_placeholder"))
         self.chk_open_only.setText(tr("info_open_tasks_only"))
         self.chk_star_only.setText(tr("info_star_only"))
         self.btn_refresh.setText(tr("info_refresh"))
         self.btn_toggle_star.setText(tr("info_toggle_star"))
+        self.lbl_mode.setText(tr("info_mode_label"))
+        self.lbl_due_filter.setText(tr("info_due_filter_label"))
+        self.lbl_sort.setText(tr("info_sort_label"))
+        self.lbl_bulk_actions.setText(tr("info_bulk_actions_menu"))
+        self.advanced_filters_box.setText(tr("info_advanced_filters"))
         self.btn_complete_selected.setText(tr("info_bulk_complete_selected"))
         self.btn_uncomplete_selected.setText(tr("info_bulk_uncomplete_selected"))
         self.btn_archive_selected.setText(tr("info_bulk_archive_selected"))
@@ -1039,6 +1226,11 @@ class InfoTab(QWidget):
         self.btn_unstar_selected.setText(tr("info_bulk_unstar_selected"))
         self.btn_edit_tags_selected.setText(tr("info_bulk_edit_tags_selected"))
         self.btn_sort_desc.setText(tr("info_sort_desc"))
+        self.lbl_preset.setText(tr("info_view_preset_label"))
+        self.lbl_smart_view.setText(tr("info_smart_view_label"))
+        self.lbl_archive_scope.setText(tr("info_archive_scope_label"))
+        self.btn_preset_actions.setText(tr("info_view_actions"))
+        self.btn_bulk_actions.setText(tr("info_bulk_actions_menu"))
         self.btn_view_save.setText(tr("info_view_save"))
         self.btn_view_update.setText(tr("info_view_update"))
         self.btn_view_delete.setText(tr("info_view_delete"))
@@ -1065,8 +1257,13 @@ class InfoTab(QWidget):
         self._reload_due_combo_items()
         self._reload_archive_scope_combo_items()
         self._reload_sort_combo_items()
+        self._reload_layout_mode_combo_items()
+        self._set_combo_data(self.cmb_layout_mode, self._layout_mode)
+        self._reload_smart_view_combo_items()
         self._reload_view_preset_combo_items()
         self._apply_preset_by_id(self._current_preset_id, refresh=False, persist_last=False)
+        self._set_operations_expanded(self.btn_toggle_operations.isChecked())
+        self._apply_layout_mode(force=True)
 
         self.subtabs.setTabText(0, tr("info_tasks_tab"))
         self.subtabs.setTabText(1, tr("info_notes_tab"))
