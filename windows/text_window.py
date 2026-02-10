@@ -518,6 +518,57 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         self.set_undoable_property("is_archived", new_value, "update_text")
         self._touch_updated_at()
 
+    @staticmethod
+    def _normalize_due_iso(value: str) -> str | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        try:
+            if len(raw) == 10:
+                due_day = datetime.strptime(raw, "%Y-%m-%d").date()
+            else:
+                due_day = datetime.fromisoformat(raw).date()
+            return f"{due_day.isoformat()}T00:00:00"
+        except Exception:
+            return None
+
+    def set_due_at(self, value: str) -> None:
+        """期限を設定する（内部保存は YYYY-MM-DDT00:00:00）。"""
+        normalized = self._normalize_due_iso(value)
+        if normalized is None:
+            return
+        if str(getattr(self, "due_at", "") or "") == normalized:
+            return
+        self.set_undoable_property("due_at", normalized, "update_text")
+        self._touch_updated_at()
+
+    def clear_due_at(self) -> None:
+        """期限を解除する。"""
+        if not str(getattr(self, "due_at", "") or ""):
+            return
+        self.set_undoable_property("due_at", "", "update_text")
+        self._touch_updated_at()
+
+    def bulk_set_task_done(self, indices: List[int], value: bool) -> None:
+        """指定行群のタスク状態を一括設定する。"""
+        if not self.is_task_mode():
+            return
+        total = len(self._split_lines(self.text))
+        states = self._normalize_task_states(self.task_states, total)
+        new_states = list(states)
+        target = bool(value)
+        changed = False
+        for idx in sorted(set(indices or [])):
+            if idx < 0 or idx >= total:
+                continue
+            if bool(new_states[idx]) == target:
+                continue
+            new_states[idx] = target
+            changed = True
+        if changed:
+            self.set_undoable_property("task_states", new_states, "update_text")
+            self._touch_updated_at()
+
     def complete_all_tasks(self) -> None:
         """全タスク行を完了状態にする。"""
         if not self.is_task_mode():

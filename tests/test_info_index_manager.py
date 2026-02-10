@@ -126,3 +126,64 @@ class TestInfoIndexManager:
 
         include_archived = manager.query_notes(notes, InfoQuery(include_archived=True))
         assert len(include_archived) == 2
+
+    def test_query_tasks_due_filter_overdue(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="t1",
+                content_mode="task",
+                due_at="2001-01-01T00:00:00",
+                task_refs=[_make_task_ref(0, "old", False)],
+            ),
+            _make_window(
+                uuid="w2",
+                text="t2",
+                content_mode="task",
+                due_at="2999-01-01T00:00:00",
+                task_refs=[_make_task_ref(0, "future", False)],
+            ),
+        ]
+        tasks, _ = manager.build_index(windows)
+
+        filtered = manager.query_tasks(tasks, InfoQuery(due_filter="overdue", sort_by="updated", sort_desc=True))
+        assert len(filtered) == 1
+        assert filtered[0].window_uuid == "w1"
+
+    def test_query_notes_sort_by_due(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="a", content_mode="note", due_at="2026-03-01T00:00:00"),
+            _make_window(uuid="n2", text="b", content_mode="note", due_at="2026-02-01T00:00:00"),
+        ]
+        _, notes = manager.build_index(windows)
+
+        ordered = manager.query_notes(notes, InfoQuery(sort_by="due", sort_desc=False))
+        assert [n.window_uuid for n in ordered] == ["n2", "n1"]
+
+    def test_build_stats_counts_open_done_overdue_and_starred(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="t1\nt2",
+                content_mode="task",
+                is_starred=True,
+                due_at="2001-01-01T00:00:00",
+                task_refs=[_make_task_ref(0, "open old", False), _make_task_ref(1, "done", True)],
+            ),
+            _make_window(
+                uuid="n1",
+                text="memo",
+                content_mode="note",
+                is_starred=True,
+            ),
+        ]
+        tasks, notes = manager.build_index(windows)
+        stats = manager.build_stats(tasks, notes)
+
+        assert stats.open_tasks == 1
+        assert stats.done_tasks == 1
+        assert stats.overdue_tasks == 1
+        assert stats.starred_notes == 2

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
+    QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -17,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from managers.info_index_manager import InfoIndexManager, InfoQuery, NoteIndexItem, TaskIndexItem
+from managers.info_index_manager import InfoIndexManager, InfoQuery, InfoStats, NoteIndexItem, TaskIndexItem
 from utils.translator import tr
 
 
@@ -31,8 +36,16 @@ class InfoTab(QWidget):
 
         self._current_selected_uuid: str = ""
         self._is_refreshing = False
+        self._smart_view = "all"
+        self._smart_view_buttons: dict[str, QPushButton] = {}
+
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(100)
+        self._refresh_timer.timeout.connect(self._refresh_now)
+
         self._setup_ui()
-        self.refresh_data()
+        self.refresh_data(immediate=True)
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -54,15 +67,61 @@ class InfoTab(QWidget):
         self.chk_star_only = QCheckBox(tr("info_star_only"))
         self.chk_star_only.toggled.connect(self.refresh_data)
 
+        self._smart_view_group = QButtonGroup(self)
+        self._smart_view_group.setExclusive(True)
+        smart_view_row = QWidget()
+        smart_view_layout = QHBoxLayout(smart_view_row)
+        smart_view_layout.setContentsMargins(0, 0, 0, 0)
+        smart_view_layout.setSpacing(4)
+        for key, text_key in [
+            ("all", "info_view_all"),
+            ("open", "info_view_open"),
+            ("today", "info_view_today"),
+            ("overdue", "info_view_overdue"),
+            ("starred", "info_view_starred"),
+        ]:
+            btn = QPushButton(tr(text_key))
+            btn.setCheckable(True)
+            btn.setProperty("class", "toggle")
+            btn.clicked.connect(lambda checked, view_key=key: self._set_smart_view(view_key) if checked else None)
+            self._smart_view_group.addButton(btn)
+            self._smart_view_buttons[key] = btn
+            smart_view_layout.addWidget(btn)
+        self._set_smart_view("all")
+
+        self.cmb_sort_by = QComboBox()
+        self._reload_sort_combo_items()
+        self.cmb_sort_by.currentIndexChanged.connect(self.refresh_data)
+
+        self.btn_sort_desc = QPushButton(tr("info_sort_desc"))
+        self.btn_sort_desc.setCheckable(True)
+        self.btn_sort_desc.setChecked(True)
+        self.btn_sort_desc.setProperty("class", "toggle")
+        self.btn_sort_desc.toggled.connect(self.refresh_data)
+
+        sort_row = QWidget()
+        sort_layout = QHBoxLayout(sort_row)
+        sort_layout.setContentsMargins(0, 0, 0, 0)
+        sort_layout.setSpacing(4)
+        sort_layout.addWidget(QLabel(tr("info_sort_label")))
+        sort_layout.addWidget(self.cmb_sort_by, 1)
+        sort_layout.addWidget(self.btn_sort_desc)
+
+        self.lbl_stats = QLabel("")
+        self.lbl_stats.setProperty("class", "info-label")
+
         self.btn_refresh = QPushButton(tr("info_refresh"))
         self.btn_refresh.setObjectName("ActionBtn")
-        self.btn_refresh.clicked.connect(self.refresh_data)
+        self.btn_refresh.clicked.connect(lambda: self.refresh_data(immediate=True))
 
-        filter_layout.addWidget(self.edit_search, 0, 0, 1, 2)
-        filter_layout.addWidget(self.edit_tag_filter, 1, 0, 1, 2)
+        filter_layout.addWidget(self.edit_search, 0, 0, 1, 3)
+        filter_layout.addWidget(self.edit_tag_filter, 1, 0, 1, 3)
         filter_layout.addWidget(self.chk_open_only, 2, 0)
         filter_layout.addWidget(self.chk_star_only, 2, 1)
-        filter_layout.addWidget(self.btn_refresh, 3, 0, 1, 2)
+        filter_layout.addWidget(self.btn_refresh, 2, 2)
+        filter_layout.addWidget(smart_view_row, 3, 0, 1, 3)
+        filter_layout.addWidget(sort_row, 4, 0, 1, 3)
+        filter_layout.addWidget(self.lbl_stats, 5, 0, 1, 3)
 
         layout.addWidget(self.filter_group)
 
@@ -71,6 +130,7 @@ class InfoTab(QWidget):
         self.tasks_tab = QWidget()
         tasks_layout = QVBoxLayout(self.tasks_tab)
         self.tasks_list = QListWidget()
+        self.tasks_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tasks_list.itemChanged.connect(self._on_task_item_changed)
         self.tasks_list.itemDoubleClicked.connect(self._on_task_item_activated)
         tasks_layout.addWidget(self.tasks_list)
@@ -80,6 +140,7 @@ class InfoTab(QWidget):
         notes_layout = QVBoxLayout(self.notes_tab)
 
         self.notes_list = QListWidget()
+        self.notes_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.notes_list.itemChanged.connect(self._on_note_item_changed)
         self.notes_list.itemDoubleClicked.connect(self._on_note_item_activated)
         notes_layout.addWidget(self.notes_list)
@@ -95,15 +156,76 @@ class InfoTab(QWidget):
         self.subtabs.addTab(self.notes_tab, tr("info_notes_tab"))
         layout.addWidget(self.subtabs)
 
+        bulk_row = QHBoxLayout()
+        self.btn_complete_selected = QPushButton(tr("info_bulk_complete_selected"))
+        self.btn_complete_selected.setObjectName("ActionBtn")
+        self.btn_complete_selected.clicked.connect(lambda: self._apply_bulk_task_done(True))
+        bulk_row.addWidget(self.btn_complete_selected)
+
+        self.btn_uncomplete_selected = QPushButton(tr("info_bulk_uncomplete_selected"))
+        self.btn_uncomplete_selected.setObjectName("ActionBtn")
+        self.btn_uncomplete_selected.clicked.connect(lambda: self._apply_bulk_task_done(False))
+        bulk_row.addWidget(self.btn_uncomplete_selected)
+
+        self.btn_archive_selected = QPushButton(tr("info_bulk_archive_selected"))
+        self.btn_archive_selected.setObjectName("ActionBtn")
+        self.btn_archive_selected.clicked.connect(self._archive_selected)
+        bulk_row.addWidget(self.btn_archive_selected)
+
+        bulk_row.addStretch()
+        layout.addLayout(bulk_row)
         layout.addStretch()
 
+    def _reload_sort_combo_items(self) -> None:
+        selected_data = str(self.cmb_sort_by.currentData() or "updated") if hasattr(self, "cmb_sort_by") else "updated"
+        self.cmb_sort_by.blockSignals(True)
+        self.cmb_sort_by.clear()
+        self.cmb_sort_by.addItem(tr("info_sort_updated"), "updated")
+        self.cmb_sort_by.addItem(tr("info_sort_due"), "due")
+        self.cmb_sort_by.addItem(tr("info_sort_created"), "created")
+        self.cmb_sort_by.addItem(tr("info_sort_title"), "title")
+        idx = self.cmb_sort_by.findData(selected_data)
+        self.cmb_sort_by.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_sort_by.blockSignals(False)
+
+    def _set_smart_view(self, view_key: str) -> None:
+        normalized = str(view_key or "").strip().lower()
+        if normalized not in self._smart_view_buttons:
+            normalized = "all"
+        self._smart_view = normalized
+        for key, btn in self._smart_view_buttons.items():
+            btn.blockSignals(True)
+            btn.setChecked(key == normalized)
+            btn.blockSignals(False)
+        self.refresh_data()
+
     def _build_query(self) -> InfoQuery:
+        due_filter = "all"
+        open_only = self.chk_open_only.isChecked()
+        starred_only = self.chk_star_only.isChecked()
+
+        if self._smart_view == "open":
+            open_only = True
+        elif self._smart_view == "today":
+            due_filter = "today"
+        elif self._smart_view == "overdue":
+            due_filter = "overdue"
+            open_only = True
+        elif self._smart_view == "starred":
+            starred_only = True
+
+        sort_by = str(self.cmb_sort_by.currentData() or "updated")
+
         return InfoQuery(
             text=self.edit_search.text().strip(),
             tag=self.edit_tag_filter.text().strip(),
-            starred_only=self.chk_star_only.isChecked(),
-            open_tasks_only=self.chk_open_only.isChecked(),
+            starred_only=starred_only,
+            open_tasks_only=open_only,
             include_archived=False,
+            due_filter=due_filter,
+            mode_filter="all",
+            sort_by=sort_by,
+            sort_desc=self.btn_sort_desc.isChecked(),
         )
 
     def _iter_text_windows(self) -> list[Any]:
@@ -112,7 +234,15 @@ class InfoTab(QWidget):
             return []
         return list(getattr(wm, "text_windows", []) or [])
 
-    def refresh_data(self) -> None:
+    def refresh_data(self, immediate: bool = False) -> None:
+        if immediate:
+            if self._refresh_timer.isActive():
+                self._refresh_timer.stop()
+            self._refresh_now()
+            return
+        self._refresh_timer.start(100)
+
+    def _refresh_now(self) -> None:
         if self._is_refreshing:
             return
 
@@ -122,11 +252,23 @@ class InfoTab(QWidget):
             query = self._build_query()
             filtered_tasks = self.index_manager.query_tasks(task_items, query)
             filtered_notes = self.index_manager.query_notes(note_items, query)
+            stats = self.index_manager.build_stats(filtered_tasks, filtered_notes)
 
             self._populate_tasks(filtered_tasks)
             self._populate_notes(filtered_notes)
+            self._update_stats(stats)
         finally:
             self._is_refreshing = False
+
+    @staticmethod
+    def _due_label_text(due_at: str) -> str:
+        raw = str(due_at or "").strip()
+        if not raw:
+            return ""
+        try:
+            return datetime.fromisoformat(raw).date().isoformat()
+        except Exception:
+            return raw
 
     def _populate_tasks(self, items: list[TaskIndexItem]) -> None:
         self.tasks_list.blockSignals(True)
@@ -140,6 +282,10 @@ class InfoTab(QWidget):
 
             for item in items:
                 text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
+                due_text = self._due_label_text(item.due_at)
+                if due_text:
+                    text = f"{text}  ({tr('info_due_short_fmt').format(date=due_text)})"
+
                 lw_item = QListWidgetItem(text)
                 lw_item.setFlags(
                     Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
@@ -171,6 +317,10 @@ class InfoTab(QWidget):
                     mode=mode_text,
                     first_line=item.first_line,
                 )
+                due_text = self._due_label_text(item.due_at)
+                if due_text:
+                    line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"
+
                 lw_item = QListWidgetItem(line)
                 lw_item.setFlags(
                     Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
@@ -185,11 +335,21 @@ class InfoTab(QWidget):
         finally:
             self.notes_list.blockSignals(False)
 
+    def _update_stats(self, stats: InfoStats) -> None:
+        self.lbl_stats.setText(
+            tr("info_stats_fmt").format(
+                open=stats.open_tasks,
+                done=stats.done_tasks,
+                overdue=stats.overdue_tasks,
+                starred=stats.starred_notes,
+            )
+        )
+
     def _on_task_item_changed(self, item: QListWidgetItem) -> None:
         if self._is_refreshing:
             return
         item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
-        if not item_key:
+        if ":" not in item_key:
             return
 
         prev_done = bool(item.data(Qt.ItemDataRole.UserRole + 1))
@@ -203,7 +363,7 @@ class InfoTab(QWidget):
             return
 
         # Fallback: no action handler
-        self.refresh_data()
+        self.refresh_data(immediate=True)
 
     def _on_task_item_activated(self, item: QListWidgetItem) -> None:
         window_uuid = str(item.data(Qt.ItemDataRole.UserRole + 2) or "")
@@ -235,7 +395,7 @@ class InfoTab(QWidget):
             return
 
         # Fallback: no action handler
-        self.refresh_data()
+        self.refresh_data(immediate=True)
 
     def _on_note_item_activated(self, item: QListWidgetItem) -> None:
         window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
@@ -257,7 +417,51 @@ class InfoTab(QWidget):
         actions = getattr(self.mw.main_controller, "info_actions", None)
         if actions is not None:
             actions.set_star(window_uuid, not current)
-        self.refresh_data()
+        self.refresh_data(immediate=True)
+
+    def _selected_task_item_keys(self) -> list[str]:
+        keys: list[str] = []
+        for item in self.tasks_list.selectedItems():
+            item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            if ":" in item_key:
+                keys.append(item_key)
+        return keys
+
+    def _apply_bulk_task_done(self, done: bool) -> None:
+        keys = self._selected_task_item_keys()
+        if not keys:
+            return
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None:
+            actions.bulk_set_task_done(keys, bool(done))
+            return
+        self.refresh_data(immediate=True)
+
+    def _archive_selected(self) -> None:
+        uuids: set[str] = set()
+
+        for item in self.notes_list.selectedItems():
+            window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            if window_uuid:
+                uuids.add(window_uuid)
+
+        for item in self.tasks_list.selectedItems():
+            window_uuid = str(item.data(Qt.ItemDataRole.UserRole + 2) or "")
+            if not window_uuid:
+                item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+                if ":" in item_key:
+                    window_uuid = item_key.rsplit(":", 1)[0]
+            if window_uuid:
+                uuids.add(window_uuid)
+
+        if not uuids:
+            return
+
+        actions = getattr(self.mw.main_controller, "info_actions", None)
+        if actions is not None:
+            actions.bulk_archive(sorted(uuids), True)
+            return
+        self.refresh_data(immediate=True)
 
     def on_selection_changed(self, window: Optional[Any]) -> None:
         self._current_selected_uuid = str(getattr(window, "uuid", "") or "") if window is not None else ""
@@ -280,7 +484,24 @@ class InfoTab(QWidget):
         self.chk_star_only.setText(tr("info_star_only"))
         self.btn_refresh.setText(tr("info_refresh"))
         self.btn_toggle_star.setText(tr("info_toggle_star"))
+        self.btn_complete_selected.setText(tr("info_bulk_complete_selected"))
+        self.btn_uncomplete_selected.setText(tr("info_bulk_uncomplete_selected"))
+        self.btn_archive_selected.setText(tr("info_bulk_archive_selected"))
+        self.btn_sort_desc.setText(tr("info_sort_desc"))
+
+        for key, text_key in [
+            ("all", "info_view_all"),
+            ("open", "info_view_open"),
+            ("today", "info_view_today"),
+            ("overdue", "info_view_overdue"),
+            ("starred", "info_view_starred"),
+        ]:
+            btn = self._smart_view_buttons.get(key)
+            if btn is not None:
+                btn.setText(tr(text_key))
+
+        self._reload_sort_combo_items()
 
         self.subtabs.setTabText(0, tr("info_tasks_tab"))
         self.subtabs.setTabText(1, tr("info_notes_tab"))
-        self.refresh_data()
+        self.refresh_data(immediate=True)

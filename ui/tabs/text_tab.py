@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtWidgets import (
@@ -7,6 +8,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -317,7 +319,13 @@ class TextTab(QWidget):
         self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
         self.edit_note_tags.returnPressed.connect(self._apply_note_metadata)
 
+        self.lbl_note_due_at = QLabel(tr("label_note_due_at"))
+        self.edit_note_due_at = QLineEdit()
+        self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
+        self.edit_note_due_at.returnPressed.connect(self._apply_note_metadata)
+
         self.chk_note_star = QCheckBox(tr("label_note_star"))
+        self.chk_note_archived = QCheckBox(tr("label_note_archived"))
         self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
         self.btn_apply_note_meta.setObjectName("ActionBtn")
         self.btn_apply_note_meta.clicked.connect(self._apply_note_metadata)
@@ -328,17 +336,20 @@ class TextTab(QWidget):
         grid_sel.addWidget(self.edit_note_title, 1, 1)
         grid_sel.addWidget(self.lbl_note_tags, 2, 0)
         grid_sel.addWidget(self.edit_note_tags, 2, 1)
-        grid_sel.addWidget(self.chk_note_star, 3, 0)
-        grid_sel.addWidget(self.btn_apply_note_meta, 3, 1)
-        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 4, 0, 1, 2)
-        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 5, 0, 1, 2)
+        grid_sel.addWidget(self.lbl_note_due_at, 3, 0)
+        grid_sel.addWidget(self.edit_note_due_at, 3, 1)
+        grid_sel.addWidget(self.chk_note_star, 4, 0)
+        grid_sel.addWidget(self.chk_note_archived, 4, 1)
+        grid_sel.addWidget(self.btn_apply_note_meta, 5, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 6, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 7, 0, 1, 2)
 
         # ✨ New: Save current as Default
         self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
         self.btn_save_default_selected.setObjectName("ActionBtn")
         self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
         self.btn_save_default_selected.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
-        grid_sel.addWidget(self.btn_save_default_selected, 6, 0, 1, 2)
+        grid_sel.addWidget(self.btn_save_default_selected, 8, 0, 1, 2)
 
         layout.addWidget(self.txt_layout_grp_selected)
 
@@ -492,8 +503,29 @@ class TextTab(QWidget):
             seen.add(key)
         return tags
 
+    @staticmethod
+    def _normalize_due_input(raw: str) -> str | None:
+        text = str(raw or "").strip()
+        if not text:
+            return ""
+        try:
+            due_day = datetime.strptime(text, "%Y-%m-%d").date()
+            return f"{due_day.isoformat()}T00:00:00"
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _display_due_input(raw_iso: str) -> str:
+        raw = str(raw_iso or "").strip()
+        if not raw:
+            return ""
+        try:
+            return datetime.fromisoformat(raw).date().isoformat()
+        except ValueError:
+            return raw
+
     def _apply_note_metadata(self) -> None:
-        """選択中のTextWindowへ title/tags/star を適用する。"""
+        """選択中のTextWindowへ note metadata を適用する。"""
         try:
             wm = getattr(self.mw, "window_manager", None)
             if wm is None:
@@ -505,10 +537,16 @@ class TextTab(QWidget):
             t_name = type(target).__name__
             if t_name not in ("TextWindow", "ConnectorLabel"):
                 return
+            is_text_window = t_name == "TextWindow"
 
             title = self.edit_note_title.text().strip()
             tags = self._parse_tags_csv(self.edit_note_tags.text())
             is_starred = self.chk_note_star.isChecked()
+            due_iso = self._normalize_due_input(self.edit_note_due_at.text() if self.edit_note_due_at else "")
+            if due_iso is None:
+                QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
+                return
+            is_archived = self.chk_note_archived.isChecked()
 
             if hasattr(target, "set_title_and_tags"):
                 target.set_title_and_tags(title, tags)
@@ -521,6 +559,23 @@ class TextTab(QWidget):
             else:
                 target.set_undoable_property("is_starred", bool(is_starred), "update_text")
 
+            if is_text_window:
+                if due_iso:
+                    if hasattr(target, "set_due_at"):
+                        target.set_due_at(due_iso)
+                    else:
+                        target.set_undoable_property("due_at", due_iso, "update_text")
+                else:
+                    if hasattr(target, "clear_due_at"):
+                        target.clear_due_at()
+                    else:
+                        target.set_undoable_property("due_at", "", "update_text")
+
+                if hasattr(target, "set_archived"):
+                    target.set_archived(bool(is_archived))
+                else:
+                    target.set_undoable_property("is_archived", bool(is_archived), "update_text")
+
             self._sync_note_meta_controls(target)
             if hasattr(self.mw, "info_tab"):
                 self.mw.info_tab.refresh_data()
@@ -528,16 +583,23 @@ class TextTab(QWidget):
             logger.debug("Failed to apply note metadata", exc_info=True)
 
     def _sync_note_meta_controls(self, obj: Optional[Any]) -> None:
-        enabled = obj is not None and type(obj).__name__ in ("TextWindow", "ConnectorLabel")
+        is_text_like = obj is not None and type(obj).__name__ in ("TextWindow", "ConnectorLabel")
+        is_text_window = obj is not None and type(obj).__name__ == "TextWindow"
 
         for w in [self.edit_note_title, self.edit_note_tags, self.chk_note_star, self.btn_apply_note_meta]:
             if w is not None:
-                w.setEnabled(enabled)
+                w.setEnabled(is_text_like)
 
-        if not enabled or obj is None:
+        for w in [self.edit_note_due_at, self.chk_note_archived]:
+            if w is not None:
+                w.setEnabled(is_text_window)
+
+        if not is_text_like or obj is None:
             self.edit_note_title.setText("")
             self.edit_note_tags.setText("")
             self.chk_note_star.setChecked(False)
+            self.edit_note_due_at.setText("")
+            self.chk_note_archived.setChecked(False)
             return
 
         self.edit_note_title.setText(str(getattr(obj, "title", "") or ""))
@@ -548,6 +610,12 @@ class TextTab(QWidget):
             tag_text = ""
         self.edit_note_tags.setText(tag_text)
         self.chk_note_star.setChecked(bool(getattr(obj, "is_starred", False)))
+        if is_text_window:
+            self.edit_note_due_at.setText(self._display_due_input(str(getattr(obj, "due_at", "") or "")))
+            self.chk_note_archived.setChecked(bool(getattr(obj, "is_archived", False)))
+        else:
+            self.edit_note_due_at.setText("")
+            self.chk_note_archived.setChecked(False)
 
     def refresh_ui(self) -> None:
         """UI文言更新"""
@@ -602,10 +670,13 @@ class TextTab(QWidget):
         self.btn_content_mode_task.setText(tr("label_content_mode_task"))
         self.lbl_note_title.setText(tr("label_note_title"))
         self.lbl_note_tags.setText(tr("label_note_tags"))
+        self.lbl_note_due_at.setText(tr("label_note_due_at"))
         self.chk_note_star.setText(tr("label_note_star"))
+        self.chk_note_archived.setText(tr("label_note_archived"))
         self.btn_apply_note_meta.setText(tr("btn_apply_note_meta"))
         self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
         self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
+        self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
 
         self.txt_layout_grp_all.setTitle(tr("anim_target_all_text"))
         self.btn_all_horizontal.setText(tr("btn_set_all_horizontal"))
@@ -692,6 +763,8 @@ class TextTab(QWidget):
             # Manage（Selected）
             "txt_btn_manage_clone_selected",
             "txt_btn_manage_save_png_selected",
+            "edit_note_due_at",
+            "chk_note_archived",
         ]
 
         for attr in attr_names_only_textwindow:

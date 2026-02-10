@@ -291,3 +291,49 @@ class TestTaskModeHelpers:
         mock_prop.assert_any_call("title", "Hello", "update_text")
         mock_prop.assert_any_call("tags", ["A", "B"], "update_text")
         w._touch_updated_at.assert_called_once()
+
+    def test_set_due_at_normalizes_date(self):
+        w = _make_text_window()
+        w.config.due_at = ""
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_due_at("2026-03-01")
+
+        mock_prop.assert_called_once_with("due_at", "2026-03-01T00:00:00", "update_text")
+        w._touch_updated_at.assert_called_once()
+
+    def test_set_due_at_invalid_is_noop(self):
+        w = _make_text_window()
+        w.config.due_at = ""
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_due_at("2026/03/01")
+
+        mock_prop.assert_not_called()
+        w._touch_updated_at.assert_not_called()
+
+    def test_clear_due_at(self):
+        w = _make_text_window()
+        w.config.due_at = "2026-03-01T00:00:00"
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.clear_due_at()
+
+        mock_prop.assert_called_once_with("due_at", "", "update_text")
+        w._touch_updated_at.assert_called_once()
+
+    def test_bulk_set_task_done_updates_selected_indices(self):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w.config.text = "one\ntwo\nthree"
+        w.config.task_states = [False, True, False]
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.bulk_set_task_done([0, 2], True)
+
+        mock_prop.assert_called_once_with("task_states", [True, True, True], "update_text")
+        w._touch_updated_at.assert_called_once()

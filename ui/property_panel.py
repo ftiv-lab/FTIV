@@ -2,6 +2,7 @@
 
 import logging
 import typing
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union, cast
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -95,7 +96,9 @@ class PropertyPanel(QWidget):
         self.btn_uncomplete_all = None
         self.edit_note_title = None
         self.edit_note_tags = None
+        self.edit_note_due_at = None
         self.btn_note_star = None
+        self.btn_note_archived = None
         self.btn_apply_note_meta = None
         self.btn_text_color = None
         self.spin_text_opacity = self.slider_text_opacity = None
@@ -376,10 +379,26 @@ class PropertyPanel(QWidget):
             with QSignalBlocker(self.edit_note_tags):
                 self.edit_note_tags.setText(tag_text)
 
+        if self.edit_note_due_at:
+            due_raw = str(getattr(t, "due_at", "") or "").strip()
+            due_text = ""
+            if due_raw:
+                try:
+                    due_text = datetime.fromisoformat(due_raw).date().isoformat()
+                except ValueError:
+                    due_text = due_raw
+            with QSignalBlocker(self.edit_note_due_at):
+                self.edit_note_due_at.setText(due_text)
+
         if self.btn_note_star:
             self.btn_note_star.blockSignals(True)
             self.btn_note_star.setChecked(bool(getattr(t, "is_starred", False)))
             self.btn_note_star.blockSignals(False)
+
+        if self.btn_note_archived:
+            self.btn_note_archived.blockSignals(True)
+            self.btn_note_archived.setChecked(bool(getattr(t, "is_archived", False)))
+            self.btn_note_archived.blockSignals(False)
 
         if self.btn_text_font:
             self.btn_text_font.setText(f"{t.font_family} ({t.font_size}pt)")
@@ -1032,9 +1051,24 @@ class PropertyPanel(QWidget):
             self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
             t_layout.addRow(tr("label_note_tags"), typing.cast(QWidget, self.edit_note_tags))
 
+            due_raw = str(getattr(target, "due_at", "") or "").strip()
+            due_text = ""
+            if due_raw:
+                try:
+                    due_text = datetime.fromisoformat(due_raw).date().isoformat()
+                except ValueError:
+                    due_text = due_raw
+            self.edit_note_due_at = QLineEdit(due_text)
+            self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
+            t_layout.addRow(tr("label_note_due_at"), typing.cast(QWidget, self.edit_note_due_at))
+
             self.btn_note_star = self.create_action_button(tr("label_note_star"), lambda: None, "toggle")
             self.btn_note_star.setCheckable(True)
             self.btn_note_star.setChecked(bool(getattr(target, "is_starred", False)))
+
+            self.btn_note_archived = self.create_action_button(tr("label_note_archived"), lambda: None, "toggle")
+            self.btn_note_archived.setCheckable(True)
+            self.btn_note_archived.setChecked(bool(getattr(target, "is_archived", False)))
 
             self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
             self.btn_apply_note_meta.setProperty("class", "secondary-button")
@@ -1054,7 +1088,18 @@ class PropertyPanel(QWidget):
             def _apply_note_meta() -> None:
                 title = self.edit_note_title.text().strip() if self.edit_note_title is not None else ""
                 tags = _parse_tags_csv(self.edit_note_tags.text() if self.edit_note_tags is not None else "")
+                due_raw = self.edit_note_due_at.text().strip() if self.edit_note_due_at is not None else ""
                 starred = self.btn_note_star.isChecked() if self.btn_note_star is not None else False
+                archived = self.btn_note_archived.isChecked() if self.btn_note_archived is not None else False
+
+                due_iso = ""
+                if due_raw:
+                    try:
+                        due_day = datetime.strptime(due_raw, "%Y-%m-%d").date()
+                        due_iso = f"{due_day.isoformat()}T00:00:00"
+                    except ValueError:
+                        QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
+                        return
 
                 if hasattr(target, "set_title_and_tags"):
                     target.set_title_and_tags(title, tags)
@@ -1067,12 +1112,29 @@ class PropertyPanel(QWidget):
                 else:
                     target.set_undoable_property("is_starred", bool(starred), "update_text")
 
+                if due_iso:
+                    if hasattr(target, "set_due_at"):
+                        target.set_due_at(due_iso)
+                    else:
+                        target.set_undoable_property("due_at", due_iso, "update_text")
+                else:
+                    if hasattr(target, "clear_due_at"):
+                        target.clear_due_at()
+                    else:
+                        target.set_undoable_property("due_at", "", "update_text")
+
+                if hasattr(target, "set_archived"):
+                    target.set_archived(bool(archived))
+                else:
+                    target.set_undoable_property("is_archived", bool(archived), "update_text")
+
                 self.update_property_values()
                 if self.mw and hasattr(self.mw, "info_tab"):
                     self.mw.info_tab.refresh_data()
 
             self.edit_note_title.returnPressed.connect(_apply_note_meta)
             self.edit_note_tags.returnPressed.connect(_apply_note_meta)
+            self.edit_note_due_at.returnPressed.connect(_apply_note_meta)
             self.btn_apply_note_meta.clicked.connect(_apply_note_meta)
 
             meta_btn_row = QWidget()
@@ -1080,6 +1142,7 @@ class PropertyPanel(QWidget):
             meta_btn_layout.setContentsMargins(0, 0, 0, 0)
             meta_btn_layout.setSpacing(4)
             meta_btn_layout.addWidget(self.btn_note_star)
+            meta_btn_layout.addWidget(self.btn_note_archived)
             meta_btn_layout.addWidget(self.btn_apply_note_meta)
             t_layout.addRow("", meta_btn_row)
 
