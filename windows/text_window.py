@@ -1,11 +1,14 @@
 import json
 import logging
 import os
+import re
 import traceback
-from typing import Any, Dict, Optional
+from datetime import datetime
+from difflib import SequenceMatcher
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt
-from PySide6.QtGui import QFont, QPainter
+from PySide6.QtGui import QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
     QColorDialog,
     QDialog,
@@ -33,6 +36,7 @@ from .mixins.text_properties_mixin import TextPropertiesMixin
 
 # ロガーの取得
 logger = logging.getLogger(__name__)
+LEGACY_TASK_LINE_PATTERN = re.compile(r"^\s*\[(?P<state>[ xX])\]\s?(?P<body>.*)$")
 
 
 class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # type: ignore
@@ -54,9 +58,20 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
         try:
             self._init_text_renderer(main_window)
+            self._suppress_task_state_sync = False
+            self._task_press_pos: Optional[QPoint] = None
 
             self.config.text = text
             self.config.position = {"x": pos.x(), "y": pos.y()}
+            now_iso = datetime.now().isoformat(timespec="seconds")
+            if not self.config.created_at:
+                self.config.created_at = now_iso
+            if not self.config.updated_at:
+                self.config.updated_at = now_iso
+            if self.config.is_vertical:
+                self.config.note_vertical_preference = True
+            self._ensure_task_states_for_text(self.config.text)
+            self._ensure_task_mode_constraints(allow_legacy_migration=True)
             self.canvas_size: QSize = QSize(10, 10)
             self.setGeometry(QRect(pos, self.canvas_size))
 
@@ -73,6 +88,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self.show_context_menu)
+            self.setMouseTracking(True)  # タスクモードのホバーカーソル変更用
 
             self._last_loaded_font_path: str = ""
 
@@ -104,6 +120,10 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
     # update_text, update_text_debounced, _update_text_immediate, _restore_render_debounce_ms_after_wheel
     # Moved to TextPropertiesMixin. _update_text_immediate handles rendering.
 
+    def _update_text_immediate(self) -> None:
+        self._ensure_task_mode_constraints()
+        super()._update_text_immediate()
+
     def set_undoable_property(
         self,
         property_name: str,
@@ -125,6 +145,25 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         if property_name == "font_size":
             super().set_undoable_property(property_name, new_value, None)
             self.update_text_debounced()
+            return
+
+        if property_name == "is_vertical":
+            requested = bool(new_value)
+            if self.is_task_mode() and requested:
+                QMessageBox.information(self, tr("msg_info"), tr("msg_task_mode_horizontal_only"))
+                return
+            super().set_undoable_property(property_name, requested, update_method_name)
+            if not self.is_task_mode():
+                self.note_vertical_preference = requested
+            return
+
+        if property_name == "task_states":
+            line_count = len(self._split_lines(self.text))
+            normalized = self._normalize_task_states(
+                list(new_value) if isinstance(new_value, list) else [],
+                line_count,
+            )
+            super().set_undoable_property(property_name, normalized, update_method_name)
             return
 
         super().set_undoable_property(property_name, new_value, update_method_name)
@@ -154,7 +193,258 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
             self.set_undoable_property("third_outline_color", color, "update_text")
 
     def toggle_vertical_text(self) -> None:
-        self.set_undoable_property("is_vertical", not self.is_vertical, "update_text")
+        if self.is_task_mode():
+            QMessageBox.information(self, tr("msg_info"), tr("msg_task_mode_horizontal_only"))
+            return
+
+        new_value = not self.is_vertical
+        self.set_undoable_property("is_vertical", new_value, "update_text")
+        self.note_vertical_preference = bool(new_value)
+        self._touch_updated_at()
+
+    def is_task_mode(self) -> bool:
+        """現在のコンテンツモードが task かどうかを返す。"""
+        return str(getattr(self, "content_mode", "note")).lower() == "task"
+
+    @staticmethod
+    def _split_lines(text: str) -> List[str]:
+        src = str(text or "")
+        return src.split("\n") if src else [""]
+
+    @staticmethod
+    def _normalize_task_states(states: List[bool], line_count: int) -> List[bool]:
+        normalized = [bool(v) for v in states] if isinstance(states, list) else []
+        if line_count <= 0:
+            return []
+        if len(normalized) < line_count:
+            normalized.extend([False] * (line_count - len(normalized)))
+        elif len(normalized) > line_count:
+            normalized = normalized[:line_count]
+        return normalized
+
+    @staticmethod
+    def _remap_task_states(old_lines: List[str], new_lines: List[str], old_states: List[bool]) -> List[bool]:
+        matcher = SequenceMatcher(a=old_lines, b=new_lines, autojunk=False)
+        remapped: List[bool] = []
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                remapped.extend(old_states[i1:i2])
+            elif tag == "replace":
+                old_chunk = old_states[i1:i2]
+                new_count = j2 - j1
+                carry = min(len(old_chunk), new_count)
+                remapped.extend(old_chunk[:carry])
+                if new_count > carry:
+                    remapped.extend([False] * (new_count - carry))
+            elif tag == "insert":
+                remapped.extend([False] * (j2 - j1))
+            elif tag == "delete":
+                continue
+        return remapped
+
+    def _ensure_task_states_for_text(self, text: str, old_text: Optional[str] = None) -> None:
+        new_lines = self._split_lines(text)
+        if old_text is None:
+            self.task_states = self._normalize_task_states(self.task_states, len(new_lines))
+            return
+
+        old_lines = self._split_lines(old_text)
+        old_states = self._normalize_task_states(self.task_states, len(old_lines))
+        remapped = self._remap_task_states(old_lines, new_lines, old_states)
+        self.task_states = self._normalize_task_states(remapped, len(new_lines))
+
+    def _extract_legacy_task_data(self, text: str) -> tuple[str, List[bool], bool]:
+        lines = self._split_lines(text)
+        migrated_lines: List[str] = []
+        migrated_states: List[bool] = []
+        migrated_any = False
+
+        for line in lines:
+            match = LEGACY_TASK_LINE_PATTERN.match(str(line or ""))
+            if match:
+                migrated_any = True
+                state = str(match.group("state") or " ").strip().lower() == "x"
+                body = str(match.group("body") or "")
+                migrated_lines.append(body)
+                migrated_states.append(state)
+            else:
+                migrated_lines.append(str(line or ""))
+                migrated_states.append(False)
+        return "\n".join(migrated_lines), migrated_states, migrated_any
+
+    def _migrate_legacy_task_prefixes(self) -> None:
+        text_now = str(self.text or "")
+        cleaned_text, migrated_states, migrated_any = self._extract_legacy_task_data(text_now)
+        if not migrated_any:
+            return
+
+        # task_states が既に実運用値を持っている場合は、本文だけ変換して状態は保持する。
+        existing_states = self._normalize_task_states(self.task_states, len(self._split_lines(text_now)))
+        has_non_default_state = any(existing_states)
+
+        self._suppress_task_state_sync = True
+        try:
+            self.config.text = cleaned_text
+        finally:
+            self._suppress_task_state_sync = False
+
+        if has_non_default_state:
+            self._ensure_task_states_for_text(cleaned_text)
+        else:
+            self.task_states = self._normalize_task_states(migrated_states, len(self._split_lines(cleaned_text)))
+
+    def _ensure_task_mode_constraints(self, allow_legacy_migration: bool = False) -> None:
+        self._ensure_task_states_for_text(self.text)
+        if self.is_task_mode():
+            if allow_legacy_migration:
+                self._migrate_legacy_task_prefixes()
+                self._ensure_task_states_for_text(self.text)
+            if self.is_vertical:
+                self.config.is_vertical = False
+        else:
+            self.note_vertical_preference = bool(self.is_vertical)
+
+    def _on_text_assigned(self, old_text: str, new_text: str) -> None:
+        if getattr(self, "_suppress_task_state_sync", False):
+            return
+        self._ensure_task_states_for_text(new_text, old_text=old_text)
+
+    def _touch_updated_at(self) -> None:
+        self.updated_at = datetime.now().isoformat(timespec="seconds")
+
+    def _get_task_rail_width_for_mode(self, mode: str) -> int:
+        normalized = "task" if str(mode or "").lower() == "task" else "note"
+        if normalized != "task":
+            return 0
+
+        font = QFont(self.font_family, int(self.font_size))
+        fm = QFontMetrics(font)
+        renderer = getattr(self, "renderer", None)
+        if renderer is not None and hasattr(renderer, "_compute_task_rail_width"):
+            try:
+                return int(renderer._compute_task_rail_width(int(self.font_size), fm))
+            except Exception:
+                pass
+
+        marker_width = max(1, fm.horizontalAdvance("☐"))
+        marker_gap = max(2, fm.horizontalAdvance(" "))
+        side_padding = max(2, int(float(self.font_size) * 0.08))
+        return int(marker_width + marker_gap + side_padding)
+
+    def _preserve_text_anchor_on_mode_change(self, old_mode: str, new_mode: str) -> None:
+        if bool(self.is_vertical):
+            return
+        old_rail = self._get_task_rail_width_for_mode(old_mode)
+        new_rail = self._get_task_rail_width_for_mode(new_mode)
+        delta = int(new_rail - old_rail)
+        if delta != 0:
+            try:
+                self.move(self.x() - delta, self.y())
+            except RuntimeError:
+                # ロジックテスト等で QWidget 初期化前の場合は補正をスキップ
+                return
+
+    def set_content_mode(self, mode: str) -> None:
+        """note/task モードを切り替える。"""
+        old_mode = str(self.content_mode or "note").lower()
+        normalized = "task" if str(mode or "").lower() == "task" else "note"
+        if self.content_mode == normalized:
+            self._ensure_task_mode_constraints()
+            return
+
+        stack = getattr(self.main_window, "undo_stack", None)
+        use_macro = bool(stack is not None and hasattr(stack, "beginMacro") and hasattr(stack, "endMacro"))
+        if use_macro:
+            stack.beginMacro("Change Content Mode")
+        try:
+            if normalized == "task":
+                self.note_vertical_preference = bool(self.is_vertical)
+                if self.is_vertical:
+                    self.set_undoable_property("is_vertical", False, None)
+                self._migrate_legacy_task_prefixes()
+                self._ensure_task_states_for_text(self.text)
+            else:
+                restore_vertical = bool(self.note_vertical_preference)
+                if self.is_vertical != restore_vertical:
+                    self.set_undoable_property("is_vertical", restore_vertical, None)
+
+            self.set_undoable_property("content_mode", normalized, "update_text")
+            self._preserve_text_anchor_on_mode_change(old_mode, normalized)
+            self._touch_updated_at()
+        finally:
+            if use_macro:
+                stack.endMacro()
+
+    def _toggle_task_line_by_index(self, idx: int) -> None:
+        """指定行の完了状態をトグルする。"""
+        if not self.is_task_mode():
+            return
+
+        lines = self._split_lines(self.text)
+        if idx < 0 or idx >= len(lines):
+            return
+
+        states = self._normalize_task_states(self.task_states, len(lines))
+        new_states = list(states)
+        new_states[idx] = not bool(new_states[idx])
+
+        if new_states != states:
+            self.set_undoable_property("task_states", new_states, "update_text")
+            self._touch_updated_at()
+
+    def _toggle_task_line_under_cursor(self) -> None:
+        """インライン編集中のカーソル行の完了状態をトグルする。"""
+        if not self.is_task_mode() or not getattr(self, "_is_editing", False):
+            QMessageBox.information(self, tr("msg_info"), tr("msg_task_toggle_requires_inline_edit"))
+            return
+
+        editor = getattr(self, "_inline_editor", None)
+        if editor is None:
+            QMessageBox.information(self, tr("msg_info"), tr("msg_task_toggle_requires_inline_edit"))
+            return
+
+        cursor = editor.textCursor()
+        line_idx = cursor.blockNumber()
+
+        lines = editor.toPlainText().split("\n")
+        if line_idx < 0 or line_idx >= len(lines):
+            return
+
+        self._toggle_task_line_by_index(line_idx)
+
+        self._touch_updated_at()
+        self.update_text()
+
+    def get_task_progress(self) -> tuple[int, int]:
+        """タスクの進捗を返す（完了数, 総数）。"""
+        if not self.is_task_mode():
+            return 0, 0
+        total = len(self._split_lines(self.text))
+        states = self._normalize_task_states(self.task_states, total)
+        done = sum(1 for state in states if state)
+        return done, total
+
+    def complete_all_tasks(self) -> None:
+        """全タスク行を完了状態にする。"""
+        if not self.is_task_mode():
+            return
+        total = len(self._split_lines(self.text))
+        states = self._normalize_task_states(self.task_states, total)
+        new_states = [True for _ in states]
+        if new_states != states:
+            self.set_undoable_property("task_states", new_states, "update_text")
+            self._touch_updated_at()
+
+    def uncomplete_all_tasks(self) -> None:
+        """全タスク行を未完了状態にする。"""
+        if not self.is_task_mode():
+            return
+        total = len(self._split_lines(self.text))
+        states = self._normalize_task_states(self.task_states, total)
+        new_states = [False for _ in states]
+        if new_states != states:
+            self.set_undoable_property("task_states", new_states, "update_text")
+            self._touch_updated_at()
 
     def set_horizontal_margin_ratio(self) -> None:
         dialog = MarginRatioDialog(
@@ -256,6 +546,64 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
             # Fallback to old behavior or just log and pass
             self.change_text()  # This line was in the original snippet, keeping it as a fallback
             pass
+
+    def mousePressEvent(self, event: Any) -> None:
+        """マウスプレスイベント。タスクモードのクリック検出用に位置を記録。"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._task_press_pos = event.position().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: Any) -> None:
+        """マウスリリースイベント。タスクモードでチェックボックスクリックを処理。"""
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self.is_task_mode()
+            and not getattr(self, "_is_editing", False)
+        ):
+            release_pos = event.position().toPoint()
+            press_pos = getattr(self, "_task_press_pos", None)
+            if press_pos is not None:
+                dist = (release_pos - press_pos).manhattanLength()
+                if dist < 10:
+                    idx = self._hit_test_task_checkbox(release_pos)
+                    if idx >= 0:
+                        self._toggle_task_line_by_index(idx)
+                        super().mouseReleaseEvent(event)
+                        return
+        super().mouseReleaseEvent(event)
+
+    def mouseMoveEvent(self, event: Any) -> None:
+        """マウスムーブイベント。タスクモード時にチェックボックス上でカーソル変更。"""
+        if self.is_task_mode() and not self.is_dragging and not getattr(self, "_is_editing", False):
+            pos = event.position().toPoint()
+            idx = self._hit_test_task_checkbox(pos)
+            if idx >= 0:
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.unsetCursor()
+        super().mouseMoveEvent(event)
+
+    def _hit_test_task_checkbox(self, pos: QPoint) -> int:
+        """クリック位置がどのタスク行のチェックボックスにヒットするか判定。
+
+        Args:
+            pos: ウィジェット座標系のクリック位置。
+
+        Returns:
+            ヒットした行インデックス。ヒットなしの場合は -1。
+        """
+        if not self.is_task_mode() or self.is_vertical:
+            return -1
+
+        renderer = getattr(self, "renderer", None)
+        if renderer is None:
+            return -1
+
+        rects = renderer.get_task_line_rects(self)
+        for i, rect in enumerate(rects):
+            if rect.contains(pos):
+                return i
+        return -1
 
     def wheelEvent(self, event: Any) -> None:
         """マウスホイールによるフォントサイズ変更。
@@ -1015,6 +1363,12 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
             builder.add_separator()
             builder.add_action("menu_change_text", self.change_text)
+            builder.add_action(
+                "menu_toggle_task_mode",
+                lambda checked: self.set_content_mode("task" if checked else "note"),
+                checkable=True,
+                checked=self.is_task_mode(),
+            )
             builder.add_action("menu_add_text", self.add_text_window)
             builder.add_action("menu_clone_text", self.clone_text)
             builder.add_action("menu_save_png", self.save_as_png)

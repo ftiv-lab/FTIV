@@ -293,8 +293,22 @@ class TextTab(QWidget):
             lambda: self.mw.main_controller.txt_actions.run_selected_layout_action("open_spacing_settings")
         )
 
-        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 0, 0, 1, 2)
-        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 1, 0, 1, 2)
+        # Content Mode (Note / Task)
+        self.btn_content_mode_note = QPushButton(tr("label_content_mode_note"))
+        self.btn_content_mode_note.setProperty("class", "toggle")
+        self.btn_content_mode_note.setCheckable(True)
+        self.btn_content_mode_note.setChecked(True)
+        self.btn_content_mode_note.clicked.connect(lambda: self._set_content_mode("note"))
+
+        self.btn_content_mode_task = QPushButton(tr("label_content_mode_task"))
+        self.btn_content_mode_task.setProperty("class", "toggle")
+        self.btn_content_mode_task.setCheckable(True)
+        self.btn_content_mode_task.clicked.connect(lambda: self._set_content_mode("task"))
+
+        grid_sel.addWidget(self.btn_content_mode_note, 0, 0)
+        grid_sel.addWidget(self.btn_content_mode_task, 0, 1)
+        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 1, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 2, 0, 1, 2)
 
         # ✨ New: Save current as Default
         self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
@@ -388,6 +402,7 @@ class TextTab(QWidget):
             btn.blockSignals(True)
             btn.setChecked(False)
             btn.blockSignals(False)
+        self._sync_content_mode_buttons("note")
 
     def _sync_check_states(self, obj: Any) -> None:
         # Frontmost
@@ -404,9 +419,40 @@ class TextTab(QWidget):
 
         # Vertical
         is_vert = getattr(obj, "is_vertical", False)
+        mode = str(getattr(obj, "content_mode", "note") or "note").lower()
+        is_task_mode = mode == "task"
         self.txt_btn_sel_toggle_vertical.blockSignals(True)
         self.txt_btn_sel_toggle_vertical.setChecked(bool(is_vert))
+        self.txt_btn_sel_toggle_vertical.setEnabled(not is_task_mode)
+        self.txt_btn_sel_toggle_vertical.setToolTip(tr("msg_task_mode_horizontal_only") if is_task_mode else "")
         self.txt_btn_sel_toggle_vertical.blockSignals(False)
+
+        # Content Mode
+        self._sync_content_mode_buttons(mode)
+
+    def _set_content_mode(self, mode: str) -> None:
+        """選択中のTextWindowのコンテンツモードを変更する。"""
+        try:
+            wm = getattr(self.mw, "window_manager", None)
+            if wm is None:
+                return
+            sel = getattr(wm, "last_selected_window", None)
+            if sel is not None and hasattr(sel, "set_content_mode"):
+                sel.set_content_mode(mode)
+                self._sync_check_states(sel)
+            else:
+                self._sync_content_mode_buttons(mode)
+        except Exception:
+            logger.debug("Failed to set content mode", exc_info=True)
+
+    def _sync_content_mode_buttons(self, mode: str) -> None:
+        """Note/Taskボタンの排他チェック状態を同期する。"""
+        self.btn_content_mode_note.blockSignals(True)
+        self.btn_content_mode_task.blockSignals(True)
+        self.btn_content_mode_note.setChecked(mode == "note")
+        self.btn_content_mode_task.setChecked(mode == "task")
+        self.btn_content_mode_note.blockSignals(False)
+        self.btn_content_mode_task.blockSignals(False)
 
     def refresh_ui(self) -> None:
         """UI文言更新"""
@@ -457,6 +503,8 @@ class TextTab(QWidget):
         self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
 
         self.txt_btn_sel_spacing_settings.setText(tr("menu_margin_settings"))
+        self.btn_content_mode_note.setText(tr("label_content_mode_note"))
+        self.btn_content_mode_task.setText(tr("label_content_mode_task"))
 
         self.txt_layout_grp_all.setTitle(tr("anim_target_all_text"))
         self.btn_all_horizontal.setText(tr("btn_set_all_horizontal"))
@@ -516,6 +564,9 @@ class TextTab(QWidget):
             "txt_btn_sel_offset_mono",
             "txt_btn_sel_offset_prop",
             "txt_btn_sel_spacing_settings",
+            # Content Mode
+            "btn_content_mode_note",
+            "btn_content_mode_task",
         ]
 
         for attr in attr_names_text_like:

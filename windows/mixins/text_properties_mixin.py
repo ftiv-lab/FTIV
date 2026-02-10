@@ -1,6 +1,6 @@
 import logging
 import traceback
-from typing import Any, Union
+from typing import Any, List, Union
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor
@@ -66,7 +66,106 @@ class TextPropertiesMixin:
 
     @text.setter
     def text(self, value: str):
-        self.config.text = value
+        old_text = str(getattr(self.config, "text", "") or "")
+        new_text = str(value or "")
+        self.config.text = new_text
+
+        # Undo/redo などで text が直接代入された場合でも、
+        # task_states の整合を保つためのフックを呼び出す。
+        on_text_assigned = getattr(self, "_on_text_assigned", None)
+        if callable(on_text_assigned):
+            try:
+                on_text_assigned(old_text, new_text)
+            except TypeError:
+                on_text_assigned(new_text)
+
+    @property
+    def content_mode(self) -> str:
+        return str(getattr(self.config, "content_mode", "note") or "note")
+
+    @content_mode.setter
+    def content_mode(self, value: str) -> None:
+        mode = str(value or "note").lower()
+        self.config.content_mode = "task" if mode == "task" else "note"
+
+    @property
+    def task_states(self) -> List[bool]:
+        raw = getattr(self.config, "task_states", [])
+        if not isinstance(raw, list):
+            return []
+        return [bool(v) for v in raw]
+
+    @task_states.setter
+    def task_states(self, value: List[bool]) -> None:
+        if not isinstance(value, list):
+            self.config.task_states = []
+            return
+        self.config.task_states = [bool(v) for v in value]
+
+    @property
+    def task_schema_version(self) -> int:
+        return int(getattr(self.config, "task_schema_version", 1))
+
+    @task_schema_version.setter
+    def task_schema_version(self, value: int) -> None:
+        try:
+            self.config.task_schema_version = int(value)
+        except Exception:
+            self.config.task_schema_version = 1
+
+    @property
+    def note_vertical_preference(self) -> bool:
+        return bool(getattr(self.config, "note_vertical_preference", False))
+
+    @note_vertical_preference.setter
+    def note_vertical_preference(self, value: bool) -> None:
+        self.config.note_vertical_preference = bool(value)
+
+    @property
+    def title(self) -> str:
+        return str(getattr(self.config, "title", "") or "")
+
+    @title.setter
+    def title(self, value: str) -> None:
+        self.config.title = str(value or "")
+
+    @property
+    def tags(self) -> List[str]:
+        raw = getattr(self.config, "tags", [])
+        if not isinstance(raw, list):
+            return []
+        return [str(tag) for tag in raw]
+
+    @tags.setter
+    def tags(self, value: List[str]) -> None:
+        if not isinstance(value, list):
+            self.config.tags = []
+            return
+        self.config.tags = [str(tag) for tag in value]
+
+    @property
+    def is_starred(self) -> bool:
+        return bool(getattr(self.config, "is_starred", False))
+
+    @is_starred.setter
+    def is_starred(self, value: bool) -> None:
+        self.config.is_starred = bool(value)
+
+    @property
+    def created_at(self) -> str:
+        return str(getattr(self.config, "created_at", "") or "")
+
+    @created_at.setter
+    def created_at(self, value: str) -> None:
+        self.config.created_at = str(value or "")
+
+    @property
+    def updated_at(self) -> str:
+        return str(getattr(self.config, "updated_at", "") or "")
+
+    @updated_at.setter
+    def updated_at(self, value: str) -> None:
+        self.config.updated_at = str(value or "")
 
     @property
     def font_family(self) -> str:

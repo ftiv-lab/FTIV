@@ -89,6 +89,10 @@ class PropertyPanel(QWidget):
         self.spin_img_rotation = self.slider_img_rotation = None
         self.spin_anim_speed = self.slider_anim_speed = None
         self.btn_text_font = self.spin_text_font_size = None
+        self.btn_task_mode = None
+        self.lbl_task_progress = None
+        self.btn_complete_all = None
+        self.btn_uncomplete_all = None
         self.btn_text_color = None
         self.spin_text_opacity = self.slider_text_opacity = None
         self.btn_bg_color = None
@@ -349,6 +353,15 @@ class PropertyPanel(QWidget):
     def _update_text_values(self) -> None:
         """テキスト系ウィンドウの数値を更新します。"""
         t = self.current_target
+        if self.btn_task_mode and hasattr(t, "is_task_mode"):
+            self.btn_task_mode.blockSignals(True)
+            self.btn_task_mode.setChecked(bool(t.is_task_mode()))
+            self.btn_task_mode.blockSignals(False)
+
+        if self.lbl_task_progress and hasattr(t, "get_task_progress"):
+            done, total = t.get_task_progress()
+            self.lbl_task_progress.setText(tr("label_task_progress_fmt").format(done=done, total=total))
+
         if self.btn_text_font:
             self.btn_text_font.setText(f"{t.font_family} ({t.font_size}pt)")
         if self.spin_text_font_size:
@@ -938,6 +951,7 @@ class PropertyPanel(QWidget):
     def build_text_window_ui(self) -> None:
         """テキストウィンドウ用のUI構築。"""
         from windows.connector import ConnectorLabel
+        from windows.text_window import TextWindow
 
         target = self.current_target
 
@@ -950,6 +964,45 @@ class PropertyPanel(QWidget):
 
         # テキストスタイル
         t_layout = self.create_group(tr("prop_grp_text"))
+        if isinstance(target, TextWindow):
+            self.btn_task_mode = self.create_action_button(
+                tr("menu_toggle_task_mode"),
+                lambda checked: target.set_content_mode("task" if checked else "note"),
+                "toggle",
+            )
+            self.btn_task_mode.setCheckable(True)
+            self.btn_task_mode.setChecked(target.is_task_mode())
+            t_layout.addRow("", typing.cast(QWidget, self.btn_task_mode))
+
+            # タスク進捗UI（タスクモード時のみ表示）
+            if target.is_task_mode():
+                done, total = target.get_task_progress()
+                progress_text = tr("label_task_progress_fmt").format(done=done, total=total)
+                self.lbl_task_progress = QLabel(progress_text)
+                self.lbl_task_progress.setProperty("class", "info-label")
+                t_layout.addRow("", typing.cast(QWidget, self.lbl_task_progress))
+
+                btn_row = QWidget()
+                btn_h = QHBoxLayout(btn_row)
+                btn_h.setContentsMargins(0, 0, 0, 0)
+                btn_h.setSpacing(4)
+
+                self.btn_complete_all = QPushButton(tr("btn_complete_all_tasks"))
+                self.btn_complete_all.setProperty("class", "secondary-button")
+                self.btn_complete_all.clicked.connect(
+                    lambda: target.complete_all_tasks() or self.update_property_values()
+                )
+
+                self.btn_uncomplete_all = QPushButton(tr("btn_uncomplete_all_tasks"))
+                self.btn_uncomplete_all.setProperty("class", "secondary-button")
+                self.btn_uncomplete_all.clicked.connect(
+                    lambda: target.uncomplete_all_tasks() or self.update_property_values()
+                )
+
+                btn_h.addWidget(self.btn_complete_all)
+                btn_h.addWidget(self.btn_uncomplete_all)
+                t_layout.addRow("", btn_row)
+
         self.btn_text_font = QPushButton(f"{target.font_family} ({target.font_size}pt)")
         self.btn_text_font.setProperty("class", "secondary-button")
 

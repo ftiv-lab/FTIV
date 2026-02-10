@@ -217,3 +217,39 @@ class TestToggleMethods:
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.toggle_vertical_text()
         mock_prop.assert_called_once_with("is_vertical", True, "update_text")
+
+
+# ============================================================
+# task mode helpers
+# ============================================================
+class TestTaskModeHelpers:
+    def test_set_content_mode_uses_undoable_property(self):
+        w = _make_text_window()
+        w.config.content_mode = "note"
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_content_mode("task")
+        mock_prop.assert_any_call("content_mode", "task", "update_text")
+
+    def test_toggle_task_line_by_index(self):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w.config.text = "one\ntwo"
+        w.config.task_states = [False, True]
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w._toggle_task_line_by_index(1)
+        mock_prop.assert_called_once_with("task_states", [False, False], "update_text")
+
+    @patch("windows.text_window.QMessageBox.information")
+    def test_toggle_vertical_text_blocked_in_task_mode(self, mock_info):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w.toggle_vertical_text()
+        mock_info.assert_called_once()
+
+    @patch("windows.text_window.QMessageBox.information")
+    def test_toggle_task_line_under_cursor_requires_inline_edit(self, mock_info):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w._is_editing = False
+        w._toggle_task_line_under_cursor()
+        mock_info.assert_called_once()

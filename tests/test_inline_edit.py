@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from PySide6.QtCore import QEvent, QPoint, Qt
-from PySide6.QtGui import QAction, QFocusEvent, QKeyEvent
+from PySide6.QtGui import QAction, QFocusEvent, QKeyEvent, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QPlainTextEdit
 
@@ -176,6 +176,28 @@ def test_shift_enter_commits(text_window, qapp):
     assert res is True
     assert not window._is_editing
     # assert window.text == "Committed Text" # Mock undo_stack doesn't execute redo
+    window.main_window.undo_stack.push.assert_called()
+
+
+def test_ctrl_enter_toggles_current_task_line(text_window, qapp):
+    """Ctrl+Enterで現在行の task_states をトグルできるかテスト"""
+    window = text_window
+    window.show()
+    window.config.content_mode = "task"
+    window.config.task_states = [False, False]
+    window._start_inline_edit()
+
+    editor = window._inline_editor
+    editor.setPlainText("first\nsecond")
+    cursor = editor.textCursor()
+    cursor.movePosition(QTextCursor.MoveOperation.End)
+    editor.setTextCursor(cursor)
+
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.ControlModifier)
+    result = window.eventFilter(editor, event)
+
+    assert result is True
+    assert editor.toPlainText() == "first\nsecond"
     window.main_window.undo_stack.push.assert_called()
 
 

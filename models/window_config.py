@@ -1,6 +1,6 @@
 # models/window_config.py
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,11 @@ class WindowConfigBase(BaseModel):
 
     uuid: str = ""
     parent_uuid: Optional[str] = None
+    title: str = ""
+    tags: List[str] = Field(default_factory=list)
+    is_starred: bool = False
+    created_at: str = ""
+    updated_at: str = ""
 
     # 座標
     position: Dict[str, int] = Field(default_factory=lambda: {"x": 0, "y": 0})
@@ -55,6 +60,10 @@ class WindowConfigBase(BaseModel):
 class TextWindowConfig(WindowConfigBase):
     """TextWindow用の設定モデル"""
 
+    content_mode: Literal["note", "task"] = "note"
+    task_states: List[bool] = Field(default_factory=list)
+    task_schema_version: int = 1
+    note_vertical_preference: bool = False
     text: str = "New Text"
     font: str = "Arial"
     font_size: int = 48

@@ -7,6 +7,8 @@
 import json
 from unittest.mock import MagicMock
 
+from PySide6.QtCore import QSize
+
 from windows.text_renderer import TextRenderer, _RenderProfile
 
 
@@ -23,6 +25,7 @@ def _make_mock_window(**overrides):
     w.font_size = 24
     w.text = "Hello"
     w.is_vertical = False
+    w.task_states = []
     for k, v in overrides.items():
         setattr(w, k, v)
     return w
@@ -282,6 +285,140 @@ class TestRenderCachePut:
         r._render_cache_size = 0
         r._render_cache_put("k1", MagicMock())
         assert len(r._render_cache) == 0
+
+
+# ============================================================
+# task mode rendering helpers
+# ============================================================
+class TestTaskRendering:
+    def test_build_render_lines_note_mode_keeps_text(self):
+        r = TextRenderer()
+        w = _make_mock_window(text="[x] done\nplain", content_mode="note")
+        lines, done_flags = r._build_render_lines(w)
+        assert lines == ["[x] done", "plain"]
+        assert done_flags == [False, False]
+
+    def test_build_render_lines_task_mode_uses_task_states_and_keeps_text(self):
+        r = TextRenderer()
+        w = _make_mock_window(text="done\ntodo\nplain", content_mode="task", task_states=[True, False, True])
+        lines, done_flags = r._build_render_lines(w)
+        assert lines == ["done", "todo", "plain"]
+        assert done_flags == [True, False, True]
+
+    def test_horizontal_task_strike_flow_called(self):
+        r = TextRenderer()
+        painter = MagicMock()
+        painter.font.return_value = MagicMock()
+        fm = MagicMock()
+        fm.ascent.return_value = 10
+        fm.height.return_value = 20
+        fm.horizontalAdvance.side_effect = lambda ch: 10
+        w = _make_mock_window(
+            content_mode="task",
+            shadow_enabled=False,
+            third_outline_enabled=False,
+            second_outline_enabled=False,
+            outline_enabled=False,
+            font_color="#ffffff",
+            text_opacity=100,
+            text_gradient_enabled=False,
+            text_gradient=[],
+        )
+
+        r._draw_horizontal_text_content = MagicMock()  # type: ignore[assignment]
+        r._draw_horizontal_task_checkboxes = MagicMock()  # type: ignore[assignment]
+        r._draw_horizontal_task_strike = MagicMock()  # type: ignore[assignment]
+
+        r._draw_horizontal_text_elements(
+            painter=painter,
+            window=w,
+            canvas_size=QSize(200, 80),
+            lines=["done"],
+            fm=fm,
+            shadow_offset_x=0,
+            shadow_offset_y=0,
+            margin_left=0,
+            margin_top=0,
+            margin=0,
+            outline_width=1.0,
+            line_spacing=0,
+            done_flags=[True],
+        )
+
+        r._draw_horizontal_task_checkboxes.assert_called_once()  # type: ignore[union-attr]
+        r._draw_horizontal_task_strike.assert_called_once()  # type: ignore[union-attr]
+        call_kwargs = r._draw_horizontal_task_checkboxes.call_args.kwargs  # type: ignore[union-attr]
+        assert float(call_kwargs["start_x"]) > 1.0
+
+    def test_vertical_task_marker_flow_not_called_when_vertical(self):
+        r = TextRenderer()
+        painter = MagicMock()
+        painter.font.return_value = MagicMock()
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=True,
+            shadow_enabled=False,
+            third_outline_enabled=False,
+            second_outline_enabled=False,
+            outline_enabled=False,
+            font_color="#ffffff",
+            text_opacity=100,
+            text_gradient_enabled=False,
+            text_gradient=[],
+            font_family="Arial",
+        )
+
+        r._draw_vertical_text_content = MagicMock()  # type: ignore[assignment]
+        r._draw_vertical_task_completion_marker = MagicMock()  # type: ignore[assignment]
+
+        r._draw_vertical_text_elements(
+            painter=painter,
+            window=w,
+            canvas_size=QSize(200, 200),
+            lines=["☑ done"],
+            top_margin=4,
+            margin=0,
+            right_margin=0,
+            shadow_x=0,
+            shadow_y=0,
+            outline_width=1.0,
+            line_spacing_ratio=0.0,
+            col_width=30.0,
+            done_flags=[True, False],
+        )
+
+        r._draw_vertical_task_completion_marker.assert_not_called()  # type: ignore[union-attr]
+
+    def test_get_task_line_rects_vertical_returns_empty(self):
+        r = TextRenderer()
+        w = _make_mock_window(content_mode="task", is_vertical=True, text="a\nb", task_states=[True, False])
+        assert r.get_task_line_rects(w) == []
+
+    def test_get_task_line_rects_horizontal_uses_task_rail(self):
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.horizontalAdvance.side_effect = lambda ch: {"☐": 12, " ": 6}.get(ch, 10)
+        fm.height.return_value = 20
+
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=False,
+            font_size=24,
+            margin_top_ratio=0.0,
+            margin_left_ratio=0.0,
+            background_outline_enabled=False,
+            background_outline_width_ratio=0.0,
+            shadow_enabled=False,
+            line_spacing_h=0.0,
+        )
+
+        rects = r._get_task_line_rects_horizontal(w, ["task line"], fm)
+        rail_width, _marker_width, _gap, _pad = r._get_task_rail_metrics(w, fm)
+
+        assert len(rects) == 1
+        assert rects[0].width() == rail_width
+        # rail starts at left margin + outline width (outline min=1)
+        assert rects[0].x() == 1
 
 
 # ============================================================

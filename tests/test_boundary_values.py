@@ -127,6 +127,23 @@ class TestTextWindowConfigBoundary:
         config = TextWindowConfig(text_opacity=100)
         assert config.text_opacity == 100
 
+    def test_content_mode_default(self) -> None:
+        """Task mode default must remain note for backward compatibility."""
+        config = TextWindowConfig()
+        assert config.content_mode == "note"
+
+    def test_metadata_defaults(self) -> None:
+        """Information-management metadata should have stable defaults."""
+        config = TextWindowConfig()
+        assert config.title == ""
+        assert config.tags == []
+        assert config.is_starred is False
+        assert config.created_at == ""
+        assert config.updated_at == ""
+        assert config.task_states == []
+        assert config.task_schema_version == 1
+        assert config.note_vertical_preference is False
+
 
 class TestEnumBoundary:
     """Test enum values at boundaries."""

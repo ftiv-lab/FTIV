@@ -235,7 +235,8 @@ class TextRenderer:
         m_left = int(window.font_size * window.margin_left_ratio)
         m_right = int(window.font_size * window.margin_right_ratio)
 
-        lines = window.text.split("\n") if window.text else [""]
+        lines, done_flags = self._build_render_lines(window)
+        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
         max_line_width = 0
         for line in lines:
             line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * (max(0, len(line) - 1))
@@ -249,7 +250,7 @@ class TextRenderer:
         )
 
         canvas_size = QSize(
-            int(max_line_width + max(shadow_offset_x, 0) + m_left + m_right + 2 * outline_width),
+            int(max_line_width + task_rail_width + max(shadow_offset_x, 0) + m_left + m_right + 2 * outline_width),
             int(total_height + max(shadow_offset_y, 0) + m_top + m_bottom + 2 * outline_width),
         )
 
@@ -275,6 +276,7 @@ class TextRenderer:
                 margin,
                 outline_width,
                 line_spacing=line_spacing,
+                done_flags=done_flags,
             )
         finally:
             painter.restore()
@@ -305,7 +307,7 @@ class TextRenderer:
         shadow_offset_x = int(window.font_size * window.shadow_offset_x)
         shadow_offset_y = int(window.font_size * window.shadow_offset_y)
 
-        lines = window.text.split("\n") if window.text else [""]
+        lines, done_flags = self._build_render_lines(window)
         max_chars_per_line = max(len(line) for line in lines)
         num_lines = len(lines)
 
@@ -370,6 +372,7 @@ class TextRenderer:
                 outline_width,
                 line_spacing_ratio=line_spacing_ratio,
                 col_width=col_width,
+                done_flags=done_flags,
             )
         finally:
             painter.restore()
@@ -402,7 +405,8 @@ class TextRenderer:
         m_right += pad_right
         m_bottom += pad_bottom
 
-        lines = window.text.split("\n")
+        lines, done_flags = self._build_render_lines(window)
+        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
         max_line_width = 0
         for line in lines:
             line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * (max(0, len(line) - 1))
@@ -417,7 +421,7 @@ class TextRenderer:
 
         # Note: shadow_offset is now handled by padding
         canvas_size = QSize(
-            int(max_line_width + m_left + m_right + 2 * outline_width),
+            int(max_line_width + task_rail_width + m_left + m_right + 2 * outline_width),
             int(total_height + m_top + m_bottom + 2 * outline_width),
         )
 
@@ -447,6 +451,7 @@ class TextRenderer:
                 margin,
                 outline_width,
                 line_spacing=line_spacing,
+                done_flags=done_flags,
             )
         finally:
             painter.end()
@@ -478,7 +483,7 @@ class TextRenderer:
         shadow_offset_x = int(window.font_size * window.shadow_offset_x)
         shadow_offset_y = int(window.font_size * window.shadow_offset_y)
 
-        lines = window.text.split("\n") if window.text else [""]
+        lines, done_flags = self._build_render_lines(window)
         max_chars_per_line = max(len(line) for line in lines)
         num_lines = len(lines)
 
@@ -529,6 +534,7 @@ class TextRenderer:
                 outline_width,
                 line_spacing_ratio=line_spacing_ratio,
                 col_width=col_width,
+                done_flags=done_flags,
             )
         finally:
             painter.end()
@@ -597,6 +603,251 @@ class TextRenderer:
             except Exception:
                 return str(id(window))
 
+    @staticmethod
+    def _is_task_mode(window: Any) -> bool:
+        return str(getattr(window, "content_mode", "note")).lower() == "task" and not bool(
+            getattr(window, "is_vertical", False)
+        )
+
+    @staticmethod
+    def _normalize_task_states(states: Any, line_count: int) -> List[bool]:
+        normalized: List[bool]
+        if isinstance(states, list):
+            normalized = [bool(v) for v in states]
+        else:
+            normalized = []
+        if line_count <= 0:
+            return []
+        if len(normalized) < line_count:
+            normalized.extend([False] * (line_count - len(normalized)))
+        elif len(normalized) > line_count:
+            normalized = normalized[:line_count]
+        return normalized
+
+    @staticmethod
+    def _compute_task_rail_width(font_size: int, fm: QFontMetrics) -> int:
+        marker_width = max(1, fm.horizontalAdvance("☐"))
+        marker_gap = max(2, fm.horizontalAdvance(" "))
+        side_padding = max(2, int(float(font_size) * 0.08))
+        return int(marker_width + marker_gap + side_padding)
+
+    def _get_task_rail_metrics(self, window: Any, fm: QFontMetrics) -> tuple[int, int, int, int]:
+        if not self._is_task_mode(window):
+            return 0, 0, 0, 0
+        marker_width = max(1, fm.horizontalAdvance("☐"))
+        marker_gap = max(2, fm.horizontalAdvance(" "))
+        side_padding = max(2, int(float(getattr(window, "font_size", 0)) * 0.08))
+        rail_width = self._compute_task_rail_width(int(getattr(window, "font_size", 0)), fm)
+        return rail_width, marker_width, marker_gap, side_padding
+
+    def _build_render_lines(self, window: Any) -> tuple[List[str], List[bool]]:
+        raw_text = str(getattr(window, "text", "") or "")
+        raw_lines = raw_text.split("\n") if raw_text else [""]
+        if not self._is_task_mode(window):
+            return raw_lines, [False for _ in raw_lines]
+
+        done_flags = self._normalize_task_states(getattr(window, "task_states", []), len(raw_lines))
+        return raw_lines, done_flags
+
+    def get_task_line_rects(self, window: Any) -> List[QRect]:
+        """タスクモード時に各行のチェックボックス領域を返す（ヒットテスト用）。
+
+        Args:
+            window: TextWindow互換オブジェクト。
+
+        Returns:
+            各行のチェックボックス矩形のリスト。noteモード時は空リスト。
+        """
+        if not self._is_task_mode(window):
+            return []
+
+        lines, _done_flags = self._build_render_lines(window)
+        if not lines:
+            return []
+        if bool(getattr(window, "is_vertical", False)):
+            return []
+
+        font = QFont(window.font_family, int(window.font_size))
+        fm = QFontMetrics(font)
+
+        return self._get_task_line_rects_horizontal(window, lines, fm)
+
+    def _get_task_line_rects_horizontal(self, window: Any, lines: List[str], fm: QFontMetrics) -> List[QRect]:
+        """横書きタスクモード時のチェックボックス矩形リスト。"""
+        line_spacing = int(window.font_size * getattr(window, "line_spacing_h", 0.0))
+
+        m_top = int(window.font_size * window.margin_top_ratio)
+        m_left = int(window.font_size * window.margin_left_ratio)
+
+        pad_left, pad_top, _pad_right, _pad_bottom = self._calculate_shadow_padding(window)
+        m_left += pad_left
+        m_top += pad_top
+
+        outline_width = max(
+            window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0,
+            1,
+        )
+
+        rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
+        text_start_x = int(m_left + outline_width + rail_width)
+        rail_left = int(text_start_x - rail_width)
+
+        rects: List[QRect] = []
+        for i in range(len(lines)):
+            top_y = int(m_top + outline_width + i * (fm.height() + line_spacing))
+            rects.append(QRect(int(rail_left), top_y, int(max(1, rail_width)), fm.height()))
+        return rects
+
+    def _get_task_line_rects_vertical(self, window: Any, lines: List[str], fm: QFontMetrics) -> List[QRect]:
+        """縦書きタスクモード時のチェックボックス矩形リスト（列の先頭文字領域）。"""
+        char_spacing = int(window.font_size * getattr(window, "char_spacing_v", 0.0))
+        line_spacing_ratio = getattr(window, "line_spacing_v", window.vertical_margin_ratio)
+
+        m_top = int(window.font_size * getattr(window, "v_margin_top_ratio", 0.3))
+        m_right = int(window.font_size * getattr(window, "v_margin_right_ratio", 0.0))
+
+        _pad_left, pad_top, pad_right, _pad_bottom = self._calculate_shadow_padding(window)
+        m_top += pad_top
+        m_right += pad_right
+
+        outline_width = max(
+            window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0,
+            1,
+        )
+
+        max_char_width = 0
+        if window.text:
+            max_char_width = max(fm.horizontalAdvance(c) for c in window.text)
+        cw = max(float(window.font_size), float(max_char_width))
+
+        x_shift = 1.0 + line_spacing_ratio
+        step = fm.ascent() + fm.descent()
+
+        canvas_size = getattr(window, "canvas_size", None)
+        if canvas_size is None:
+            return []
+
+        curr_x = canvas_size.width() - cw - char_spacing - m_right - outline_width
+        y_start = int(m_top + outline_width)
+
+        rects: List[QRect] = []
+        for i in range(len(lines)):
+            col_x = int(curr_x - i * (cw * x_shift))
+            rects.append(QRect(col_x, y_start, int(cw), int(step + char_spacing)))
+        return rects
+
+    def _draw_horizontal_task_checkboxes(
+        self,
+        painter: QPainter,
+        window: Any,
+        done_flags: List[bool],
+        fm: QFontMetrics,
+        start_x: float,
+        start_y: float,
+        line_spacing: int,
+    ) -> None:
+        if not self._is_task_mode(window):
+            return
+
+        rail_width, marker_width, _marker_gap, side_padding = self._get_task_rail_metrics(window, fm)
+        if rail_width <= 0:
+            return
+        rail_left = float(start_x) - float(rail_width)
+        marker_x = rail_left + float(side_padding)
+        # rail幅が極端に小さい環境では最低限センタリングする
+        if rail_width < (marker_width + side_padding):
+            marker_x = rail_left + (float(rail_width) - float(marker_width)) / 2.0
+
+        color = QColor(window.font_color)
+        color.setAlpha(int(window.text_opacity * 2.55))
+        painter.save()
+        try:
+            painter.setPen(color)
+            y = float(start_y)
+            for done in done_flags:
+                marker = "☑" if done else "☐"
+                painter.drawText(QPointF(marker_x, y), marker)
+                y += fm.height() + line_spacing
+        finally:
+            painter.restore()
+
+    def _draw_horizontal_task_strike(
+        self,
+        painter: QPainter,
+        window: Any,
+        lines: List[str],
+        done_flags: List[bool],
+        fm: QFontMetrics,
+        start_x: float,
+        start_y: float,
+        margin: int,
+        line_spacing: int,
+    ) -> None:
+        if not self._is_task_mode(window):
+            return
+
+        color = QColor(window.font_color)
+        color.setAlpha(int(window.text_opacity * 2.55))
+        pen = QPen(color, max(1.0, float(window.font_size) * 0.06))
+        painter.save()
+        try:
+            painter.setPen(pen)
+            y = float(start_y)
+            for idx, line in enumerate(lines):
+                done = idx < len(done_flags) and bool(done_flags[idx])
+                if done and line:
+                    line_width = sum(fm.horizontalAdvance(ch) for ch in line) + margin * max(0, len(line) - 1)
+                    top = y - fm.ascent()
+                    strike_y = top + (fm.height() / 2.0)
+                    painter.drawLine(QPointF(float(start_x), strike_y), QPointF(float(start_x) + line_width, strike_y))
+                y += fm.height() + line_spacing
+        finally:
+            painter.restore()
+
+    def _draw_vertical_task_completion_marker(
+        self,
+        painter: QPainter,
+        window: Any,
+        done_flags: List[bool],
+        lines: List[str],
+        x_shift: float,
+        top_margin: int,
+        margin: int,
+        right_margin: int,
+        outline_width: float,
+        canvas_size: QSize,
+        col_width: Optional[float] = None,
+    ) -> None:
+        if not self._is_task_mode(window):
+            return
+
+        marker_font = QFont(window.font_family, max(8, int(window.font_size * 0.7)))
+        marker_fm = QFontMetrics(marker_font)
+        marker = "✓"
+
+        color = QColor(window.font_color)
+        color.setAlpha(int(window.text_opacity * 2.55))
+        pen = QPen(color, max(1.0, float(window.font_size) * 0.04))
+
+        cw = float(col_width) if col_width is not None else float(window.font_size)
+        start_x = canvas_size.width() - cw - margin - right_margin - outline_width
+        marker_y = float(top_margin + outline_width + marker_fm.ascent())
+
+        painter.save()
+        try:
+            painter.setFont(marker_font)
+            painter.setPen(pen)
+            for idx, _ in enumerate(lines):
+                done = idx < len(done_flags) and bool(done_flags[idx])
+                if not done:
+                    continue
+                col_x = float(start_x) - (cw * float(x_shift) * idx)
+                marker_w = marker_fm.horizontalAdvance(marker)
+                marker_x = col_x + (cw - marker_w) / 2.0
+                painter.drawText(QPointF(marker_x, marker_y), marker)
+        finally:
+            painter.restore()
+
     def _draw_background(self, painter: QPainter, window: Any, canvas_size: QSize, outline_width: float) -> None:
         """背景と背景の縁取りを描画します。"""
         t0: Optional[float] = None
@@ -660,6 +911,7 @@ class TextRenderer:
         margin: int,
         outline_width: float,
         line_spacing: int = 0,
+        done_flags: Optional[List[bool]] = None,
     ) -> None:
         t0_total: Optional[float] = None
         if self._active_profile is not None:
@@ -668,7 +920,8 @@ class TextRenderer:
         painter.setRenderHint(QPainter.Antialiasing, True)
         font = painter.font()
         start_y = margin_top + fm.ascent() + outline_width
-        start_x = margin_left + outline_width
+        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
+        start_x = margin_left + outline_width + task_rail_width
 
         # 1. 影
         if window.shadow_enabled:
@@ -788,6 +1041,27 @@ class TextRenderer:
             is_main_text=True,
             line_spacing=line_spacing,
         )
+        if done_flags is not None and self._is_task_mode(window):
+            self._draw_horizontal_task_checkboxes(
+                painter=painter,
+                window=window,
+                done_flags=done_flags,
+                fm=fm,
+                start_x=float(start_x),
+                start_y=float(start_y),
+                line_spacing=line_spacing,
+            )
+            self._draw_horizontal_task_strike(
+                painter=painter,
+                window=window,
+                lines=lines,
+                done_flags=done_flags,
+                fm=fm,
+                start_x=float(start_x),
+                start_y=float(start_y),
+                margin=margin,
+                line_spacing=line_spacing,
+            )
 
         if t0_total is not None:
             self._prof_add("h_text_elements_total", (time.perf_counter() - t0_total) * 1000.0)
@@ -887,6 +1161,7 @@ class TextRenderer:
         outline_width: float,
         line_spacing_ratio: float = 0.5,
         col_width: Optional[float] = None,
+        done_flags: Optional[List[bool]] = None,
     ) -> None:
         t0_total: Optional[float] = None
         if self._active_profile is not None:
@@ -922,6 +1197,7 @@ class TextRenderer:
                     custom_offset=QPointF(shadow_x, shadow_y),
                     col_width=col_width,
                     layout_font=font,  # Lock layout to main text
+                    done_flags=done_flags,
                 )
                 painter.restore()
             else:
@@ -946,6 +1222,7 @@ class TextRenderer:
                     custom_offset=QPointF(shadow_x, shadow_y),
                     col_width=col_width,
                     layout_font=font,  # Lock layout to main text
+                    done_flags=done_flags,
                 )
                 s_painter.end()
                 painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(s_pixmap, window.shadow_blur))
@@ -999,6 +1276,7 @@ class TextRenderer:
                     canvas_size,
                     is_outline=True,
                     col_width=col_width,
+                    done_flags=done_flags,
                 )
             else:
                 # ブラー付き描画 (QPixmap 経由)
@@ -1022,6 +1300,7 @@ class TextRenderer:
                     is_outline=True,
                     col_width=col_width,
                     layout_font=font,  # Lock layout to main text
+                    done_flags=done_flags,
                 )
                 o_painter.end()
                 painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(o_pixmap, blur))
@@ -1043,7 +1322,22 @@ class TextRenderer:
             canvas_size,
             is_main_text=True,
             col_width=col_width,
+            done_flags=done_flags,
         )
+        if done_flags is not None and self._is_task_mode(window):
+            self._draw_vertical_task_completion_marker(
+                painter=painter,
+                window=window,
+                done_flags=done_flags,
+                lines=lines,
+                x_shift=x_shift,
+                top_margin=top_margin,
+                margin=margin,
+                right_margin=right_margin,
+                outline_width=outline_width,
+                canvas_size=canvas_size,
+                col_width=col_width,
+            )
 
         if t0_total is not None:
             self._prof_add("v_text_elements_total", (time.perf_counter() - t0_total) * 1000.0)
@@ -1065,6 +1359,7 @@ class TextRenderer:
         custom_offset: QPointF = QPointF(0, 0),
         col_width: Optional[float] = None,
         layout_font: Optional[QFont] = None,
+        done_flags: Optional[List[bool]] = None,
     ) -> None:
         """縦書きテキストの各文字を座標変換を用いて描画します（計測＋glyphキャッシュ対応：見た目維持版）。
 
@@ -1112,7 +1407,16 @@ class TextRenderer:
             # Use Ascent + Descent (Solid Height) for centering calculation.
             step = fm.ascent() + fm.descent()
 
-            for line in lines:
+            base_pen = painter.pen()
+            for line_idx, line in enumerate(lines):
+                is_done_line = bool(done_flags[line_idx]) if done_flags and line_idx < len(done_flags) else False
+                if is_main_text and self._is_task_mode(window):
+                    line_pen = QPen(base_pen)
+                    line_color = line_pen.color()
+                    if is_done_line:
+                        line_color.setAlpha(int(line_color.alpha() * 0.55))
+                    line_pen.setColor(line_color)
+                    painter.setPen(line_pen)
                 y = y_start
                 for char in line:
                     # Use calc_font for layout transform
@@ -1141,11 +1445,14 @@ class TextRenderer:
                                 int(window.font_size),
                                 int(window.font_size),
                             )
+                            gradient_opacity = int(window.text_gradient_opacity)
+                            if is_done_line and self._is_task_mode(window):
+                                gradient_opacity = int(max(0, min(100, gradient_opacity * 0.55)))
                             grad = self._create_gradient(
                                 rect,
                                 window.text_gradient,
                                 window.text_gradient_angle,
-                                window.text_gradient_opacity,
+                                gradient_opacity,
                             )
                             painter.fillPath(placed, grad)
 

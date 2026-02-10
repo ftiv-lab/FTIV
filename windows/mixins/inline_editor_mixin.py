@@ -323,6 +323,10 @@ class InlineEditorMixin:
 
             # Shift+Enter -> Commit
             if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                if mods & Qt.KeyboardModifier.ControlModifier:
+                    if hasattr(self, "_toggle_task_line_under_cursor"):
+                        self._toggle_task_line_under_cursor()
+                    return True
                 if mods & Qt.KeyboardModifier.ShiftModifier:
                     self._finish_inline_edit(commit=True)
                     return True  # イベント消費
