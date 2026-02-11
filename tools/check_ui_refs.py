@@ -45,6 +45,12 @@ ALLOWED_ATTRIBUTES = {
     "windowFlags",
     "icon_path",
     "resize",
+    "move",
+    "screen",
+    "width",
+    "height",
+    "x",
+    "y",
     # State / Properties
     "last_selected_window",
     "last_selected_connector",

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -66,7 +67,6 @@ class ImageTab(QWidget):
 
         # 2) サブタブ
         self.image_subtabs = QTabWidget()
-        layout.addWidget(self.image_subtabs)
 
         # --- Manage ---
         self.image_manage_page = self._build_manage_page()
@@ -107,8 +107,19 @@ class ImageTab(QWidget):
         danger_layout.addWidget(self.img_btn_sel_close)
         danger_layout.addWidget(self.btn_close_all_img)
 
-        layout.addWidget(self.danger_group_img)
-        layout.addStretch()
+        self.image_scroll_area = QScrollArea()
+        self.image_scroll_area.setWidgetResizable(True)
+        self.image_scroll_area.setObjectName("ImageTabScrollArea")
+        self.image_scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(self.image_scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(4)
+        scroll_layout.addWidget(self.image_subtabs)
+        scroll_layout.addWidget(self.danger_group_img)
+        self.image_scroll_area.setWidget(self.image_scroll_content)
+        layout.addWidget(self.image_scroll_area, 1)
+
+        self.set_compact_mode(False)
 
         # 初期反映
         if hasattr(self.mw, "last_selected_window"):
@@ -817,3 +828,6 @@ class ImageTab(QWidget):
         # Danger
         self.img_btn_sel_close.setText(tr("btn_close_selected_image"))
         self.btn_close_all_img.setText(tr("btn_close_all_images"))
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        self.btn_add_image_main.setMinimumHeight(40 if enabled else 50)

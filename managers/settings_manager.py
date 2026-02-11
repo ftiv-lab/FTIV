@@ -3,8 +3,8 @@ import logging
 import os
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import QMessageBox
 
 from utils.app_settings import AppSettings, load_app_settings, save_app_settings
@@ -70,7 +70,7 @@ class SettingsManager:
             self.mw.setWindowIcon(QIcon(self.mw.icon_path))
 
         self.mw.setWindowTitle(tr("app_title"))
-        self.mw.resize(320, 600)
+        self._apply_initial_main_window_geometry()
 
         # 追加：設定に応じて最前面を適用
         is_top: bool = True
@@ -82,6 +82,93 @@ class SettingsManager:
             is_top = True
 
         self._apply_frontmost_flag(is_top)
+
+    def _safe_available_geometry(self) -> Optional[QRect]:
+        try:
+            screen = self.mw.screen()
+            if screen is not None:
+                geo = screen.availableGeometry()
+                if isinstance(geo, QRect):
+                    return geo
+        except Exception:
+            logger.debug("Failed to read MainWindow screen geometry", exc_info=True)
+        try:
+            screens = QGuiApplication.screens()
+            if screens:
+                geo = screens[0].availableGeometry()
+                if isinstance(geo, QRect):
+                    return geo
+        except Exception:
+            logger.debug("Failed to read QApplication screen geometry", exc_info=True)
+        return None
+
+    @staticmethod
+    def _default_size_for_screen(geo: Optional[QRect]) -> tuple[int, int]:
+        if geo is None:
+            return (320, 600)
+        default_w = max(320, min(int(geo.width() * 0.18), 520))
+        default_h = max(600, min(int(geo.height() * 0.60), 900))
+        return (default_w, default_h)
+
+    def _apply_initial_main_window_geometry(self) -> None:
+        settings = self.app_settings
+        geo = self._safe_available_geometry()
+        default_w, default_h = self._default_size_for_screen(geo)
+
+        if settings is None:
+            self.mw.resize(default_w, default_h)
+            return
+
+        width = int(getattr(settings, "main_window_width", 0) or 0)
+        height = int(getattr(settings, "main_window_height", 0) or 0)
+        if width <= 0:
+            width = default_w
+        if height <= 0:
+            height = default_h
+
+        if geo is not None:
+            width = max(320, min(width, geo.width()))
+            height = max(400, min(height, geo.height()))
+        else:
+            width = max(320, width)
+            height = max(400, height)
+
+        self.mw.resize(width, height)
+
+        pos_x = getattr(settings, "main_window_pos_x", None)
+        pos_y = getattr(settings, "main_window_pos_y", None)
+        if pos_x is None or pos_y is None:
+            return
+        try:
+            x = int(pos_x)
+            y = int(pos_y)
+        except Exception:
+            return
+
+        if geo is not None:
+            max_x = max(geo.left(), geo.right() - width + 1)
+            max_y = max(geo.top(), geo.bottom() - height + 1)
+            x = max(geo.left(), min(x, max_x))
+            y = max(geo.top(), min(y, max_y))
+        self.mw.move(x, y)
+
+    def save_main_window_geometry(self) -> None:
+        if self.app_settings is None:
+            return
+        try:
+            width = int(self.mw.width())
+            height = int(self.mw.height())
+            x = int(self.mw.x())
+            y = int(self.mw.y())
+        except Exception:
+            logger.debug("Failed to read MainWindow geometry for persistence", exc_info=True)
+            return
+
+        self.app_settings.main_window_width = max(320, width)
+        self.app_settings.main_window_height = max(400, height)
+        self.app_settings.main_window_pos_x = x
+        self.app_settings.main_window_pos_y = y
+        self.save_app_settings()
 
     def set_main_frontmost(self, enable: bool) -> None:
         """メインウィンドウの最前面表示を設定する。"""

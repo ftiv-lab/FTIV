@@ -9,8 +9,9 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -37,6 +38,44 @@ class ViewPreset:
     name: str
     filters: dict[str, Any]
     smart_view: str = "custom"
+
+
+class InfoOperationsDialog(QDialog):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("info_recent_operations"))
+        self.resize(560, 360)
+
+        layout = QVBoxLayout(self)
+        self.operations_list = QListWidget()
+        self.operations_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        layout.addWidget(self.operations_list, 1)
+
+        self.btn_clear = QPushButton(tr("info_clear_operations"))
+        self.btn_clear.setObjectName("ActionBtn")
+        self.btn_close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        self.btn_close.rejected.connect(self.reject)
+
+        button_row = QHBoxLayout()
+        button_row.setContentsMargins(0, 0, 0, 0)
+        button_row.addWidget(self.btn_clear)
+        button_row.addStretch(1)
+        button_row.addWidget(self.btn_close)
+        layout.addLayout(button_row)
+
+    def set_entries(self, entries: list[str]) -> None:
+        self.operations_list.clear()
+        if not entries:
+            empty = QListWidgetItem(tr("info_operation_empty"))
+            empty.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.operations_list.addItem(empty)
+            return
+        for line in entries:
+            self.operations_list.addItem(QListWidgetItem(str(line)))
+
+    def refresh_ui(self) -> None:
+        self.setWindowTitle(tr("info_recent_operations"))
+        self.btn_clear.setText(tr("info_clear_operations"))
 
 
 class InfoTab(QWidget):
@@ -69,6 +108,8 @@ class InfoTab(QWidget):
         self._suspend_ui_state_persist = False
         self._layout_mode = "auto"
         self._effective_layout_mode = "regular"
+        self._operations_dialog: Optional[InfoOperationsDialog] = None
+        self._operation_log_lines: list[str] = []
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -85,14 +126,14 @@ class InfoTab(QWidget):
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
-        self.filter_group = QGroupBox(tr("grp_info_filters"))
+        self.filter_group = QWidget()
+        self.filter_group.setObjectName("InfoFilterArea")
         filter_layout = QVBoxLayout(self.filter_group)
-        filter_layout.setSpacing(6)
-
-        self.lbl_quick_search = QLabel(tr("info_quick_search"))
-        self.lbl_quick_search.setProperty("class", "info-label")
-        filter_layout.addWidget(self.lbl_quick_search)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.setSpacing(4)
 
         quick_search_row = QWidget()
         quick_search_layout = QHBoxLayout(quick_search_row)
@@ -102,35 +143,23 @@ class InfoTab(QWidget):
         self.edit_search.setPlaceholderText(tr("info_search_placeholder"))
         self.edit_search.textChanged.connect(self._on_filter_controls_changed)
         quick_search_layout.addWidget(self.edit_search, 1)
-
         self.btn_refresh = QPushButton(tr("info_refresh"))
         self.btn_refresh.setObjectName("ActionBtn")
         self.btn_refresh.clicked.connect(lambda: self.refresh_data(immediate=True))
         quick_search_layout.addWidget(self.btn_refresh)
-
-        self.lbl_layout_mode = QLabel(tr("info_layout_mode_label"))
-        quick_search_layout.addWidget(self.lbl_layout_mode)
-        self.cmb_layout_mode = QComboBox()
-        self._reload_layout_mode_combo_items()
-        self.cmb_layout_mode.currentIndexChanged.connect(self._on_layout_mode_changed)
-        quick_search_layout.addWidget(self.cmb_layout_mode)
         filter_layout.addWidget(quick_search_row)
 
-        self.lbl_quick_view = QLabel(tr("info_quick_view"))
-        self.lbl_quick_view.setProperty("class", "info-label")
-        filter_layout.addWidget(self.lbl_quick_view)
-
         quick_view_row = QWidget()
-        quick_view_layout = QGridLayout(quick_view_row)
+        quick_view_layout = QHBoxLayout(quick_view_row)
         quick_view_layout.setContentsMargins(0, 0, 0, 0)
-        quick_view_layout.setHorizontalSpacing(4)
-        quick_view_layout.setVerticalSpacing(4)
+        quick_view_layout.setSpacing(4)
 
         self.lbl_preset = QLabel(tr("info_view_preset_label"))
-        quick_view_layout.addWidget(self.lbl_preset, 0, 0)
+        self.lbl_preset.setVisible(False)
         self.cmb_view_preset = QComboBox()
+        self.cmb_view_preset.setToolTip(tr("info_view_preset_label"))
         self.cmb_view_preset.currentIndexChanged.connect(self._on_view_preset_changed)
-        quick_view_layout.addWidget(self.cmb_view_preset, 0, 1, 1, 2)
+        quick_view_layout.addWidget(self.cmb_view_preset, 2)
 
         self.btn_preset_actions = QToolButton()
         self.btn_preset_actions.setObjectName("ActionBtn")
@@ -146,21 +175,24 @@ class InfoTab(QWidget):
         self.btn_view_delete.triggered.connect(self._delete_current_view_preset)
         self.menu_preset_actions.addAction(self.btn_view_delete)
         self.btn_preset_actions.setMenu(self.menu_preset_actions)
-        quick_view_layout.addWidget(self.btn_preset_actions, 0, 3)
+        quick_view_layout.addWidget(self.btn_preset_actions)
 
         self.lbl_smart_view = QLabel(tr("info_smart_view_label"))
-        quick_view_layout.addWidget(self.lbl_smart_view, 1, 0)
+        self.lbl_smart_view.setVisible(False)
         self.cmb_smart_view = QComboBox()
+        self.cmb_smart_view.setToolTip(tr("info_smart_view_label"))
         self._reload_smart_view_combo_items()
         self.cmb_smart_view.currentIndexChanged.connect(self._on_smart_view_combo_changed)
-        quick_view_layout.addWidget(self.cmb_smart_view, 1, 1)
+        quick_view_layout.addWidget(self.cmb_smart_view, 1)
 
         self.lbl_archive_scope = QLabel(tr("info_archive_scope_label"))
-        quick_view_layout.addWidget(self.lbl_archive_scope, 1, 2)
+        self.lbl_archive_scope.setVisible(False)
         self.cmb_archive_scope = QComboBox()
+        self.cmb_archive_scope.setToolTip(tr("info_archive_scope_label"))
         self._reload_archive_scope_combo_items()
         self.cmb_archive_scope.currentIndexChanged.connect(self._on_filter_controls_changed)
-        quick_view_layout.addWidget(self.cmb_archive_scope, 1, 3)
+        quick_view_layout.addWidget(self.cmb_archive_scope, 1)
+
         filter_layout.addWidget(quick_view_row)
 
         self.advanced_filters_box = CollapsibleBox(tr("info_advanced_filters"))
@@ -173,7 +205,7 @@ class InfoTab(QWidget):
         self.edit_tag_filter = QLineEdit()
         self.edit_tag_filter.setPlaceholderText(tr("info_tag_placeholder"))
         self.edit_tag_filter.textChanged.connect(self._on_filter_controls_changed)
-        advanced_layout.addWidget(self.edit_tag_filter, 0, 0, 1, 4)
+        advanced_layout.addWidget(self.edit_tag_filter, 0, 0, 1, 5)
 
         self.chk_open_only = QCheckBox(tr("info_open_tasks_only"))
         self.chk_open_only.toggled.connect(self._on_filter_controls_changed)
@@ -210,12 +242,18 @@ class InfoTab(QWidget):
         self.btn_sort_desc.toggled.connect(self._on_filter_controls_changed)
         advanced_layout.addWidget(self.btn_sort_desc, 3, 3)
 
+        self.lbl_layout_mode = QLabel(tr("info_layout_mode_label"))
+        advanced_layout.addWidget(self.lbl_layout_mode, 4, 0)
+        self.cmb_layout_mode = QComboBox()
+        self._reload_layout_mode_combo_items()
+        self.cmb_layout_mode.currentIndexChanged.connect(self._on_layout_mode_changed)
+        advanced_layout.addWidget(self.cmb_layout_mode, 4, 1)
+
         self.lbl_stats = QLabel("")
         self.lbl_stats.setProperty("class", "info-label")
-        advanced_layout.addWidget(self.lbl_stats, 4, 0, 1, 4)
+        advanced_layout.addWidget(self.lbl_stats, 5, 0, 1, 5)
         self.advanced_filters_box.setContentLayout(advanced_layout)
         filter_layout.addWidget(self.advanced_filters_box)
-
         layout.addWidget(self.filter_group)
 
         self.subtabs = QTabWidget()
@@ -226,16 +264,23 @@ class InfoTab(QWidget):
         self.tasks_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.tasks_list.itemChanged.connect(self._on_task_item_changed)
         self.tasks_list.itemDoubleClicked.connect(self._on_task_item_activated)
+        self.tasks_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tasks_list.customContextMenuRequested.connect(
+            lambda pos: self._show_bulk_context_menu(self.tasks_list, pos)
+        )
         tasks_layout.addWidget(self.tasks_list)
         self.subtabs.addTab(self.tasks_tab, tr("info_tasks_tab"))
 
         self.notes_tab = QWidget()
         notes_layout = QVBoxLayout(self.notes_tab)
-
         self.notes_list = QListWidget()
         self.notes_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.notes_list.itemChanged.connect(self._on_note_item_changed)
         self.notes_list.itemDoubleClicked.connect(self._on_note_item_activated)
+        self.notes_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.notes_list.customContextMenuRequested.connect(
+            lambda pos: self._show_bulk_context_menu(self.notes_list, pos)
+        )
         notes_layout.addWidget(self.notes_list)
 
         notes_btn_row = QHBoxLayout()
@@ -243,19 +288,12 @@ class InfoTab(QWidget):
         self.btn_toggle_star.setObjectName("ActionBtn")
         self.btn_toggle_star.clicked.connect(self._toggle_selected_note_star)
         notes_btn_row.addWidget(self.btn_toggle_star)
-        notes_btn_row.addStretch()
+        notes_btn_row.addStretch(1)
         notes_layout.addLayout(notes_btn_row)
 
         self.subtabs.addTab(self.notes_tab, tr("info_notes_tab"))
-        layout.addWidget(self.subtabs)
+        layout.addWidget(self.subtabs, 1)
 
-        bulk_row = QWidget()
-        bulk_layout = QHBoxLayout(bulk_row)
-        bulk_layout.setContentsMargins(0, 0, 0, 0)
-        bulk_layout.setSpacing(4)
-        self.lbl_bulk_actions = QLabel(tr("info_bulk_actions_menu"))
-        self.lbl_bulk_actions.setProperty("class", "info-label")
-        bulk_layout.addWidget(self.lbl_bulk_actions)
         self.btn_bulk_actions = QToolButton()
         self.btn_bulk_actions.setObjectName("ActionBtn")
         self.btn_bulk_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -282,42 +320,20 @@ class InfoTab(QWidget):
         self.btn_edit_tags_selected.triggered.connect(self._edit_tags_selected)
         self.menu_bulk_actions.addAction(self.btn_edit_tags_selected)
         self.btn_bulk_actions.setMenu(self.menu_bulk_actions)
-        bulk_layout.addWidget(self.btn_bulk_actions)
-        bulk_layout.addStretch()
-        layout.addWidget(bulk_row)
+        self.subtabs.setCornerWidget(self.btn_bulk_actions, Qt.Corner.TopRightCorner)
 
-        self.operations_group = QGroupBox(tr("info_recent_operations"))
-        operations_layout = QVBoxLayout(self.operations_group)
-        operations_layout.setSpacing(4)
-        operations_header = QHBoxLayout()
-        operations_header.setContentsMargins(0, 0, 0, 0)
+        self.operation_summary_row = QWidget()
+        summary_layout = QHBoxLayout(self.operation_summary_row)
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setSpacing(4)
         self.lbl_operation_summary = QLabel(tr("info_operation_empty"))
         self.lbl_operation_summary.setProperty("class", "info-label")
-        operations_header.addWidget(self.lbl_operation_summary, 1)
-        self.btn_toggle_operations = QPushButton("▶")
-        self.btn_toggle_operations.setProperty("class", "toggle")
-        self.btn_toggle_operations.setCheckable(True)
-        self.btn_toggle_operations.toggled.connect(self._on_operations_toggled)
-        operations_header.addWidget(self.btn_toggle_operations)
-        operations_layout.addLayout(operations_header)
-
-        self.operations_detail_widget = QWidget()
-        operations_detail_layout = QVBoxLayout(self.operations_detail_widget)
-        operations_detail_layout.setContentsMargins(0, 0, 0, 0)
-        operations_detail_layout.setSpacing(4)
-        self.operations_list = QListWidget()
-        self.operations_list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
-        operations_detail_layout.addWidget(self.operations_list)
-        operation_btn_row = QHBoxLayout()
-        operation_btn_row.addStretch()
-        self.btn_clear_operations = QPushButton(tr("info_clear_operations"))
-        self.btn_clear_operations.setObjectName("ActionBtn")
-        self.btn_clear_operations.clicked.connect(self._clear_operation_logs)
-        operation_btn_row.addWidget(self.btn_clear_operations, 0, Qt.AlignmentFlag.AlignRight)
-        operations_detail_layout.addLayout(operation_btn_row)
-        operations_layout.addWidget(self.operations_detail_widget)
-        layout.addWidget(self.operations_group)
-        layout.addStretch()
+        summary_layout.addWidget(self.lbl_operation_summary, 1)
+        self.btn_open_operations = QPushButton(tr("info_recent_operations_open"))
+        self.btn_open_operations.setObjectName("ActionBtn")
+        self.btn_open_operations.clicked.connect(self._open_operations_dialog)
+        summary_layout.addWidget(self.btn_open_operations)
+        layout.addWidget(self.operation_summary_row)
 
     @staticmethod
     def _default_filters() -> dict[str, Any]:
@@ -474,7 +490,9 @@ class InfoTab(QWidget):
         if mode not in self._LAYOUT_MODE_VALUES:
             mode = "auto"
         advanced_expanded = bool(getattr(settings, "info_advanced_filters_expanded", False))
-        operations_expanded = bool(getattr(settings, "info_operations_expanded", False))
+        _ = bool(getattr(settings, "info_operations_expanded", False))  # deprecated key: load-only compatibility
+        if mode in {"auto", "compact"}:
+            advanced_expanded = False
 
         self._suspend_ui_state_persist = True
         try:
@@ -482,7 +500,6 @@ class InfoTab(QWidget):
             self._reload_layout_mode_combo_items()
             self._set_combo_data(self.cmb_layout_mode, mode)
             self.advanced_filters_box.toggle_button.setChecked(advanced_expanded)
-            self._set_operations_expanded(operations_expanded)
         finally:
             self._suspend_ui_state_persist = False
 
@@ -496,21 +513,8 @@ class InfoTab(QWidget):
 
         settings.info_layout_mode = self._layout_mode
         settings.info_advanced_filters_expanded = bool(self.advanced_filters_box.toggle_button.isChecked())
-        settings.info_operations_expanded = bool(self.btn_toggle_operations.isChecked())
         if settings_manager is not None and hasattr(settings_manager, "save_app_settings"):
             settings_manager.save_app_settings()
-
-    def _set_operations_expanded(self, expanded: bool) -> None:
-        checked = bool(expanded)
-        self.btn_toggle_operations.blockSignals(True)
-        self.btn_toggle_operations.setChecked(checked)
-        self.btn_toggle_operations.blockSignals(False)
-        self.operations_detail_widget.setVisible(checked)
-        self.btn_toggle_operations.setText("▼" if checked else "▶")
-
-    def _on_operations_toggled(self, checked: bool) -> None:
-        self._set_operations_expanded(bool(checked))
-        self._persist_ui_state_to_settings()
 
     def _on_advanced_filters_toggled(self, _: bool) -> None:
         self._persist_ui_state_to_settings()
@@ -584,14 +588,22 @@ class InfoTab(QWidget):
         )
         self.btn_preset_actions.setText(tr("info_view_actions_short") if compact else tr("info_view_actions"))
         self.btn_preset_actions.setToolTip(tr("info_view_actions"))
-        self.lbl_bulk_actions.setText(tr("info_bulk_actions_short") if compact else tr("info_bulk_actions_menu"))
         self.btn_bulk_actions.setText(tr("info_bulk_actions_short") if compact else tr("info_bulk_actions_menu"))
         self.btn_bulk_actions.setToolTip(tr("info_bulk_actions_menu"))
+        self.btn_open_operations.setText(
+            tr("info_recent_operations_open_short") if compact else tr("info_recent_operations_open")
+        )
+        self.btn_open_operations.setToolTip(tr("info_recent_operations_open"))
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
         if self._layout_mode == "auto":
             self._apply_layout_mode()
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        _ = enabled
+        if self._layout_mode == "auto":
+            self._apply_layout_mode(force=True)
 
     def _reload_mode_combo_items(self) -> None:
         selected_data = str(self.cmb_mode_filter.currentData() or "all") if hasattr(self, "cmb_mode_filter") else "all"
@@ -999,30 +1011,34 @@ class InfoTab(QWidget):
         return line
 
     def _populate_operation_logs(self) -> None:
-        self.operations_list.blockSignals(True)
-        try:
-            self.operations_list.clear()
-            main_controller = getattr(self.mw, "main_controller", None)
-            actions = getattr(main_controller, "info_actions", None)
-            logs = actions.get_operation_logs(limit=10) if actions is not None else []
-            if not logs:
-                empty = QListWidgetItem(tr("info_operation_empty"))
-                empty.setFlags(Qt.ItemFlag.NoItemFlags)
-                self.operations_list.addItem(empty)
-                summary = tr("info_operation_empty")
-                self.lbl_operation_summary.setText(summary)
-                self.lbl_operation_summary.setToolTip(summary)
-                return
-
-            latest_line = self._format_operation_entry(dict(logs[-1]))
-            summary = tr("info_operation_summary_fmt").format(text=latest_line)
+        main_controller = getattr(self.mw, "main_controller", None)
+        actions = getattr(main_controller, "info_actions", None)
+        logs = actions.get_operation_logs(limit=10) if actions is not None else []
+        if not logs:
+            summary = tr("info_operation_empty")
+            self._operation_log_lines = []
             self.lbl_operation_summary.setText(summary)
-            self.lbl_operation_summary.setToolTip(latest_line)
+            self.lbl_operation_summary.setToolTip(summary)
+            return
 
-            for entry in reversed(list(logs)):
-                self.operations_list.addItem(QListWidgetItem(self._format_operation_entry(dict(entry))))
-        finally:
-            self.operations_list.blockSignals(False)
+        lines = [self._format_operation_entry(dict(entry)) for entry in reversed(list(logs))]
+        self._operation_log_lines = lines
+        latest_line = lines[0] if lines else tr("info_operation_empty")
+        summary = tr("info_operation_summary_fmt").format(text=latest_line)
+        self.lbl_operation_summary.setText(summary)
+        self.lbl_operation_summary.setToolTip(latest_line)
+
+    def _show_bulk_context_menu(self, source: QListWidget, pos: Any) -> None:
+        global_pos = source.viewport().mapToGlobal(pos)
+        self.menu_bulk_actions.exec(global_pos)
+
+    def _open_operations_dialog(self) -> None:
+        if self._operations_dialog is None:
+            self._operations_dialog = InfoOperationsDialog(self)
+            self._operations_dialog.btn_clear.clicked.connect(self._clear_operation_logs)
+        self._operations_dialog.set_entries(list(self._operation_log_lines))
+        self._operations_dialog.refresh_ui()
+        self._operations_dialog.exec()
 
     def _on_task_item_changed(self, item: QListWidgetItem) -> None:
         if self._is_refreshing:
@@ -1186,6 +1202,8 @@ class InfoTab(QWidget):
         actions = getattr(self.mw.main_controller, "info_actions", None)
         if actions is not None and hasattr(actions, "clear_operation_logs"):
             actions.clear_operation_logs()
+            if self._operations_dialog is not None:
+                self._operations_dialog.set_entries([])
             return
         self.refresh_data(immediate=True)
 
@@ -1203,9 +1221,6 @@ class InfoTab(QWidget):
                 self.notes_list.scrollToItem(item)
 
     def refresh_ui(self) -> None:
-        self.filter_group.setTitle(tr("grp_info_filters"))
-        self.lbl_quick_search.setText(tr("info_quick_search"))
-        self.lbl_quick_view.setText(tr("info_quick_view"))
         self.lbl_layout_mode.setText(tr("info_layout_mode_label"))
         self.edit_search.setPlaceholderText(tr("info_search_placeholder"))
         self.edit_tag_filter.setPlaceholderText(tr("info_tag_placeholder"))
@@ -1216,7 +1231,6 @@ class InfoTab(QWidget):
         self.lbl_mode.setText(tr("info_mode_label"))
         self.lbl_due_filter.setText(tr("info_due_filter_label"))
         self.lbl_sort.setText(tr("info_sort_label"))
-        self.lbl_bulk_actions.setText(tr("info_bulk_actions_menu"))
         self.advanced_filters_box.setText(tr("info_advanced_filters"))
         self.btn_complete_selected.setText(tr("info_bulk_complete_selected"))
         self.btn_uncomplete_selected.setText(tr("info_bulk_uncomplete_selected"))
@@ -1234,8 +1248,9 @@ class InfoTab(QWidget):
         self.btn_view_save.setText(tr("info_view_save"))
         self.btn_view_update.setText(tr("info_view_update"))
         self.btn_view_delete.setText(tr("info_view_delete"))
-        self.operations_group.setTitle(tr("info_recent_operations"))
-        self.btn_clear_operations.setText(tr("info_clear_operations"))
+        self.btn_open_operations.setText(tr("info_recent_operations_open"))
+        if self._operations_dialog is not None:
+            self._operations_dialog.refresh_ui()
 
         builtin_presets = self._build_builtin_presets()
         for preset_id, preset in builtin_presets.items():
@@ -1262,7 +1277,6 @@ class InfoTab(QWidget):
         self._reload_smart_view_combo_items()
         self._reload_view_preset_combo_items()
         self._apply_preset_by_id(self._current_preset_id, refresh=False, persist_last=False)
-        self._set_operations_expanded(self.btn_toggle_operations.isChecked())
         self._apply_layout_mode(force=True)
 
         self.subtabs.setTabText(0, tr("info_tasks_tab"))

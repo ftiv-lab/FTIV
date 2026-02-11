@@ -281,6 +281,10 @@ class TestAppSettings:
 
         s = AppSettings()
         assert s.main_window_frontmost is True
+        assert s.main_window_width == 0
+        assert s.main_window_height == 0
+        assert s.main_window_pos_x is None
+        assert s.main_window_pos_y is None
         assert s.render_debounce_ms == 25
         assert s.wheel_debounce_ms == 50
         assert s.glyph_cache_size == 512
@@ -296,6 +300,10 @@ class TestAppSettings:
 
         settings = AppSettings(
             main_window_frontmost=False,
+            main_window_width=480,
+            main_window_height=720,
+            main_window_pos_x=100,
+            main_window_pos_y=120,
             render_debounce_ms=100,
             wheel_debounce_ms=200,
             glyph_cache_size=1024,
@@ -334,6 +342,10 @@ class TestAppSettings:
 
         loaded = load_app_settings(None, str(tmp_path))
         assert loaded.main_window_frontmost is False
+        assert loaded.main_window_width == 480
+        assert loaded.main_window_height == 720
+        assert loaded.main_window_pos_x == 100
+        assert loaded.main_window_pos_y == 120
         assert loaded.render_debounce_ms == 100
         assert loaded.wheel_debounce_ms == 200
         assert loaded.glyph_cache_size == 1024
@@ -345,7 +357,8 @@ class TestAppSettings:
         assert loaded.info_operation_logs[0]["action"] == "bulk_archive"
         assert loaded.info_layout_mode == "compact"
         assert loaded.info_advanced_filters_expanded is True
-        assert loaded.info_operations_expanded is True
+        # Deprecated key is load-only and should not be saved by roundtrip.
+        assert loaded.info_operations_expanded is False
 
     def test_load_nonexistent_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings
@@ -421,6 +434,18 @@ class TestAppSettings:
 
         loaded = load_app_settings(None, str(tmp_path))
         assert loaded.info_layout_mode == "auto"
+
+    def test_load_legacy_info_operations_expanded(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {"info_operations_expanded": True}
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.info_operations_expanded is True
 
     def test_get_settings_path_empty_base(self) -> None:
         from utils.app_settings import _get_settings_path

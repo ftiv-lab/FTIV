@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -70,7 +71,6 @@ class TextTab(QWidget):
         # Sub Tabs
         # =========================
         self.txt_subtabs = QTabWidget()
-        layout.addWidget(self.txt_subtabs)
 
         # --- Manage ---
         self.manage_tab = self._build_manage_subtab()
@@ -113,7 +113,18 @@ class TextTab(QWidget):
         bulk_layout.addStretch()
         self.txt_subtabs.addTab(self.bulk_tab, tr("grp_bulk_actions"))
 
-        layout.addStretch()
+        self.txt_scroll_area = QScrollArea()
+        self.txt_scroll_area.setWidgetResizable(True)
+        self.txt_scroll_area.setObjectName("TextTabScrollArea")
+        self.txt_scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(self.txt_scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(4)
+        scroll_layout.addWidget(self.txt_subtabs)
+        self.txt_scroll_area.setWidget(self.txt_scroll_content)
+        layout.addWidget(self.txt_scroll_area, 1)
+
+        self.set_compact_mode(False)
 
         # 初期反映（Selected表示 + Selected系ボタン有効無効）
         # まだ attributes を注入していないが、self メソッド内なら self.* を見に行けばよい
@@ -702,6 +713,10 @@ class TextTab(QWidget):
         # Update selected label if needed
         # (This is usually triggered by selection change, but we could re-trigger it)
         # self.on_selection_changed(getattr(self.mw, "last_selected_window", None))
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        self.btn_add_text_main.setMinimumHeight(40 if enabled else 50)
+        self.txt_btn_manage_add.setMinimumHeight(34 if enabled else 40)
 
     def update_prop_button_state(self, is_active: bool) -> None:
         """プロパティパネルボタンのトグル状態・スタイル更新。"""

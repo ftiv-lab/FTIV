@@ -198,6 +198,10 @@ def _make_main_window(task_windows=None, note_windows=None):
     text_windows = [*task_windows, *note_windows]
     wm = SimpleNamespace(text_windows=text_windows)
     app_settings = SimpleNamespace(
+        main_window_width=0,
+        main_window_height=0,
+        main_window_pos_x=None,
+        main_window_pos_y=None,
         info_view_presets=[],
         info_last_view_preset_id="builtin:all",
         info_operation_logs=[],
@@ -525,14 +529,10 @@ def test_operation_log_panel_renders_and_clears(qapp):
     mw.main_controller = SimpleNamespace(info_actions=actions)
 
     tab.refresh_data(immediate=True)
-    first = tab.operations_list.item(0)
-    assert first is not None
-    assert tr("info_log_action_bulk_star") in first.text()
+    assert tr("info_log_action_bulk_star") in tab.lbl_operation_summary.text()
 
     tab._clear_operation_logs()
-    only_item = tab.operations_list.item(0)
-    assert only_item is not None
-    assert only_item.text() == tr("info_operation_empty")
+    assert tab.lbl_operation_summary.text() == tr("info_operation_empty")
 
 
 def test_layout_mode_compact_from_settings_applies_short_labels(qapp):
@@ -562,16 +562,16 @@ def test_layout_mode_auto_switches_compact_and_regular(qapp):
     assert tab._effective_layout_mode == "regular"
 
 
-def test_advanced_and_operation_expand_state_restored_from_settings(qapp):
+def test_advanced_filter_forced_collapsed_on_auto_mode(qapp):
     _ = qapp
     mw, _ = _make_main_window()
+    mw.app_settings.info_layout_mode = "auto"
     mw.app_settings.info_advanced_filters_expanded = True
     mw.app_settings.info_operations_expanded = True
 
     tab = InfoTab(mw)
 
-    assert tab.advanced_filters_box.toggle_button.isChecked() is True
-    assert tab.operations_detail_widget.isHidden() is False
+    assert tab.advanced_filters_box.toggle_button.isChecked() is False
 
 
 def test_bulk_menu_action_uses_existing_bulk_handler(qapp):
@@ -603,7 +603,7 @@ def test_preset_action_menu_save_creates_user_preset(qapp):
     assert str(mw.app_settings.info_view_presets[0]["id"]).startswith("user:")
 
 
-def test_operation_summary_and_toggle_panel(qapp):
+def test_operation_summary_and_dialog(qapp):
     _ = qapp
     note_window = _DummyNoteWindow(uuid="n-1")
     mw, text_windows = _make_main_window(task_windows=[], note_windows=[note_window])
@@ -617,10 +617,13 @@ def test_operation_summary_and_toggle_panel(qapp):
 
     tab.refresh_data(immediate=True)
     assert tr("info_log_action_bulk_star") in tab.lbl_operation_summary.text()
-    assert tab.operations_detail_widget.isHidden() is True
 
-    tab.btn_toggle_operations.click()
-    assert tab.operations_detail_widget.isHidden() is False
+    with patch("ui.tabs.info_tab.InfoOperationsDialog.exec", return_value=0):
+        tab._open_operations_dialog()
+    assert tab._operations_dialog is not None
+    first = tab._operations_dialog.operations_list.item(0)
+    assert first is not None
+    assert tr("info_log_action_bulk_star") in first.text()
 
 
 def test_info_tab_core_controls_visible_on_320px_width(qapp):

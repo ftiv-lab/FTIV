@@ -10,8 +10,11 @@ from typing import Any, Dict, List, Optional
 # PySide6 Imports
 from PySide6.QtCore import QPoint, Qt, QTimer, QUrl  # ← QUrl 追加
 from PySide6.QtGui import (
+    QCloseEvent,
     QColor,
     QDesktopServices,
+    QMoveEvent,
+    QResizeEvent,
     QUndoStack,  # ← 追加
 )
 from PySide6.QtWidgets import (
@@ -127,6 +130,8 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
         # ウィンドウ設定適用 (UI構築後にサイズ等を確定させる)
         self.settings_manager.init_window_settings()
+        self._setup_mainwindow_scalability()
+        self._apply_mainwindow_compact_mode(force=True)
 
         self.create_undo_redo_actions()
         self.file_manager.load_scenes_db()
@@ -225,6 +230,33 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         # ただし二重実行を避けるなら空にするか、Manager呼出にする
         if hasattr(self, "settings_manager"):
             self.settings_manager.init_window_settings()
+
+    def _setup_mainwindow_scalability(self) -> None:
+        self._compact_mode_enabled = False
+        self._geometry_save_timer = QTimer(self)
+        self._geometry_save_timer.setSingleShot(True)
+        self._geometry_save_timer.setInterval(250)
+        self._geometry_save_timer.timeout.connect(self._persist_main_window_geometry)
+
+    def _persist_main_window_geometry(self) -> None:
+        if os.getenv("FTIV_TEST_MODE") == "1":
+            return
+        self.settings_manager.save_main_window_geometry()
+
+    def _schedule_main_window_geometry_save(self) -> None:
+        if hasattr(self, "_geometry_save_timer"):
+            self._geometry_save_timer.start()
+
+    def _apply_mainwindow_compact_mode(self, force: bool = False) -> None:
+        compact = self.width() < 520
+        if not force and compact == bool(getattr(self, "_compact_mode_enabled", False)):
+            return
+        self._compact_mode_enabled = compact
+        for tab in (self.info_tab, self.text_tab, self.image_tab, self.animation_tab):
+            try:
+                tab.set_compact_mode(compact)
+            except Exception:
+                logger.warning("Failed to apply compact mode to tab", exc_info=True)
 
     def handle_app_state_change(self, state: Qt.ApplicationState) -> None:
         """アプリケーションのアクティブ状態が変化した際の処理。"""
@@ -1230,7 +1262,22 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             self.is_dragging = False
             event.accept()
 
-    def closeEvent(self, event) -> None:
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_geometry_save_timer"):
+            self._apply_mainwindow_compact_mode()
+            self._schedule_main_window_geometry_save()
+
+    def moveEvent(self, event: QMoveEvent) -> None:
+        super().moveEvent(event)
+        if hasattr(self, "_geometry_save_timer"):
+            self._schedule_main_window_geometry_save()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        try:
+            self._persist_main_window_geometry()
+        except Exception:
+            logger.warning("Failed to persist MainWindow geometry on close", exc_info=True)
         if hasattr(self, "property_panel"):
             self.property_panel.close()
 

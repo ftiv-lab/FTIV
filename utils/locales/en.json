@@ -539,6 +539,8 @@
     "placeholder_info_bulk_tags_add": "tag1, tag2",
     "placeholder_info_bulk_tags_remove": "old1, old2",
     "info_recent_operations": "Recent Operations",
+    "info_recent_operations_open": "Open Log",
+    "info_recent_operations_open_short": "Open",
     "info_clear_operations": "Clear",
     "info_operation_empty": "(no operations)",
     "info_operation_item_fmt": "{at} | {action} ({count})",

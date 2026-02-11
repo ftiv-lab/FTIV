@@ -21,6 +21,23 @@ _INFO_ARCHIVE_SCOPES = {"active", "archived", "all"}
 _INFO_LAYOUT_MODES = {"auto", "compact", "regular"}
 
 
+def _sanitize_main_window_dimension(value: Any) -> int:
+    try:
+        dim = int(value)
+    except Exception:
+        return 0
+    return dim if dim > 0 else 0
+
+
+def _sanitize_main_window_position(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
@@ -117,6 +134,10 @@ class AppSettings:
     """アプリ全体の設定。"""
 
     main_window_frontmost: bool = True
+    main_window_width: int = 0
+    main_window_height: int = 0
+    main_window_pos_x: int | None = None
+    main_window_pos_y: int | None = None
     # パフォーマンス設定
     render_debounce_ms: int = 25  # 描画遅延(ms): 25=標準(高速), 大きい=軽量
     wheel_debounce_ms: int = 50  # ホイール操作中: 50=バランス, 大きい=操作性優先
@@ -126,6 +147,7 @@ class AppSettings:
     info_operation_logs: list[dict[str, Any]] = field(default_factory=list)
     info_layout_mode: str = "auto"
     info_advanced_filters_expanded: bool = False
+    # Deprecated: load-only for backward compatibility (Phase 5A -> 5B)
     info_operations_expanded: bool = False
 
 
@@ -146,6 +168,10 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
     try:
         data: dict[str, Any] = {
             "main_window_frontmost": bool(settings.main_window_frontmost),
+            "main_window_width": _sanitize_main_window_dimension(getattr(settings, "main_window_width", 0)),
+            "main_window_height": _sanitize_main_window_dimension(getattr(settings, "main_window_height", 0)),
+            "main_window_pos_x": _sanitize_main_window_position(getattr(settings, "main_window_pos_x", None)),
+            "main_window_pos_y": _sanitize_main_window_position(getattr(settings, "main_window_pos_y", None)),
             "render_debounce_ms": int(settings.render_debounce_ms),
             "wheel_debounce_ms": int(settings.wheel_debounce_ms),  # ★追加
             "glyph_cache_size": int(settings.glyph_cache_size),
@@ -154,7 +180,6 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
             "info_operation_logs": _sanitize_info_operation_logs(settings.info_operation_logs)[-200:],
             "info_layout_mode": _sanitize_info_layout_mode(getattr(settings, "info_layout_mode", "auto")),
             "info_advanced_filters_expanded": bool(getattr(settings, "info_advanced_filters_expanded", False)),
-            "info_operations_expanded": bool(getattr(settings, "info_operations_expanded", False)),
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -181,6 +206,10 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         s = AppSettings()
         if isinstance(data.get("main_window_frontmost"), bool):
             s.main_window_frontmost = bool(data["main_window_frontmost"])
+        s.main_window_width = _sanitize_main_window_dimension(data.get("main_window_width", 0))
+        s.main_window_height = _sanitize_main_window_dimension(data.get("main_window_height", 0))
+        s.main_window_pos_x = _sanitize_main_window_position(data.get("main_window_pos_x", None))
+        s.main_window_pos_y = _sanitize_main_window_position(data.get("main_window_pos_y", None))
 
         # パフォーマンス設定
         if isinstance(data.get("render_debounce_ms"), int):
@@ -197,6 +226,7 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         s.info_operation_logs = _sanitize_info_operation_logs(data.get("info_operation_logs", []))
         s.info_layout_mode = _sanitize_info_layout_mode(data.get("info_layout_mode", "auto"))
         s.info_advanced_filters_expanded = bool(data.get("info_advanced_filters_expanded", False))
+        # Deprecated key: load-only compatibility.
         s.info_operations_expanded = bool(data.get("info_operations_expanded", False))
 
         return s

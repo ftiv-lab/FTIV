@@ -539,6 +539,8 @@
     "placeholder_info_bulk_tags_add": "タグ1, タグ2",
     "placeholder_info_bulk_tags_remove": "古いタグ1, 古いタグ2",
     "info_recent_operations": "最近の操作",
+    "info_recent_operations_open": "履歴を開く",
+    "info_recent_operations_open_short": "開く",
     "info_clear_operations": "クリア",
     "info_operation_empty": "（操作履歴なし）",
     "info_operation_item_fmt": "{at} | {action} ({count})",

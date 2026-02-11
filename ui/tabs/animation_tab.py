@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTabWidget,
@@ -63,7 +64,6 @@ class AnimationTab(QWidget):
 
         # --- Sub Tabs ---
         self.anim_subtabs = QTabWidget()
-        layout.addWidget(self.anim_subtabs)
 
         easing_names = [
             "Linear",
@@ -367,10 +367,20 @@ class AnimationTab(QWidget):
         self.btn_stop_all.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_stop_all.setMinimumHeight(45)
 
-        layout.addWidget(self.btn_stop_all)
-        layout.addStretch()
+        self.anim_scroll_area = QScrollArea()
+        self.anim_scroll_area.setWidgetResizable(True)
+        self.anim_scroll_area.setObjectName("AnimationTabScrollArea")
+        self.anim_scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(self.anim_scroll_content)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.setSpacing(4)
+        scroll_layout.addWidget(self.anim_subtabs)
+        scroll_layout.addWidget(self.btn_stop_all)
+        self.anim_scroll_area.setWidget(self.anim_scroll_content)
+        layout.addWidget(self.anim_scroll_area, 1)
 
         # 初期状態更新
+        self.set_compact_mode(False)
         self.refresh_enabled_state()
 
     def on_selection_changed(self, window: Optional[Any]) -> None:
@@ -509,3 +519,6 @@ class AnimationTab(QWidget):
         if self.anim_target_combo.count() > 0:
             self.anim_target_combo.setCurrentIndex(max(0, min(cur, self.anim_target_combo.count() - 1)))
         self.anim_target_combo.blockSignals(False)
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        self.btn_stop_all.setMinimumHeight(36 if enabled else 45)

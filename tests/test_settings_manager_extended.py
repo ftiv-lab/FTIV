@@ -4,6 +4,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PySide6.QtCore import QRect
 
 from managers.settings_manager import SettingsManager
 from utils.app_settings import AppSettings
@@ -20,6 +21,10 @@ def mock_mw(tmp_path):
     mw.image_windows = []
     mw.connectors = []
     mw.windowFlags.return_value = 0
+    mw.width.return_value = 420
+    mw.height.return_value = 640
+    mw.x.return_value = 12
+    mw.y.return_value = 24
     return mw
 
 
@@ -102,7 +107,10 @@ class TestInitWindowSettings:
         mock_mw.icon_path = "/nonexistent/icon.png"
         manager.init_window_settings()
         mock_mw.setWindowTitle.assert_called_once()
-        mock_mw.resize.assert_called_once_with(320, 600)
+        mock_mw.resize.assert_called_once()
+        width, height = mock_mw.resize.call_args.args
+        assert int(width) >= 320
+        assert int(height) >= 600
 
     def test_applies_frontmost_flag(self, manager, mock_mw):
         manager.app_settings = AppSettings(main_window_frontmost=True)
@@ -110,6 +118,30 @@ class TestInitWindowSettings:
         manager.init_window_settings()
         mock_mw.setWindowFlags.assert_called()
         mock_mw.show.assert_called()
+
+    def test_applies_saved_geometry_when_available(self, manager, mock_mw):
+        manager.app_settings = AppSettings(
+            main_window_frontmost=False,
+            main_window_width=480,
+            main_window_height=700,
+            main_window_pos_x=100,
+            main_window_pos_y=120,
+        )
+        mock_mw.icon_path = "/nonexistent/icon.png"
+        with patch.object(manager, "_safe_available_geometry", return_value=QRect(0, 0, 1920, 1080)):
+            manager.init_window_settings()
+        mock_mw.resize.assert_called_once_with(480, 700)
+        mock_mw.move.assert_called_once_with(100, 120)
+
+    def test_save_main_window_geometry_updates_app_settings(self, manager, mock_mw):
+        manager.app_settings = AppSettings()
+        with patch.object(manager, "save_app_settings") as mock_save:
+            manager.save_main_window_geometry()
+        assert manager.app_settings.main_window_width == 420
+        assert manager.app_settings.main_window_height == 640
+        assert manager.app_settings.main_window_pos_x == 12
+        assert manager.app_settings.main_window_pos_y == 24
+        mock_save.assert_called_once()
 
 
 class TestSetMainFrontmost:
