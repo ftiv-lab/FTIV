@@ -255,6 +255,12 @@ QLabel[class="hint"] {
     margin-top: 5px;
 }
 
+QLabel[class="about-hint"] {
+    color: @text_dim;
+    font-size: 11px;
+    margin-top: 2px;
+}
+
 QLabel[class="edition-label"] {
     font-weight: bold;
     color: @text_dim;
@@ -281,6 +287,20 @@ QLabel[class="monospace-label"] {
     color: @text_primary;
     font-family: Consolas, Monospace;
     line-height: 1.4;
+}
+
+QWidget#AboutTabRoot {
+    background-color: transparent;
+}
+
+QWidget#AboutQuickActions {
+    margin: 0px;
+    padding: 0px;
+}
+
+QWidget#AboutQuickActions QPushButton,
+QWidget#AboutQuickActions QToolButton {
+    min-height: 28px;
 }
 
 /* ============================================================

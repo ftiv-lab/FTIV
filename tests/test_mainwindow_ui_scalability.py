@@ -9,7 +9,7 @@ def test_mainwindow_minimum_size_hint_budget(qapp) -> None:
     try:
         size = mw.minimumSizeHint()
         assert size.width() <= 520
-        assert size.height() <= 700
+        assert size.height() <= 640
     finally:
         mw.close()
 
@@ -46,6 +46,20 @@ def test_info_tab_minimum_height_budget_on_320_width(qapp) -> None:
         mw.close()
 
 
+def test_about_tab_minimum_height_budget(qapp) -> None:
+    mw = MainWindow()
+    try:
+        mw.set_main_ui_density_mode("comfortable")
+        qapp.processEvents()
+        assert mw.about_tab.minimumSizeHint().height() <= 420
+
+        mw.set_main_ui_density_mode("compact")
+        qapp.processEvents()
+        assert mw.about_tab.minimumSizeHint().height() <= 320
+    finally:
+        mw.close()
+
+
 def test_mainwindow_ui_density_auto_breakpoints(qapp) -> None:
     mw = MainWindow()
     try:
@@ -57,14 +71,17 @@ def test_mainwindow_ui_density_auto_breakpoints(qapp) -> None:
         with patch.object(mw, "width", return_value=320):
             mw._apply_mainwindow_compact_mode(force=True)
             assert mw.get_effective_main_ui_density_mode() == "compact"
+            assert mw._tab_compact_state.get("about") is True
 
         with patch.object(mw, "width", return_value=420):
             mw._apply_mainwindow_compact_mode(force=True)
             assert mw.get_effective_main_ui_density_mode() == "regular"
+            assert mw._tab_compact_state.get("about") is True
 
         with patch.object(mw, "width", return_value=480):
             mw._apply_mainwindow_compact_mode(force=True)
             assert mw.get_effective_main_ui_density_mode() == "comfortable"
+            assert mw._tab_compact_state.get("about") is False
     finally:
         mw.close()
 

@@ -688,6 +688,8 @@
     "msg_limit_image_windows": "Free edition limit: Max 5 image windows. (Get PRO for unlimited)",
     "tab_about": "About",
     "grp_system_info": "System & Information",
+    "about_system_summary": "Quick actions are always available above. Maintenance tools are in More.",
+    "about_more_actions": "More",
     "btn_show_about_dialog": "Show Version Info",
     "grp_shortcuts": "Emergency Shortcuts",
     "label_rescue_shortcuts": "Ctrl+Alt+Shift+R : Disable All Click-Through (Rescue)\nCtrl+Alt+Shift+M : Bring Main Window to Front\nCtrl+Alt+Shift+H : Show All Windows",

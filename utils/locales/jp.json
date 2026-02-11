@@ -688,6 +688,8 @@
     "msg_limit_image_windows": "無料版の制限：画像は最大5個までです。(PRO版は無制限)",
     "tab_about": "情報",
     "grp_system_info": "システム・情報",
+    "about_system_summary": "主要操作は上部のクイックアクション、保守系は［その他］から利用できます。",
+    "about_more_actions": "その他",
     "btn_show_about_dialog": "バージョン情報を表示",
     "grp_shortcuts": "緊急ショートカット (操作不能時)",
     "label_rescue_shortcuts": "Ctrl+Alt+Shift+R : 全クリック透過を解除 (救出)\nCtrl+Alt+Shift+M : 操作盤を最前面へ\nCtrl+Alt+Shift+H : 全ウィンドウを表示",

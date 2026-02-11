@@ -296,6 +296,7 @@ class TestAppSettings:
         assert s.main_ui_density_mode == "auto"
         assert s.tab_ui_compact_overrides == {}
         assert s.property_panel_section_state == {}
+        assert s.about_section_state == {}
         assert s.info_operations_expanded is False
 
     def test_save_and_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
@@ -341,6 +342,7 @@ class TestAppSettings:
             main_ui_density_mode="compact",
             tab_ui_compact_overrides={"image": True, "text": False, "invalid": True},
             property_panel_section_state={"text_content": True, "shadow": False, "invalid": True},
+            about_section_state={"edition": True, "performance": False, "bad": True},
             info_operations_expanded=True,
         )
         result = save_app_settings(None, str(tmp_path), settings)
@@ -366,6 +368,7 @@ class TestAppSettings:
         assert loaded.main_ui_density_mode == "compact"
         assert loaded.tab_ui_compact_overrides == {"image": True, "text": False}
         assert loaded.property_panel_section_state == {"text_content": True, "shadow": False}
+        assert loaded.about_section_state == {"edition": True, "performance": False}
         # Deprecated key is load-only and should not be saved by roundtrip.
         assert loaded.info_operations_expanded is False
 
@@ -485,6 +488,24 @@ class TestAppSettings:
 
         loaded = load_app_settings(None, str(tmp_path))
         assert loaded.tab_ui_compact_overrides == {"image": True, "text": False}
+
+    def test_load_invalid_about_section_state_skips_unknown(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {
+            "about_section_state": {
+                "edition": True,
+                "performance": 0,
+                "bad_key": True,
+            }
+        }
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.about_section_state == {"edition": True, "performance": False}
 
     def test_get_settings_path_empty_base(self) -> None:
         from utils.app_settings import _get_settings_path

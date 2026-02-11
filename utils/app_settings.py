@@ -23,6 +23,7 @@ _INFO_LAYOUT_MODES = {"auto", "compact", "regular"}
 _MAIN_UI_DENSITY_MODES = {"auto", "comfortable", "compact"}
 _TAB_UI_OVERRIDE_KEYS = {"general", "text", "image", "scene", "connections", "info", "animation", "about"}
 _PROPERTY_PANEL_SECTION_KEYS = {"text_content", "text_style", "background", "shadow", "outline"}
+_ABOUT_SECTION_KEYS = {"edition", "system", "shortcuts", "performance"}
 
 
 def _sanitize_main_window_dimension(value: Any) -> int:
@@ -179,6 +180,18 @@ def _sanitize_property_panel_section_state(raw: Any) -> dict[str, bool]:
     return out
 
 
+def _sanitize_about_section_state(raw: Any) -> dict[str, bool]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, bool] = {}
+    for key, value in raw.items():
+        normalized = str(key or "").strip().lower()
+        if normalized not in _ABOUT_SECTION_KEYS:
+            continue
+        out[normalized] = bool(value)
+    return out
+
+
 @dataclass
 class AppSettings:
     """アプリ全体の設定。"""
@@ -200,6 +213,7 @@ class AppSettings:
     main_ui_density_mode: str = "auto"
     tab_ui_compact_overrides: dict[str, bool] = field(default_factory=dict)
     property_panel_section_state: dict[str, bool] = field(default_factory=dict)
+    about_section_state: dict[str, bool] = field(default_factory=dict)
     # Deprecated: load-only for backward compatibility (Phase 5A -> 5B)
     info_operations_expanded: bool = False
 
@@ -240,6 +254,7 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
             "property_panel_section_state": _sanitize_property_panel_section_state(
                 getattr(settings, "property_panel_section_state", {})
             ),
+            "about_section_state": _sanitize_about_section_state(getattr(settings, "about_section_state", {})),
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -291,6 +306,7 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         s.property_panel_section_state = _sanitize_property_panel_section_state(
             data.get("property_panel_section_state", {})
         )
+        s.about_section_state = _sanitize_about_section_state(data.get("about_section_state", {}))
         # Deprecated key: load-only compatibility.
         s.info_operations_expanded = bool(data.get("info_operations_expanded", False))
 
