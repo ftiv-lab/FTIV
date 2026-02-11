@@ -16,11 +16,13 @@ logger = logging.getLogger(__name__)
 
 _INFO_DUE_FILTERS = {"all", "today", "overdue", "upcoming", "dated", "undated"}
 _INFO_MODE_FILTERS = {"all", "task", "note"}
+_INFO_ITEM_SCOPE_FILTERS = {"all", "tasks", "notes"}
 _INFO_SORT_FIELDS = {"updated", "due", "created", "title"}
 _INFO_ARCHIVE_SCOPES = {"active", "archived", "all"}
 _INFO_LAYOUT_MODES = {"auto", "compact", "regular"}
 _MAIN_UI_DENSITY_MODES = {"auto", "comfortable", "compact"}
 _TAB_UI_OVERRIDE_KEYS = {"general", "text", "image", "scene", "connections", "info", "animation", "about"}
+_PROPERTY_PANEL_SECTION_KEYS = {"text_content", "text_style", "background", "shadow", "outline"}
 
 
 def _sanitize_main_window_dimension(value: Any) -> int:
@@ -43,6 +45,23 @@ def _sanitize_main_window_position(value: Any) -> int | None:
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
+    mode_filter = str(raw.get("mode_filter", "all")).strip().lower()
+    if mode_filter not in _INFO_MODE_FILTERS:
+        mode_filter = "all"
+
+    item_scope = str(raw.get("item_scope", "all")).strip().lower()
+    if item_scope not in _INFO_ITEM_SCOPE_FILTERS:
+        item_scope = "all"
+    if item_scope == "all":
+        if mode_filter == "task":
+            item_scope = "tasks"
+        elif mode_filter == "note":
+            item_scope = "notes"
+
+    content_mode_filter = str(raw.get("content_mode_filter", "all")).strip().lower()
+    if content_mode_filter not in _INFO_MODE_FILTERS:
+        content_mode_filter = mode_filter
+
     return {
         "text": str(raw.get("text", "") or "").strip(),
         "tag": str(raw.get("tag", "") or "").strip(),
@@ -58,11 +77,9 @@ def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
             if str(raw.get("due_filter", "all")).strip().lower() in _INFO_DUE_FILTERS
             else "all"
         ),
-        "mode_filter": (
-            str(raw.get("mode_filter", "all")).strip().lower()
-            if str(raw.get("mode_filter", "all")).strip().lower() in _INFO_MODE_FILTERS
-            else "all"
-        ),
+        "mode_filter": mode_filter,
+        "item_scope": item_scope,
+        "content_mode_filter": content_mode_filter,
         "sort_by": (
             str(raw.get("sort_by", "updated")).strip().lower()
             if str(raw.get("sort_by", "updated")).strip().lower() in _INFO_SORT_FIELDS
@@ -150,6 +167,18 @@ def _sanitize_tab_ui_compact_overrides(raw: Any) -> dict[str, bool]:
     return out
 
 
+def _sanitize_property_panel_section_state(raw: Any) -> dict[str, bool]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, bool] = {}
+    for key, value in raw.items():
+        normalized = str(key or "").strip().lower()
+        if normalized not in _PROPERTY_PANEL_SECTION_KEYS:
+            continue
+        out[normalized] = bool(value)
+    return out
+
+
 @dataclass
 class AppSettings:
     """アプリ全体の設定。"""
@@ -170,6 +199,7 @@ class AppSettings:
     info_advanced_filters_expanded: bool = False
     main_ui_density_mode: str = "auto"
     tab_ui_compact_overrides: dict[str, bool] = field(default_factory=dict)
+    property_panel_section_state: dict[str, bool] = field(default_factory=dict)
     # Deprecated: load-only for backward compatibility (Phase 5A -> 5B)
     info_operations_expanded: bool = False
 
@@ -206,6 +236,9 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
             "main_ui_density_mode": _sanitize_main_ui_density_mode(getattr(settings, "main_ui_density_mode", "auto")),
             "tab_ui_compact_overrides": _sanitize_tab_ui_compact_overrides(
                 getattr(settings, "tab_ui_compact_overrides", {})
+            ),
+            "property_panel_section_state": _sanitize_property_panel_section_state(
+                getattr(settings, "property_panel_section_state", {})
             ),
         }
         with open(path, "w", encoding="utf-8") as f:
@@ -255,6 +288,9 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         s.info_advanced_filters_expanded = bool(data.get("info_advanced_filters_expanded", False))
         s.main_ui_density_mode = _sanitize_main_ui_density_mode(data.get("main_ui_density_mode", "auto"))
         s.tab_ui_compact_overrides = _sanitize_tab_ui_compact_overrides(data.get("tab_ui_compact_overrides", {}))
+        s.property_panel_section_state = _sanitize_property_panel_section_state(
+            data.get("property_panel_section_state", {})
+        )
         # Deprecated key: load-only compatibility.
         s.info_operations_expanded = bool(data.get("info_operations_expanded", False))
 

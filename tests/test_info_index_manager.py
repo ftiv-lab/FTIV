@@ -18,6 +18,9 @@ def _make_window(
     created_at: str = "",
     updated_at: str = "",
     due_at: str = "",
+    due_time: str = "",
+    due_timezone: str = "",
+    due_precision: str = "date",
     is_archived: bool = False,
     task_refs=None,
 ):
@@ -35,6 +38,9 @@ def _make_window(
         created_at=created_at,
         updated_at=updated_at,
         due_at=due_at,
+        due_time=due_time,
+        due_timezone=due_timezone,
+        due_precision=due_precision,
         is_archived=is_archived,
         iter_task_items=lambda: task_refs,
     )
@@ -239,6 +245,43 @@ class TestInfoIndexManager:
 
         assert [item.window_uuid for item in only_task] == ["t1"]
         assert [item.window_uuid for item in only_note] == ["n1"]
+
+    def test_query_mode_filter_legacy_mapping_to_item_scope(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="memo", content_mode="note"),
+            _make_window(
+                uuid="t1",
+                text="task line",
+                content_mode="task",
+                task_refs=[_make_task_ref(0, "task line", False)],
+            ),
+        ]
+        tasks, notes = manager.build_index(windows)
+
+        tasks_when_note = manager.query_tasks(tasks, InfoQuery(mode_filter="note"))
+        notes_when_task = manager.query_notes(notes, InfoQuery(mode_filter="task"))
+
+        assert tasks_when_note == []
+        assert [item.window_uuid for item in notes_when_task] == ["t1"]
+
+    def test_query_tasks_due_filter_uses_datetime_when_due_precision_datetime(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="t1",
+                content_mode="task",
+                due_at="2099-01-01T00:00:00",
+                due_time="09:30",
+                due_timezone="",
+                due_precision="datetime",
+                task_refs=[_make_task_ref(0, "future", False)],
+            )
+        ]
+        tasks, _ = manager.build_index(windows)
+        filtered = manager.query_tasks(tasks, InfoQuery(due_filter="upcoming"))
+        assert [item.window_uuid for item in filtered] == ["w1"]
 
     def test_query_notes_sort_by_due(self):
         manager = InfoIndexManager()

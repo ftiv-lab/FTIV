@@ -295,6 +295,7 @@ class TestAppSettings:
         assert s.info_advanced_filters_expanded is False
         assert s.main_ui_density_mode == "auto"
         assert s.tab_ui_compact_overrides == {}
+        assert s.property_panel_section_state == {}
         assert s.info_operations_expanded is False
 
     def test_save_and_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
@@ -339,6 +340,7 @@ class TestAppSettings:
             info_advanced_filters_expanded=True,
             main_ui_density_mode="compact",
             tab_ui_compact_overrides={"image": True, "text": False, "invalid": True},
+            property_panel_section_state={"text_content": True, "shadow": False, "invalid": True},
             info_operations_expanded=True,
         )
         result = save_app_settings(None, str(tmp_path), settings)
@@ -363,6 +365,7 @@ class TestAppSettings:
         assert loaded.info_advanced_filters_expanded is True
         assert loaded.main_ui_density_mode == "compact"
         assert loaded.tab_ui_compact_overrides == {"image": True, "text": False}
+        assert loaded.property_panel_section_state == {"text_content": True, "shadow": False}
         # Deprecated key is load-only and should not be saved by roundtrip.
         assert loaded.info_operations_expanded is False
 

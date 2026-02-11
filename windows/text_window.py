@@ -528,16 +528,38 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         normalized = self._normalize_due_iso(value)
         if normalized is None:
             return
-        if str(getattr(self, "due_at", "") or "") == normalized:
+        current_due = str(getattr(self, "due_at", "") or "")
+        current_precision = str(getattr(self, "due_precision", "date") or "date").strip().lower()
+        current_time = str(getattr(self, "due_time", "") or "")
+        current_timezone = str(getattr(self, "due_timezone", "") or "")
+        if current_due == normalized and current_precision == "date" and not current_time and not current_timezone:
             return
-        self.set_undoable_property("due_at", normalized, "update_text")
+        if current_due != normalized:
+            self.set_undoable_property("due_at", normalized, "update_text")
+        if current_precision != "date":
+            self.set_undoable_property("due_precision", "date", None)
+        if current_time:
+            self.set_undoable_property("due_time", "", None)
+        if current_timezone:
+            self.set_undoable_property("due_timezone", "", None)
         self._touch_updated_at()
 
     def clear_due_at(self) -> None:
         """期限を解除する。"""
-        if not str(getattr(self, "due_at", "") or ""):
+        has_due = bool(str(getattr(self, "due_at", "") or ""))
+        has_time = bool(str(getattr(self, "due_time", "") or ""))
+        has_timezone = bool(str(getattr(self, "due_timezone", "") or ""))
+        precision = str(getattr(self, "due_precision", "date") or "date").strip().lower()
+        if not has_due and not has_time and not has_timezone and precision == "date":
             return
-        self.set_undoable_property("due_at", "", "update_text")
+        if has_due:
+            self.set_undoable_property("due_at", "", "update_text")
+        if has_time:
+            self.set_undoable_property("due_time", "", None)
+        if has_timezone:
+            self.set_undoable_property("due_timezone", "", None)
+        if precision != "date":
+            self.set_undoable_property("due_precision", "date", None)
         self._touch_updated_at()
 
     def bulk_set_task_done(self, indices: List[int], value: bool) -> None:

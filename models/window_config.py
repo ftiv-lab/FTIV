@@ -65,6 +65,9 @@ class TextWindowConfig(WindowConfigBase):
     task_schema_version: int = 1
     note_vertical_preference: bool = False
     due_at: str = ""
+    due_time: str = ""
+    due_timezone: str = ""
+    due_precision: Literal["date", "datetime"] = "date"
     is_archived: bool = False
     text: str = "New Text"
     font: str = "Arial"

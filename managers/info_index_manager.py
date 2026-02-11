@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Iterable, List, Literal, Sequence, Tuple
+
+from utils.due_date import compose_due_datetime
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,9 @@ class TaskIndexItem:
     created_at: str
     updated_at: str
     due_at: str
+    due_time: str
+    due_timezone: str
+    due_precision: str
     is_archived: bool
 
 
@@ -32,6 +37,9 @@ class NoteIndexItem:
     created_at: str
     updated_at: str
     due_at: str
+    due_time: str
+    due_timezone: str
+    due_precision: str
     is_archived: bool
 
 
@@ -45,6 +53,8 @@ class InfoQuery:
     archive_scope: Literal["active", "archived", "all"] = "active"
     due_filter: Literal["all", "today", "overdue", "upcoming", "dated", "undated"] = "all"
     mode_filter: Literal["all", "task", "note"] = "all"
+    item_scope: Literal["all", "tasks", "notes"] = "all"
+    content_mode_filter: str = "all"
     sort_by: Literal["updated", "due", "created", "title"] = "updated"
     sort_desc: bool = True
 
@@ -95,10 +105,44 @@ class InfoIndexManager:
         except Exception:
             return None
 
-    def _parse_due_for_sort(self, value: str) -> datetime:
-        parsed = self._parse_due_iso(value)
+    def _parse_due_for_sort(
+        self,
+        due_at: str,
+        due_time: str = "",
+        due_timezone: str = "",
+        due_precision: str = "date",
+    ) -> datetime:
+        parsed = compose_due_datetime(
+            due_at=due_at,
+            due_time=due_time,
+            due_timezone=due_timezone,
+            due_precision=due_precision,
+        )
         # 要件: 不正値は安全側として末尾寄せしやすい datetime.max 扱い
         return parsed if parsed is not None else datetime.max
+
+    @staticmethod
+    def _normalize_query_filters(query: InfoQuery) -> tuple[str, str]:
+        legacy_mode = str(getattr(query, "mode_filter", "all") or "all").strip().lower()
+        item_scope = str(getattr(query, "item_scope", "all") or "all").strip().lower()
+        content_mode_filter = str(getattr(query, "content_mode_filter", "all") or "all").strip().lower()
+
+        if item_scope not in {"all", "tasks", "notes"}:
+            item_scope = "all"
+        if item_scope == "all":
+            if legacy_mode == "task":
+                item_scope = "tasks"
+            elif legacy_mode == "note":
+                item_scope = "notes"
+
+        if content_mode_filter in {"", "all"}:
+            if item_scope == "tasks":
+                content_mode_filter = "task"
+            elif item_scope == "notes":
+                content_mode_filter = "note"
+            else:
+                content_mode_filter = "all"
+        return item_scope, content_mode_filter
 
     @staticmethod
     def _matches_mode(mode_filter: str, item_mode: str) -> bool:
@@ -108,12 +152,24 @@ class InfoIndexManager:
         normalized_item = "task" if str(item_mode or "").strip().lower() == "task" else "note"
         return mode == normalized_item
 
-    def _matches_due(self, due_filter: str, due_at: str) -> bool:
+    def _matches_due(
+        self,
+        due_filter: str,
+        due_at: str,
+        due_time: str = "",
+        due_timezone: str = "",
+        due_precision: str = "date",
+    ) -> bool:
         due_mode = str(due_filter or "").strip().lower()
         if due_mode in ("", "all"):
             return True
 
-        due_dt = self._parse_due_iso(due_at)
+        due_dt = compose_due_datetime(
+            due_at=due_at,
+            due_time=due_time,
+            due_timezone=due_timezone,
+            due_precision=due_precision,
+        )
         if due_mode == "dated":
             return due_dt is not None
         if due_mode == "undated":
@@ -122,13 +178,20 @@ class InfoIndexManager:
         if due_dt is None:
             return False
 
-        today = date.today()
+        now = datetime.now()
+        today = now.date()
         due_day = due_dt.date()
         if due_mode == "today":
             return due_day == today
         if due_mode == "overdue":
+            precision = str(due_precision or "date").strip().lower()
+            if precision == "datetime":
+                return due_dt < now
             return due_day < today
         if due_mode == "upcoming":
+            precision = str(due_precision or "date").strip().lower()
+            if precision == "datetime":
+                return due_dt > now
             return due_day > today
         return True
 
@@ -159,6 +222,11 @@ class InfoIndexManager:
             created_at = str(getattr(window, "created_at", "") or "")
             updated_at = str(getattr(window, "updated_at", "") or "")
             due_at = str(getattr(window, "due_at", "") or "")
+            due_time = str(getattr(window, "due_time", "") or "")
+            due_timezone = str(getattr(window, "due_timezone", "") or "")
+            due_precision = str(getattr(window, "due_precision", "date") or "date").strip().lower()
+            if due_precision not in {"date", "datetime"}:
+                due_precision = "date"
             is_archived = bool(getattr(window, "is_archived", False))
             content_mode = str(getattr(window, "content_mode", "note") or "note").lower()
             display_title = self._build_display_title(title, first_line, window_uuid)
@@ -174,6 +242,9 @@ class InfoIndexManager:
                     created_at=created_at,
                     updated_at=updated_at,
                     due_at=due_at,
+                    due_time=due_time,
+                    due_timezone=due_timezone,
+                    due_precision=due_precision,
                     is_archived=is_archived,
                 )
             )
@@ -215,6 +286,9 @@ class InfoIndexManager:
                         created_at=created_at,
                         updated_at=updated_at,
                         due_at=due_at,
+                        due_time=due_time,
+                        due_timezone=due_timezone,
+                        due_precision=due_precision,
                         is_archived=is_archived,
                     )
                 )
@@ -264,19 +338,26 @@ class InfoIndexManager:
 
     def query_tasks(self, items: Sequence[TaskIndexItem], query: InfoQuery) -> List[TaskIndexItem]:
         archive_scope = self._effective_archive_scope(query)
+        item_scope, _content_mode_filter = self._normalize_query_filters(query)
+        if item_scope == "notes":
+            return []
         out: List[TaskIndexItem] = []
         for item in list(items or []):
             if archive_scope == "active" and item.is_archived:
                 continue
             if archive_scope == "archived" and not item.is_archived:
                 continue
-            if not self._matches_mode(query.mode_filter, "task"):
-                continue
             if query.starred_only and not item.is_starred:
                 continue
             if query.open_tasks_only and item.done:
                 continue
-            if not self._matches_due(query.due_filter, item.due_at):
+            if not self._matches_due(
+                query.due_filter,
+                item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            ):
                 continue
             if not self._matches_tag(query.tag, item.tags):
                 continue
@@ -287,17 +368,28 @@ class InfoIndexManager:
 
     def query_notes(self, items: Sequence[NoteIndexItem], query: InfoQuery) -> List[NoteIndexItem]:
         archive_scope = self._effective_archive_scope(query)
+        item_scope, content_mode_filter = self._normalize_query_filters(query)
         out: List[NoteIndexItem] = []
         for item in list(items or []):
             if archive_scope == "active" and item.is_archived:
                 continue
             if archive_scope == "archived" and not item.is_archived:
                 continue
-            if not self._matches_mode(query.mode_filter, item.content_mode):
+            if item_scope == "tasks" and str(item.content_mode or "").lower() != "task":
+                continue
+            if item_scope == "notes" and str(item.content_mode or "").lower() != "note":
+                continue
+            if item_scope == "all" and not self._matches_mode(content_mode_filter, item.content_mode):
                 continue
             if query.starred_only and not item.is_starred:
                 continue
-            if not self._matches_due(query.due_filter, item.due_at):
+            if not self._matches_due(
+                query.due_filter,
+                item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            ):
                 continue
             if not self._matches_tag(query.tag, item.tags):
                 continue
@@ -320,7 +412,12 @@ class InfoIndexManager:
             return sorted(
                 items,
                 key=lambda item: (
-                    self._parse_due_for_sort(item.due_at),
+                    self._parse_due_for_sort(
+                        item.due_at,
+                        due_time=item.due_time,
+                        due_timezone=item.due_timezone,
+                        due_precision=item.due_precision,
+                    ),
                     self._parse_iso(item.updated_at),
                     item.window_uuid,
                     item.line_index,
@@ -360,7 +457,12 @@ class InfoIndexManager:
             return sorted(
                 items,
                 key=lambda item: (
-                    self._parse_due_for_sort(item.due_at),
+                    self._parse_due_for_sort(
+                        item.due_at,
+                        due_time=item.due_time,
+                        due_timezone=item.due_timezone,
+                        due_precision=item.due_precision,
+                    ),
                     self._parse_iso(item.updated_at),
                     item.window_uuid,
                 ),
@@ -391,15 +493,28 @@ class InfoIndexManager:
         open_tasks = 0
         done_tasks = 0
         overdue_tasks = 0
-        today = date.today()
+        now = datetime.now()
+        today = now.date()
 
         for item in list(tasks or []):
             if item.done:
                 done_tasks += 1
                 continue
             open_tasks += 1
-            due_dt = self._parse_due_iso(item.due_at)
-            if due_dt is not None and due_dt.date() < today:
+            due_dt = compose_due_datetime(
+                due_at=item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            )
+            precision = str(item.due_precision or "date").strip().lower()
+            if due_dt is None:
+                continue
+            if precision == "datetime":
+                is_overdue = due_dt < now
+            else:
+                is_overdue = due_dt.date() < today
+            if is_overdue:
                 overdue_tasks += 1
 
         starred_notes = sum(1 for note in list(notes or []) if bool(note.is_starred))

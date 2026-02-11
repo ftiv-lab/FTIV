@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 from managers.info_index_manager import InfoIndexManager, InfoQuery, InfoStats, NoteIndexItem, TaskIndexItem
 from ui.dialogs import BulkTagEditDialog
 from ui.widgets import CollapsibleBox
-from utils.due_date import classify_due, display_due_iso
+from utils.due_date import classify_due, format_due_for_display
 from utils.translator import tr
 
 
@@ -83,6 +83,7 @@ class InfoTab(QWidget):
 
     _DUE_FILTER_VALUES = ("all", "today", "overdue", "upcoming", "dated", "undated")
     _MODE_FILTER_VALUES = ("all", "task", "note")
+    _ITEM_SCOPE_VALUES = ("all", "tasks", "notes")
     _ARCHIVE_SCOPE_VALUES = ("active", "archived", "all")
     _SORT_BY_VALUES = ("updated", "due", "created", "title")
     _SMART_VIEW_KEYS = ("all", "open", "today", "overdue", "starred", "archived")
@@ -336,6 +337,15 @@ class InfoTab(QWidget):
         layout.addWidget(self.operation_summary_row)
 
     @staticmethod
+    def _derive_item_scope_from_mode(mode_filter: str) -> str:
+        mode = str(mode_filter or "").strip().lower()
+        if mode == "task":
+            return "tasks"
+        if mode == "note":
+            return "notes"
+        return "all"
+
+    @staticmethod
     def _default_filters() -> dict[str, Any]:
         return {
             "text": "",
@@ -345,6 +355,8 @@ class InfoTab(QWidget):
             "archive_scope": "active",
             "due_filter": "all",
             "mode_filter": "all",
+            "item_scope": "all",
+            "content_mode_filter": "all",
             "sort_by": "updated",
             "sort_desc": True,
         }
@@ -417,6 +429,18 @@ class InfoTab(QWidget):
 
         mode_filter = str(raw.get("mode_filter", defaults["mode_filter"]) or "").strip().lower()
         out["mode_filter"] = mode_filter if mode_filter in self._MODE_FILTER_VALUES else defaults["mode_filter"]
+
+        item_scope = str(raw.get("item_scope", defaults["item_scope"]) or "").strip().lower()
+        if item_scope not in self._ITEM_SCOPE_VALUES:
+            item_scope = self._derive_item_scope_from_mode(out["mode_filter"])
+        elif item_scope == "all" and out["mode_filter"] in {"task", "note"}:
+            item_scope = self._derive_item_scope_from_mode(out["mode_filter"])
+        out["item_scope"] = item_scope
+
+        content_mode_filter = str(raw.get("content_mode_filter", defaults["content_mode_filter"]) or "").strip().lower()
+        out["content_mode_filter"] = (
+            content_mode_filter if content_mode_filter in self._MODE_FILTER_VALUES else out["mode_filter"]
+        )
 
         sort_by = str(raw.get("sort_by", defaults["sort_by"]) or "").strip().lower()
         out["sort_by"] = sort_by if sort_by in self._SORT_BY_VALUES else defaults["sort_by"]
@@ -749,6 +773,7 @@ class InfoTab(QWidget):
             self.refresh_data()
 
     def _collect_filter_state(self) -> dict[str, Any]:
+        mode_filter = str(self.cmb_mode_filter.currentData() or "all")
         return self._sanitize_filters(
             {
                 "text": self.edit_search.text().strip(),
@@ -757,7 +782,9 @@ class InfoTab(QWidget):
                 "open_tasks_only": self.chk_open_only.isChecked(),
                 "archive_scope": str(self.cmb_archive_scope.currentData() or "active"),
                 "due_filter": str(self.cmb_due_filter.currentData() or "all"),
-                "mode_filter": str(self.cmb_mode_filter.currentData() or "all"),
+                "mode_filter": mode_filter,
+                "item_scope": self._derive_item_scope_from_mode(mode_filter),
+                "content_mode_filter": mode_filter,
                 "sort_by": str(self.cmb_sort_by.currentData() or "updated"),
                 "sort_desc": self.btn_sort_desc.isChecked(),
             }
@@ -823,6 +850,8 @@ class InfoTab(QWidget):
         self._apply_preset_by_id("builtin:all", refresh=True, persist_last=True)
 
     def _build_query(self) -> InfoQuery:
+        mode_filter = str(self.cmb_mode_filter.currentData() or "all")
+        item_scope = self._derive_item_scope_from_mode(mode_filter)
         return InfoQuery(
             text=self.edit_search.text().strip(),
             tag=self.edit_tag_filter.text().strip(),
@@ -831,7 +860,9 @@ class InfoTab(QWidget):
             include_archived=False,
             archive_scope=str(self.cmb_archive_scope.currentData() or "active"),
             due_filter=str(self.cmb_due_filter.currentData() or "all"),
-            mode_filter=str(self.cmb_mode_filter.currentData() or "all"),
+            mode_filter=mode_filter,
+            item_scope=item_scope,
+            content_mode_filter=mode_filter,
             sort_by=str(self.cmb_sort_by.currentData() or "updated"),
             sort_desc=self.btn_sort_desc.isChecked(),
         )
@@ -903,8 +934,18 @@ class InfoTab(QWidget):
 
             for item in items:
                 text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
-                due_text = display_due_iso(item.due_at)
-                due_state = classify_due(item.due_at)
+                due_text = format_due_for_display(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
+                due_state = classify_due(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
                 badges = self._build_due_badges(
                     due_state, is_archived=bool(item.is_archived), is_done_task=bool(item.done)
                 )
@@ -949,8 +990,18 @@ class InfoTab(QWidget):
                     mode=mode_text,
                     first_line=item.first_line,
                 )
-                due_text = display_due_iso(item.due_at)
-                due_state = classify_due(item.due_at)
+                due_text = format_due_for_display(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
+                due_state = classify_due(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
                 badges = self._build_due_badges(due_state, is_archived=bool(item.is_archived))
                 if due_text:
                     line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"

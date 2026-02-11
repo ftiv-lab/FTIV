@@ -176,6 +176,32 @@ class TextPropertiesMixin:
         self.config.due_at = str(value or "")
 
     @property
+    def due_time(self) -> str:
+        return str(getattr(self.config, "due_time", "") or "")
+
+    @due_time.setter
+    def due_time(self, value: str) -> None:
+        self.config.due_time = str(value or "")
+
+    @property
+    def due_timezone(self) -> str:
+        return str(getattr(self.config, "due_timezone", "") or "")
+
+    @due_timezone.setter
+    def due_timezone(self, value: str) -> None:
+        self.config.due_timezone = str(value or "")
+
+    @property
+    def due_precision(self) -> str:
+        raw = str(getattr(self.config, "due_precision", "date") or "date").strip().lower()
+        return "datetime" if raw == "datetime" else "date"
+
+    @due_precision.setter
+    def due_precision(self, value: str) -> None:
+        normalized = "datetime" if str(value or "").strip().lower() == "datetime" else "date"
+        self.config.due_precision = normalized
+
+    @property
     def is_archived(self) -> bool:
         return bool(getattr(self.config, "is_archived", False))
 

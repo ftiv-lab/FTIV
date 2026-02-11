@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from PySide6.QtWidgets import QLineEdit, QPushButton
+from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton
 
 from ui.property_panel import PropertyPanel
 
@@ -24,6 +24,15 @@ class _DummyTarget:
 
     def set_archived(self, value: bool) -> None:
         self.calls.append(("set_archived", bool(value)))
+
+
+class _DummyTargetWithUndo(_DummyTarget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.undo_calls: list[tuple[str, object, object]] = []
+
+    def set_undoable_property(self, key: str, value: object, action: object = None) -> None:
+        self.undo_calls.append((key, value, action))
 
 
 class _DummyOrientationTarget:
@@ -56,6 +65,11 @@ def _make_panel():
     panel.edit_note_title = QLineEdit()
     panel.edit_note_tags = QLineEdit()
     panel.edit_note_due_at = QLineEdit()
+    panel.cmb_note_due_precision = QComboBox()
+    panel.cmb_note_due_precision.addItem("Date", "date")
+    panel.cmb_note_due_precision.addItem("Datetime", "datetime")
+    panel.edit_note_due_time = QLineEdit()
+    panel.edit_note_due_timezone = QLineEdit()
     panel.btn_note_star = QPushButton()
     panel.btn_note_star.setCheckable(True)
     panel.btn_note_archived = QPushButton()
@@ -150,3 +164,77 @@ def test_update_text_values_syncs_orientation_toggle_in_task_mode(qapp):
 
     assert panel.btn_text_orientation.isChecked() is False
     assert panel.btn_text_orientation.toolTip() != ""
+
+
+def test_apply_note_meta_invalid_due_time_warns_but_saves_date(qapp):
+    _ = qapp
+    panel = _make_panel()
+    target = _DummyTargetWithUndo()
+    panel.edit_note_due_at.setText("2026-03-10")
+    panel.cmb_note_due_precision.setCurrentIndex(panel.cmb_note_due_precision.findData("datetime"))
+    panel.edit_note_due_time.setText("99:99")
+    panel.edit_note_due_timezone.setText("Asia/Tokyo")
+
+    with (
+        patch("ui.property_panel.QMessageBox.warning") as mock_warning,
+        patch.object(panel, "update_property_values", MagicMock()),
+    ):
+        ok = panel._apply_note_metadata_to_target(target)
+
+    assert ok is True
+    assert ("set_due_at", "2026-03-10T00:00:00") in target.calls
+    assert ("due_precision", "date", None) in target.undo_calls
+    assert ("due_time", "", None) in target.undo_calls
+    assert ("due_timezone", "", None) in target.undo_calls
+    mock_warning.assert_called_once()
+
+
+def test_apply_note_meta_invalid_timezone_warns_and_clears_timezone(qapp):
+    _ = qapp
+    panel = _make_panel()
+    target = _DummyTargetWithUndo()
+    panel.edit_note_due_at.setText("2026-03-10")
+    panel.cmb_note_due_precision.setCurrentIndex(panel.cmb_note_due_precision.findData("datetime"))
+    panel.edit_note_due_time.setText("09:30")
+    panel.edit_note_due_timezone.setText("Mars/OlympusMons")
+
+    with (
+        patch("ui.property_panel.QMessageBox.warning") as mock_warning,
+        patch.object(panel, "update_property_values", MagicMock()),
+    ):
+        ok = panel._apply_note_metadata_to_target(target)
+
+    assert ok is True
+    assert ("set_due_at", "2026-03-10T00:00:00") in target.calls
+    assert ("due_precision", "datetime", None) in target.undo_calls
+    assert ("due_time", "09:30", None) in target.undo_calls
+    assert ("due_timezone", "", None) in target.undo_calls
+    mock_warning.assert_called_once()
+
+
+def test_property_panel_section_state_persists_to_app_settings(qapp):
+    _ = qapp
+    settings = SimpleNamespace(property_panel_section_state={})
+    settings_manager = SimpleNamespace(save_app_settings=MagicMock())
+    mw = SimpleNamespace(
+        info_tab=SimpleNamespace(refresh_data=lambda: None), app_settings=settings, settings_manager=settings_manager
+    )
+    panel = PropertyPanel(main_window=mw)
+
+    panel._save_property_panel_section_state("text_content", False)
+
+    assert settings.property_panel_section_state["text_content"] is False
+    settings_manager.save_app_settings.assert_called_once()
+
+
+def test_create_collapsible_group_uses_saved_state(qapp):
+    _ = qapp
+    settings = SimpleNamespace(property_panel_section_state={"shadow": False})
+    mw = SimpleNamespace(
+        info_tab=SimpleNamespace(refresh_data=lambda: None), app_settings=settings, settings_manager=None
+    )
+    panel = PropertyPanel(main_window=mw)
+
+    _ = panel.create_collapsible_group("Shadow", expanded=True, state_key="shadow")
+
+    assert panel._section_boxes["shadow"].toggle_button.isChecked() is False

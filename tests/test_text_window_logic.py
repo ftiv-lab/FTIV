@@ -5,11 +5,13 @@ load_text_defaults, propagate_scale_to_children,
 set_undoable_property (font_size debounce), toggle 系をカバー。
 """
 
+from datetime import datetime
 from unittest.mock import MagicMock, mock_open, patch
 
 from PySide6.QtCore import QPoint
 
 from models.window_config import TextWindowConfig
+from utils.due_date import classify_due
 
 
 # ------------------------------------------------------------------
@@ -317,12 +319,15 @@ class TestTaskModeHelpers:
     def test_set_due_at_normalizes_date(self):
         w = _make_text_window()
         w.config.due_at = ""
+        w.config.due_time = ""
+        w.config.due_timezone = ""
+        w.config.due_precision = "date"
         w._touch_updated_at = MagicMock()
 
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.set_due_at("2026-03-01")
 
-        mock_prop.assert_called_once_with("due_at", "2026-03-01T00:00:00", "update_text")
+        mock_prop.assert_any_call("due_at", "2026-03-01T00:00:00", "update_text")
         w._touch_updated_at.assert_called_once()
 
     def test_set_due_at_invalid_is_noop(self):
@@ -344,8 +349,60 @@ class TestTaskModeHelpers:
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.clear_due_at()
 
-        mock_prop.assert_called_once_with("due_at", "", "update_text")
+        mock_prop.assert_any_call("due_at", "", "update_text")
         w._touch_updated_at.assert_called_once()
+
+    def test_set_due_at_clears_datetime_detail_fields(self):
+        w = _make_text_window()
+        w.config.due_at = "2026-03-01T00:00:00"
+        w.config.due_time = "09:30"
+        w.config.due_timezone = "Asia/Tokyo"
+        w.config.due_precision = "datetime"
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_due_at("2026-03-02")
+
+        mock_prop.assert_any_call("due_at", "2026-03-02T00:00:00", "update_text")
+        mock_prop.assert_any_call("due_precision", "date", None)
+        mock_prop.assert_any_call("due_time", "", None)
+        mock_prop.assert_any_call("due_timezone", "", None)
+        w._touch_updated_at.assert_called_once()
+
+    def test_clear_due_at_clears_datetime_detail_fields(self):
+        w = _make_text_window()
+        w.config.due_at = "2026-03-01T00:00:00"
+        w.config.due_time = "09:30"
+        w.config.due_timezone = "Asia/Tokyo"
+        w.config.due_precision = "datetime"
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.clear_due_at()
+
+        mock_prop.assert_any_call("due_at", "", "update_text")
+        mock_prop.assert_any_call("due_precision", "date", None)
+        mock_prop.assert_any_call("due_time", "", None)
+        mock_prop.assert_any_call("due_timezone", "", None)
+        w._touch_updated_at.assert_called_once()
+
+    def test_classify_due_datetime_uses_time_threshold(self):
+        state = classify_due(
+            "2026-03-01T00:00:00",
+            due_time="09:30",
+            due_precision="datetime",
+            now=datetime(2026, 3, 1, 10, 0),
+        )
+        assert state == "overdue"
+
+    def test_classify_due_datetime_today_when_time_not_passed(self):
+        state = classify_due(
+            "2026-03-01T00:00:00",
+            due_time="23:00",
+            due_precision="datetime",
+            now=datetime(2026, 3, 1, 10, 0),
+        )
+        assert state == "today"
 
     def test_bulk_set_task_done_updates_selected_indices(self):
         w = _make_text_window()
