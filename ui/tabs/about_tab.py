@@ -226,3 +226,6 @@ class AboutTab(QWidget):
         self.label_cache.setText(tr("label_cache"))
         self.hint_cache.setText(tr("hint_cache"))
         self.btn_apply_perf.setText(tr("btn_apply_perf"))
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        _ = enabled

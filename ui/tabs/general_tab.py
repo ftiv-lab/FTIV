@@ -1,17 +1,21 @@
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QButtonGroup,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QMenu,
     QPushButton,
     QRadioButton,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ui.action_priority_helper import ActionPriorityHelper
 from utils.overlay_settings import save_overlay_settings
 from utils.translator import get_lang, tr
 
@@ -25,6 +29,8 @@ class GeneralTab(QWidget):
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
         self.mw = main_window
+        self._is_compact_mode = False
+        self._compact_label_entries: list[tuple[QPushButton, str, str]] = []
 
         # 将来的な完全分離を見据えて self.mw への依存を整理しつつ、
         # Phase 1 では互換性のため mw の属性にもセットする。
@@ -183,7 +189,59 @@ class GeneralTab(QWidget):
         danger_layout.addWidget(self.btn_factory_reset, 1)
 
         layout.addWidget(self.danger_group)
+        self._init_priority_action_menu()
+        self.danger_group.hide()
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
+        self.set_compact_mode(False)
         layout.addStretch()
+
+    def _init_priority_action_menu(self) -> None:
+        self.menu_priority_actions = QMenu(self)
+        self.act_close_all_everything = QAction("", self)
+        self.act_close_all_everything.triggered.connect(self.mw.main_controller.bulk_manager.close_all_everything)
+        self.menu_priority_actions.addAction(self.act_close_all_everything)
+
+        self.act_factory_reset = QAction("", self)
+        self.act_factory_reset.triggered.connect(self._on_factory_reset)
+        self.menu_priority_actions.addAction(self.act_factory_reset)
+
+        self.btn_general_priority_menu = QToolButton(self)
+        self.btn_general_priority_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_general_priority_menu.setMenu(self.menu_priority_actions)
+        self._refresh_priority_action_texts()
+        self.layout().addWidget(self.btn_general_priority_menu)
+
+    def _refresh_priority_action_texts(self) -> None:
+        self.act_close_all_everything.setText(tr("btn_close_all_everything"))
+        self.act_factory_reset.setText(tr("btn_factory_reset"))
+        self.btn_general_priority_menu.setText(tr("general_priority_actions"))
+        self.btn_general_priority_menu.setToolTip(tr("general_priority_actions_tooltip"))
+
+    def _build_compact_label_entries(self) -> list[tuple[QPushButton, str, str]]:
+        return [
+            (self.btn_disable_all_ct, tr("menu_disable_all_click_through"), tr("menu_disable_all_click_through_short")),
+            (
+                self.btn_change_selection_frame_color,
+                tr("btn_change_selection_frame_color"),
+                tr("btn_change_selection_frame_color_short"),
+            ),
+            (
+                self.btn_change_selection_frame_width,
+                tr("btn_change_selection_frame_width"),
+                tr("btn_change_selection_frame_width_short"),
+            ),
+            (self.btn_save_project, tr("menu_save_project"), tr("menu_save_project_short")),
+            (self.btn_load_project, tr("menu_load_project"), tr("menu_load_project_short")),
+        ]
+
+    def _apply_compact_labels(self) -> None:
+        ActionPriorityHelper.apply_label_mode(self._compact_label_entries, self._is_compact_mode)
+        self._refresh_priority_action_texts()
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        self._is_compact_mode = bool(enabled)
+        self._apply_compact_labels()
 
     def _on_factory_reset(self) -> None:
         """工場出荷状態リセットの呼び出し。"""
@@ -286,6 +344,9 @@ class GeneralTab(QWidget):
         self.danger_group.setTitle(tr("grp_danger_zone"))
         self.btn_close_all_everything.setText(tr("btn_close_all_everything"))
         self.btn_factory_reset.setText(tr("btn_factory_reset"))
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
+        self._apply_compact_labels()
 
     def update_prop_button_state(self, is_active: bool) -> None:
         """プロパティパネルボタンのトグル状態・スタイル更新。"""

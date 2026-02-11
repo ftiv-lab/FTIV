@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -8,14 +10,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ui.action_priority_helper import ActionPriorityHelper
 from ui.dialogs import DatePickerDialog
 from utils.due_date import display_due_iso, normalize_due_input_allow_empty
 from utils.translator import tr
@@ -37,6 +42,16 @@ class TextTab(QWidget):
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
         self.mw = main_window
+        self._is_compact_mode = False
+        self._compact_label_entries: list[tuple[Any, str, str]] = []
+        self.txt_btn_manage_save_png_selected: Optional[QPushButton] = None
+        self.txt_btn_manage_save_selected_json: Optional[QPushButton] = None
+        self.txt_btn_manage_load_scene_json: Optional[QPushButton] = None
+        self.txt_btn_manage_style_gallery: Optional[QPushButton] = None
+        self.txt_btn_sel_show_others: Optional[QPushButton] = None
+        self.txt_btn_sel_close_others: Optional[QPushButton] = None
+        self.btn_def_spacing_h: Optional[QPushButton] = None
+        self.btn_def_spacing_v: Optional[QPushButton] = None
 
         self._setup_ui()
 
@@ -124,12 +139,87 @@ class TextTab(QWidget):
         self.txt_scroll_area.setWidget(self.txt_scroll_content)
         layout.addWidget(self.txt_scroll_area, 1)
 
+        self._init_priority_action_menu()
+        self._register_context_menu_paths()
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
         self.set_compact_mode(False)
 
         # 初期反映（Selected表示 + Selected系ボタン有効無効）
         # まだ attributes を注入していないが、self メソッド内なら self.* を見に行けばよい
         if hasattr(self.mw, "last_selected_window"):
             self.on_selection_changed(getattr(self.mw, "last_selected_window", None))
+
+    def _init_priority_action_menu(self) -> None:
+        self.menu_priority_actions = QMenu(self)
+
+        self.act_txt_close_selected = QAction("", self)
+        self.act_txt_close_selected.triggered.connect(
+            lambda: self.mw.main_controller.txt_actions.run_selected_visibility_action("close")
+        )
+        self.menu_priority_actions.addAction(self.act_txt_close_selected)
+
+        self.act_txt_close_all = QAction("", self)
+        self.act_txt_close_all.triggered.connect(self.mw.main_controller.bulk_manager.close_all_text_windows)
+        self.menu_priority_actions.addAction(self.act_txt_close_all)
+
+        self.menu_priority_actions.addSeparator()
+
+        self.act_txt_toggle_front = QAction("", self)
+        self.act_txt_toggle_front.triggered.connect(
+            self.mw.main_controller.bulk_manager.toggle_all_frontmost_text_windows
+        )
+        self.menu_priority_actions.addAction(self.act_txt_toggle_front)
+
+        self.act_txt_toggle_click = QAction("", self)
+        self.act_txt_toggle_click.triggered.connect(self.mw.main_controller.bulk_manager.toggle_text_click_through)
+        self.menu_priority_actions.addAction(self.act_txt_toggle_click)
+
+        self.btn_txt_priority_menu = QToolButton(self)
+        self.btn_txt_priority_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_txt_priority_menu.setMenu(self.menu_priority_actions)
+        self.txt_subtabs.setCornerWidget(self.btn_txt_priority_menu, Qt.Corner.TopRightCorner)
+        self._refresh_priority_action_texts()
+
+    def _register_context_menu_paths(self) -> None:
+        self.txt_subtabs.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.txt_subtabs.customContextMenuRequested.connect(
+            lambda pos: self._show_priority_menu_global(self.txt_subtabs.mapToGlobal(pos))
+        )
+        self.txt_selected_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.txt_selected_label.customContextMenuRequested.connect(
+            lambda pos: self._show_priority_menu_global(self.txt_selected_label.mapToGlobal(pos))
+        )
+
+    def _show_priority_menu_global(self, global_pos: Any) -> None:
+        self.menu_priority_actions.exec(global_pos)
+
+    def _refresh_priority_action_texts(self) -> None:
+        self.act_txt_close_selected.setText(tr("menu_close_text"))
+        self.act_txt_close_all.setText(tr("menu_close_all_text"))
+        self.act_txt_toggle_front.setText(tr("menu_switch_all_front_text"))
+        self.act_txt_toggle_click.setText(tr("menu_toggle_click_through_text"))
+        self.btn_txt_priority_menu.setText(tr("text_priority_actions"))
+        self.btn_txt_priority_menu.setToolTip(tr("text_priority_actions_tooltip"))
+
+    def _build_compact_label_entries(self) -> list[tuple[Any, str, str]]:
+        return [
+            (self.btn_add_text_main, "+ " + tr("menu_add_text"), "+ " + tr("menu_add_text_short")),
+            (self.txt_btn_manage_add, "+ " + tr("menu_add_text"), "+ " + tr("menu_add_text_short")),
+            (self.txt_btn_manage_save_png_selected, tr("menu_save_png"), tr("menu_save_png_short")),
+            (self.txt_btn_manage_save_selected_json, tr("menu_save_json"), tr("menu_save_json_short")),
+            (self.txt_btn_manage_load_scene_json, tr("menu_load_json"), tr("menu_load_json_short")),
+            (self.txt_btn_manage_style_gallery, tr("menu_open_style_gallery"), tr("menu_open_style_gallery_short")),
+            (self.txt_btn_sel_hide_others, tr("menu_hide_others"), tr("menu_hide_others_short")),
+            (self.txt_btn_sel_show_others, tr("menu_show_others"), tr("menu_show_others_short")),
+            (self.txt_btn_sel_close_others, tr("menu_close_others"), tr("menu_close_others_short")),
+            (self.btn_def_spacing_h, tr("btn_set_def_spacing_h"), tr("btn_set_def_spacing_h_short")),
+            (self.btn_def_spacing_v, tr("btn_set_def_spacing_v"), tr("btn_set_def_spacing_v_short")),
+        ]
+
+    def _apply_compact_labels(self) -> None:
+        ActionPriorityHelper.apply_label_mode(self._compact_label_entries, self._is_compact_mode)
+        self._refresh_priority_action_texts()
 
     def _build_manage_subtab(self) -> QWidget:
         tab = QWidget()
@@ -310,17 +400,11 @@ class TextTab(QWidget):
             lambda: self.mw.main_controller.txt_actions.run_selected_layout_action("open_spacing_settings")
         )
 
-        # Content Mode (Note / Task)
-        self.btn_content_mode_note = QPushButton(tr("label_content_mode_note"))
-        self.btn_content_mode_note.setProperty("class", "toggle")
-        self.btn_content_mode_note.setCheckable(True)
-        self.btn_content_mode_note.setChecked(True)
-        self.btn_content_mode_note.clicked.connect(lambda: self._set_content_mode("note"))
-
-        self.btn_content_mode_task = QPushButton(tr("label_content_mode_task"))
+        # Content Mode (Task toggle)
+        self.btn_content_mode_task = QPushButton(tr("menu_toggle_task_mode"))
         self.btn_content_mode_task.setProperty("class", "toggle")
         self.btn_content_mode_task.setCheckable(True)
-        self.btn_content_mode_task.clicked.connect(lambda: self._set_content_mode("task"))
+        self.btn_content_mode_task.toggled.connect(self._set_content_mode)
 
         self.lbl_note_title = QLabel(tr("label_note_title"))
         self.edit_note_title = QLineEdit()
@@ -353,8 +437,7 @@ class TextTab(QWidget):
         self.btn_apply_note_meta.setObjectName("ActionBtn")
         self.btn_apply_note_meta.clicked.connect(self._apply_note_metadata)
 
-        grid_sel.addWidget(self.btn_content_mode_note, 0, 0)
-        grid_sel.addWidget(self.btn_content_mode_task, 0, 1)
+        grid_sel.addWidget(self.btn_content_mode_task, 0, 0, 1, 2)
         grid_sel.addWidget(self.lbl_note_title, 1, 0)
         grid_sel.addWidget(self.edit_note_title, 1, 1)
         grid_sel.addWidget(self.lbl_note_tags, 2, 0)
@@ -489,28 +572,27 @@ class TextTab(QWidget):
         self._sync_content_mode_buttons(mode)
         self._sync_note_meta_controls(obj)
 
-    def _set_content_mode(self, mode: str) -> None:
+    def _set_content_mode(self, checked: bool) -> None:
         """選択中のTextWindowのコンテンツモードを変更する。"""
+        mode = "task" if checked else "note"
         try:
             wm = getattr(self.mw, "window_manager", None)
             if wm is None:
+                self._sync_content_mode_buttons("note")
                 return
             sel = getattr(wm, "last_selected_window", None)
-            if sel is not None and hasattr(sel, "set_content_mode"):
+            if sel is not None and type(sel).__name__ == "TextWindow" and hasattr(sel, "set_content_mode"):
                 sel.set_content_mode(mode)
                 self._sync_check_states(sel)
             else:
-                self._sync_content_mode_buttons(mode)
+                self._sync_content_mode_buttons("note")
         except Exception:
             logger.debug("Failed to set content mode", exc_info=True)
 
     def _sync_content_mode_buttons(self, mode: str) -> None:
-        """Note/Taskボタンの排他チェック状態を同期する。"""
-        self.btn_content_mode_note.blockSignals(True)
+        """Taskモードトグルのチェック状態を同期する。"""
         self.btn_content_mode_task.blockSignals(True)
-        self.btn_content_mode_note.setChecked(mode == "note")
         self.btn_content_mode_task.setChecked(mode == "task")
-        self.btn_content_mode_note.blockSignals(False)
         self.btn_content_mode_task.blockSignals(False)
 
     @staticmethod
@@ -685,8 +767,7 @@ class TextTab(QWidget):
         self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
 
         self.txt_btn_sel_spacing_settings.setText(tr("menu_margin_settings"))
-        self.btn_content_mode_note.setText(tr("label_content_mode_note"))
-        self.btn_content_mode_task.setText(tr("label_content_mode_task"))
+        self.btn_content_mode_task.setText(tr("menu_toggle_task_mode"))
         self.lbl_note_title.setText(tr("label_note_title"))
         self.lbl_note_tags.setText(tr("label_note_tags"))
         self.lbl_note_due_at.setText(tr("label_note_due_at"))
@@ -713,10 +794,15 @@ class TextTab(QWidget):
         # Update selected label if needed
         # (This is usually triggered by selection change, but we could re-trigger it)
         # self.on_selection_changed(getattr(self.mw, "last_selected_window", None))
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
+        self._apply_compact_labels()
 
     def set_compact_mode(self, enabled: bool) -> None:
+        self._is_compact_mode = bool(enabled)
         self.btn_add_text_main.setMinimumHeight(40 if enabled else 50)
         self.txt_btn_manage_add.setMinimumHeight(34 if enabled else 40)
+        self._apply_compact_labels()
 
     def update_prop_button_state(self, is_active: bool) -> None:
         """プロパティパネルボタンのトグル状態・スタイル更新。"""
@@ -761,8 +847,6 @@ class TextTab(QWidget):
             "txt_btn_sel_offset_prop",
             "txt_btn_sel_spacing_settings",
             # Content Mode
-            "btn_content_mode_note",
-            "btn_content_mode_task",
             "edit_note_title",
             "edit_note_tags",
             "chk_note_star",
@@ -787,6 +871,7 @@ class TextTab(QWidget):
             # Manage（Selected）
             "txt_btn_manage_clone_selected",
             "txt_btn_manage_save_png_selected",
+            "btn_content_mode_task",
             "edit_note_due_at",
             "btn_pick_note_due_at",
             "chk_note_archived",
@@ -798,3 +883,5 @@ class TextTab(QWidget):
                     getattr(self, attr).setEnabled(bool(is_text_like and is_text_window))
                 except Exception:
                     logger.debug(f"Failed to set enabled state for (TextWindow only) {attr}", exc_info=True)
+        if hasattr(self, "act_txt_close_selected"):
+            self.act_txt_close_selected.setEnabled(bool(is_text_like))

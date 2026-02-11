@@ -2,7 +2,7 @@ from functools import partial
 from typing import Any
 
 from PySide6.QtCore import QPoint
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QMessageBox
 
 from utils.translator import tr
@@ -19,6 +19,24 @@ class MenuManager:
         try:
             menu = QMenu(self.mw)
             menu.addAction(tr("menu_about")).triggered.connect(self.mw.show_about_dialog)
+            view_menu = menu.addMenu(tr("menu_view"))
+            density_menu = view_menu.addMenu(tr("menu_ui_density"))
+            density_group = QActionGroup(menu)
+            density_group.setExclusive(True)
+            current_density = "auto"
+            if hasattr(self.mw, "get_main_ui_density_mode"):
+                current_density = str(self.mw.get_main_ui_density_mode() or "auto")
+            density_items = [
+                ("auto", tr("menu_ui_density_auto")),
+                ("comfortable", tr("menu_ui_density_comfortable")),
+                ("compact", tr("menu_ui_density_compact")),
+            ]
+            for density_key, density_text in density_items:
+                action = density_menu.addAction(density_text)
+                action.setCheckable(True)
+                action.setChecked(density_key == current_density)
+                action.triggered.connect(partial(self.mw.set_main_ui_density_mode, density_key))
+                density_group.addAction(action)
             menu.addSeparator()
 
             # テキスト

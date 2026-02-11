@@ -26,6 +26,30 @@ class _DummyTarget:
         self.calls.append(("set_archived", bool(value)))
 
 
+class _DummyOrientationTarget:
+    def __init__(self, is_vertical: bool = False, task_mode: bool = False) -> None:
+        self.calls: list[tuple[str, object, str]] = []
+        self.is_vertical = is_vertical
+        self._task_mode = task_mode
+        self.text_opacity = 100
+        self.background_opacity = 100
+        self.background_corner_ratio = 0.0
+        self.shadow_opacity = 100
+        self.shadow_blur = 0
+        self.shadow_enabled = False
+        self.shadow_color = "#000000FF"
+        self.shadow_offset_x = 0.0
+        self.shadow_offset_y = 0.0
+
+    def is_task_mode(self) -> bool:
+        return self._task_mode
+
+    def set_undoable_property(self, key: str, value: object, action: str) -> None:
+        if key == "is_vertical":
+            self.is_vertical = bool(value)
+        self.calls.append((key, value, action))
+
+
 def _make_panel():
     mw = SimpleNamespace(info_tab=SimpleNamespace(refresh_data=lambda: None))
     panel = PropertyPanel(main_window=mw)
@@ -94,3 +118,35 @@ def test_apply_note_meta_valid_due_updates_target(qapp):
     assert ("set_starred", True) in target.calls
     assert ("set_due_at", "2026-03-10T00:00:00") in target.calls
     assert ("set_archived", True) in target.calls
+
+
+def test_text_orientation_toggle_routes_to_undoable_property_and_resync(qapp):
+    _ = qapp
+    panel = _make_panel()
+    target = _DummyOrientationTarget(is_vertical=False, task_mode=False)
+
+    with patch.object(panel, "update_property_values", MagicMock()) as mock_update:
+        panel._on_text_orientation_toggled(True, target)
+
+    assert ("is_vertical", True, "update_text") in target.calls
+    mock_update.assert_called_once()
+
+
+def test_update_text_values_syncs_orientation_toggle_in_task_mode(qapp):
+    _ = qapp
+    panel = _make_panel()
+    target = _DummyOrientationTarget(is_vertical=False, task_mode=True)
+    panel.current_target = target
+
+    panel.btn_task_mode = QPushButton()
+    panel.btn_task_mode.setCheckable(True)
+    panel.btn_task_mode.setChecked(True)
+
+    panel.btn_text_orientation = QPushButton()
+    panel.btn_text_orientation.setCheckable(True)
+    panel.btn_text_orientation.setChecked(True)
+
+    panel._update_text_values()
+
+    assert panel.btn_text_orientation.isChecked() is False
+    assert panel.btn_text_orientation.toolTip() != ""

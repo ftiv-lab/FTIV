@@ -19,6 +19,8 @@ _INFO_MODE_FILTERS = {"all", "task", "note"}
 _INFO_SORT_FIELDS = {"updated", "due", "created", "title"}
 _INFO_ARCHIVE_SCOPES = {"active", "archived", "all"}
 _INFO_LAYOUT_MODES = {"auto", "compact", "regular"}
+_MAIN_UI_DENSITY_MODES = {"auto", "comfortable", "compact"}
+_TAB_UI_OVERRIDE_KEYS = {"general", "text", "image", "scene", "connections", "info", "animation", "about"}
 
 
 def _sanitize_main_window_dimension(value: Any) -> int:
@@ -129,6 +131,25 @@ def _sanitize_info_layout_mode(value: Any) -> str:
     return mode
 
 
+def _sanitize_main_ui_density_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    if mode not in _MAIN_UI_DENSITY_MODES:
+        return "auto"
+    return mode
+
+
+def _sanitize_tab_ui_compact_overrides(raw: Any) -> dict[str, bool]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, bool] = {}
+    for key, value in raw.items():
+        normalized = str(key or "").strip().lower()
+        if normalized not in _TAB_UI_OVERRIDE_KEYS:
+            continue
+        out[normalized] = bool(value)
+    return out
+
+
 @dataclass
 class AppSettings:
     """アプリ全体の設定。"""
@@ -147,6 +168,8 @@ class AppSettings:
     info_operation_logs: list[dict[str, Any]] = field(default_factory=list)
     info_layout_mode: str = "auto"
     info_advanced_filters_expanded: bool = False
+    main_ui_density_mode: str = "auto"
+    tab_ui_compact_overrides: dict[str, bool] = field(default_factory=dict)
     # Deprecated: load-only for backward compatibility (Phase 5A -> 5B)
     info_operations_expanded: bool = False
 
@@ -180,6 +203,10 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
             "info_operation_logs": _sanitize_info_operation_logs(settings.info_operation_logs)[-200:],
             "info_layout_mode": _sanitize_info_layout_mode(getattr(settings, "info_layout_mode", "auto")),
             "info_advanced_filters_expanded": bool(getattr(settings, "info_advanced_filters_expanded", False)),
+            "main_ui_density_mode": _sanitize_main_ui_density_mode(getattr(settings, "main_ui_density_mode", "auto")),
+            "tab_ui_compact_overrides": _sanitize_tab_ui_compact_overrides(
+                getattr(settings, "tab_ui_compact_overrides", {})
+            ),
         }
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -226,6 +253,8 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         s.info_operation_logs = _sanitize_info_operation_logs(data.get("info_operation_logs", []))
         s.info_layout_mode = _sanitize_info_layout_mode(data.get("info_layout_mode", "auto"))
         s.info_advanced_filters_expanded = bool(data.get("info_advanced_filters_expanded", False))
+        s.main_ui_density_mode = _sanitize_main_ui_density_mode(data.get("main_ui_density_mode", "auto"))
+        s.tab_ui_compact_overrides = _sanitize_tab_ui_compact_overrides(data.get("tab_ui_compact_overrides", {}))
         # Deprecated key: load-only compatibility.
         s.info_operations_expanded = bool(data.get("info_operations_expanded", False))
 

@@ -125,6 +125,9 @@ class SceneTab(QWidget):
         if hasattr(self.mw, "refresh_scene_tabs"):
             self.mw.refresh_scene_tabs()
 
+    def set_compact_mode(self, enabled: bool) -> None:
+        _ = enabled
+
 
 class ConnectionsTab(QWidget):
     """コネクタ(Line/Label)管理タブ。"""
@@ -462,3 +465,6 @@ class ConnectionsTab(QWidget):
     def bulk_open_opacity_dialog(self) -> None:
         if hasattr(self.mw.main_controller, "connector_actions"):
             self.mw.main_controller.connector_actions.bulk_open_opacity_dialog()
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        _ = enabled

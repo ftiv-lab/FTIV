@@ -232,11 +232,105 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             self.settings_manager.init_window_settings()
 
     def _setup_mainwindow_scalability(self) -> None:
-        self._compact_mode_enabled = False
         self._geometry_save_timer = QTimer(self)
         self._geometry_save_timer.setSingleShot(True)
         self._geometry_save_timer.setInterval(250)
         self._geometry_save_timer.timeout.connect(self._persist_main_window_geometry)
+        self._main_ui_density_mode = self._load_main_ui_density_mode_from_settings()
+        self._effective_ui_density_mode = ""
+        self._tab_compact_state: Dict[str, bool] = {}
+        self._tab_compact_overrides = self._load_tab_compact_overrides_from_settings()
+
+    @staticmethod
+    def _sanitize_ui_density_mode(mode: Any) -> str:
+        normalized = str(mode or "").strip().lower()
+        if normalized not in {"auto", "comfortable", "compact"}:
+            return "auto"
+        return normalized
+
+    def _load_main_ui_density_mode_from_settings(self) -> str:
+        settings = getattr(self, "app_settings", None)
+        return self._sanitize_ui_density_mode(getattr(settings, "main_ui_density_mode", "auto"))
+
+    def _load_tab_compact_overrides_from_settings(self) -> Dict[str, bool]:
+        settings = getattr(self, "app_settings", None)
+        raw = getattr(settings, "tab_ui_compact_overrides", {})
+        if not isinstance(raw, dict):
+            return {}
+        out: Dict[str, bool] = {}
+        for key in ("general", "text", "image", "scene", "connections", "info", "animation", "about"):
+            if key in raw:
+                out[key] = bool(raw[key])
+        return out
+
+    def _persist_ui_density_settings(self) -> None:
+        settings = getattr(self, "app_settings", None)
+        settings_manager = getattr(self, "settings_manager", None)
+        if settings is None:
+            return
+        settings.main_ui_density_mode = self._main_ui_density_mode
+        settings.tab_ui_compact_overrides = dict(self._tab_compact_overrides)
+        if settings_manager is not None and hasattr(settings_manager, "save_app_settings"):
+            settings_manager.save_app_settings()
+
+    def get_main_ui_density_mode(self) -> str:
+        return str(getattr(self, "_main_ui_density_mode", "auto"))
+
+    def get_effective_main_ui_density_mode(self) -> str:
+        effective = str(getattr(self, "_effective_ui_density_mode", "") or "")
+        if not effective:
+            return self._compute_effective_ui_density_mode()
+        return effective
+
+    def set_main_ui_density_mode(self, mode: str) -> None:
+        normalized = self._sanitize_ui_density_mode(mode)
+        if normalized == self._main_ui_density_mode:
+            return
+        self._main_ui_density_mode = normalized
+        self._persist_ui_density_settings()
+        self._apply_mainwindow_compact_mode(force=True)
+
+    def set_tab_compact_override(self, tab_key: str, enabled: Optional[bool]) -> None:
+        normalized = str(tab_key or "").strip().lower()
+        if normalized not in {"general", "text", "image", "scene", "connections", "info", "animation", "about"}:
+            return
+        if enabled is None:
+            self._tab_compact_overrides.pop(normalized, None)
+        else:
+            self._tab_compact_overrides[normalized] = bool(enabled)
+        self._persist_ui_density_settings()
+        self._apply_mainwindow_compact_mode(force=True)
+
+    def _iter_compactable_tabs(self) -> List[tuple[str, Any]]:
+        tab_entries = [
+            ("general", "general_tab"),
+            ("text", "text_tab"),
+            ("image", "image_tab"),
+            ("scene", "scene_tab"),
+            ("connections", "connections_tab"),
+            ("info", "info_tab"),
+            ("animation", "animation_tab"),
+            ("about", "about_tab"),
+        ]
+        out: List[tuple[str, Any]] = []
+        for key, attr_name in tab_entries:
+            tab = getattr(self, attr_name, None)
+            if tab is None:
+                continue
+            out.append((key, tab))
+        return out
+
+    def _compute_effective_ui_density_mode(self) -> str:
+        mode = self._sanitize_ui_density_mode(getattr(self, "_main_ui_density_mode", "auto"))
+        if mode != "auto":
+            return "comfortable" if mode == "comfortable" else "compact"
+
+        width = max(0, int(self.width()))
+        if width < 360:
+            return "compact"
+        if width >= 480:
+            return "comfortable"
+        return "regular"
 
     def _persist_main_window_geometry(self) -> None:
         if os.getenv("FTIV_TEST_MODE") == "1":
@@ -248,15 +342,29 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             self._geometry_save_timer.start()
 
     def _apply_mainwindow_compact_mode(self, force: bool = False) -> None:
-        compact = self.width() < 520
-        if not force and compact == bool(getattr(self, "_compact_mode_enabled", False)):
+        effective = self._compute_effective_ui_density_mode()
+        default_compact = effective != "comfortable"
+        next_state: Dict[str, bool] = {}
+        for key, _ in self._iter_compactable_tabs():
+            next_state[key] = bool(self._tab_compact_overrides.get(key, default_compact))
+
+        if (
+            not force
+            and effective == self._effective_ui_density_mode
+            and next_state == getattr(self, "_tab_compact_state", {})
+        ):
             return
-        self._compact_mode_enabled = compact
-        for tab in (self.info_tab, self.text_tab, self.image_tab, self.animation_tab):
+
+        self._effective_ui_density_mode = effective
+
+        for key, tab in self._iter_compactable_tabs():
+            compact = next_state.get(key, default_compact)
             try:
                 tab.set_compact_mode(compact)
             except Exception:
-                logger.warning("Failed to apply compact mode to tab", exc_info=True)
+                logger.warning("Failed to apply compact mode to tab: %s", key, exc_info=True)
+
+        self._tab_compact_state = next_state
 
     def handle_app_state_change(self, state: Qt.ApplicationState) -> None:
         """アプリケーションのアクティブ状態が変化した際の処理。"""

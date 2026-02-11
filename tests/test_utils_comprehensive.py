@@ -293,6 +293,8 @@ class TestAppSettings:
         assert s.info_operation_logs == []
         assert s.info_layout_mode == "auto"
         assert s.info_advanced_filters_expanded is False
+        assert s.main_ui_density_mode == "auto"
+        assert s.tab_ui_compact_overrides == {}
         assert s.info_operations_expanded is False
 
     def test_save_and_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
@@ -335,6 +337,8 @@ class TestAppSettings:
             ],
             info_layout_mode="compact",
             info_advanced_filters_expanded=True,
+            main_ui_density_mode="compact",
+            tab_ui_compact_overrides={"image": True, "text": False, "invalid": True},
             info_operations_expanded=True,
         )
         result = save_app_settings(None, str(tmp_path), settings)
@@ -357,6 +361,8 @@ class TestAppSettings:
         assert loaded.info_operation_logs[0]["action"] == "bulk_archive"
         assert loaded.info_layout_mode == "compact"
         assert loaded.info_advanced_filters_expanded is True
+        assert loaded.main_ui_density_mode == "compact"
+        assert loaded.tab_ui_compact_overrides == {"image": True, "text": False}
         # Deprecated key is load-only and should not be saved by roundtrip.
         assert loaded.info_operations_expanded is False
 
@@ -446,6 +452,36 @@ class TestAppSettings:
 
         loaded = load_app_settings(None, str(tmp_path))
         assert loaded.info_operations_expanded is True
+
+    def test_load_invalid_main_ui_density_mode_falls_back_to_auto(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {"main_ui_density_mode": "unknown"}
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.main_ui_density_mode == "auto"
+
+    def test_load_invalid_tab_ui_compact_overrides_skips_unknown(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {
+            "tab_ui_compact_overrides": {
+                "image": True,
+                "text": 0,
+                "bad_key": True,
+            }
+        }
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.tab_ui_compact_overrides == {"image": True, "text": False}
 
     def test_get_settings_path_empty_base(self) -> None:
         from utils.app_settings import _get_settings_path

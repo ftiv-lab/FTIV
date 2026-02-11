@@ -1,19 +1,24 @@
 from functools import partial
 from typing import TYPE_CHECKING, Any, Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ui.action_priority_helper import ActionPriorityHelper
 from utils.translator import tr
 
 if TYPE_CHECKING:
@@ -29,9 +34,17 @@ class ImageTab(QWidget):
 
         # Forward declaration for Mypy type inference
         self.img_sel_display_combo: Optional[QComboBox] = None
+        self.btn_set_gif_apng_playback_speed: Optional[QPushButton] = None
+        self.btn_reset_gif_apng_playback_speed: Optional[QPushButton] = None
+        self.btn_img_all_pack_left_top: Optional[QPushButton] = None
+        self.btn_img_all_pack_center: Optional[QPushButton] = None
+        self.btn_fit_selected_to_display: Optional[QPushButton] = None
+        self.btn_center_selected_on_display: Optional[QPushButton] = None
 
         # 変換タブのインデックス保持用 (旧 mw._img_transform_sel_tab_index)
         self._transform_sel_tab_index = 0
+        self._is_compact_mode = False
+        self._compact_label_entries: list[tuple[Any, str, str]] = []
 
         self._setup_ui()
 
@@ -106,6 +119,9 @@ class ImageTab(QWidget):
 
         danger_layout.addWidget(self.img_btn_sel_close)
         danger_layout.addWidget(self.btn_close_all_img)
+        self.danger_group_img.hide()
+        self._init_priority_action_menu()
+        self._register_context_menu_paths()
 
         self.image_scroll_area = QScrollArea()
         self.image_scroll_area.setWidgetResizable(True)
@@ -119,11 +135,92 @@ class ImageTab(QWidget):
         self.image_scroll_area.setWidget(self.image_scroll_content)
         layout.addWidget(self.image_scroll_area, 1)
 
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
         self.set_compact_mode(False)
 
         # 初期反映
         if hasattr(self.mw, "last_selected_window"):
             self.on_selection_changed(getattr(self.mw, "last_selected_window", None))
+
+    def _init_priority_action_menu(self) -> None:
+        self.menu_priority_actions = QMenu(self)
+
+        self.act_img_close_selected = QAction("", self)
+        self.act_img_close_selected.triggered.connect(self.mw.main_controller.image_actions.close_selected_image)
+        self.menu_priority_actions.addAction(self.act_img_close_selected)
+
+        self.act_img_close_all = QAction("", self)
+        self.act_img_close_all.triggered.connect(self.mw.main_controller.bulk_manager.close_all_image_windows)
+        self.menu_priority_actions.addAction(self.act_img_close_all)
+
+        self.menu_priority_actions.addSeparator()
+
+        self.act_img_align = QAction("", self)
+        self.act_img_align.triggered.connect(self.mw.open_align_dialog)
+        self.menu_priority_actions.addAction(self.act_img_align)
+
+        self.act_img_reset_flips = QAction("", self)
+        self.act_img_reset_flips.triggered.connect(self.mw.main_controller.image_actions.reset_all_flips)
+        self.menu_priority_actions.addAction(self.act_img_reset_flips)
+
+        self.btn_img_priority_menu = QToolButton(self)
+        self.btn_img_priority_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_img_priority_menu.setMenu(self.menu_priority_actions)
+        self.btn_img_priority_menu.setToolTip(tr("img_priority_actions_tooltip"))
+        self.image_subtabs.setCornerWidget(self.btn_img_priority_menu, Qt.Corner.TopRightCorner)
+        self._refresh_priority_action_texts()
+
+    def _register_context_menu_paths(self) -> None:
+        self.image_subtabs.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.image_subtabs.customContextMenuRequested.connect(
+            lambda pos: self._show_priority_menu_global(self.image_subtabs.mapToGlobal(pos))
+        )
+        self.img_selected_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.img_selected_label.customContextMenuRequested.connect(
+            lambda pos: self._show_priority_menu_global(self.img_selected_label.mapToGlobal(pos))
+        )
+
+    def _show_priority_menu_global(self, global_pos: Any) -> None:
+        self.menu_priority_actions.exec(global_pos)
+
+    def _refresh_priority_action_texts(self) -> None:
+        self.act_img_close_selected.setText(tr("btn_close_selected_image"))
+        self.act_img_close_all.setText(tr("btn_close_all_images"))
+        self.act_img_align.setText(tr("btn_align_images"))
+        self.act_img_reset_flips.setText(tr("btn_reset_flips"))
+        self.btn_img_priority_menu.setText(tr("img_priority_actions"))
+        self.btn_img_priority_menu.setToolTip(tr("img_priority_actions_tooltip"))
+
+    def _build_compact_label_entries(self) -> list[tuple[Any, str, str]]:
+        return [
+            (self.btn_add_image_main, "+ " + tr("menu_add_image"), "+ " + tr("menu_add_image_short")),
+            (self.btn_add_image_manage, tr("menu_add_image"), tr("menu_add_image_short")),
+            (self.img_btn_sel_close, tr("btn_close_selected_image"), tr("btn_close_selected_image_short")),
+            (self.btn_close_all_img, tr("btn_close_all_images"), tr("btn_close_all_images_short")),
+            (self.btn_set_gif_apng_playback_speed, tr("btn_img_all_gif_speed"), tr("btn_img_all_gif_speed_short")),
+            (
+                self.btn_reset_gif_apng_playback_speed,
+                tr("btn_img_all_gif_reset"),
+                tr("btn_img_all_gif_reset_short"),
+            ),
+            (self.btn_img_all_pack_left_top, tr("btn_img_all_pack_left_top"), tr("btn_img_all_pack_left_top_short")),
+            (self.btn_img_all_pack_center, tr("btn_img_all_pack_center"), tr("btn_img_all_pack_center_short")),
+            (
+                self.btn_fit_selected_to_display,
+                tr("btn_fit_selected_to_display"),
+                tr("btn_fit_selected_to_display_short"),
+            ),
+            (
+                self.btn_center_selected_on_display,
+                tr("btn_center_selected_on_display"),
+                tr("btn_center_selected_on_display_short"),
+            ),
+        ]
+
+    def _apply_compact_labels(self) -> None:
+        ActionPriorityHelper.apply_label_mode(self._compact_label_entries, self._is_compact_mode)
+        self._refresh_priority_action_texts()
 
     def _build_manage_page(self) -> QWidget:
         page = QWidget()
@@ -723,6 +820,8 @@ class ImageTab(QWidget):
         for attr in targets:
             if hasattr(self, attr):
                 getattr(self, attr).setEnabled(enabled)
+        if hasattr(self, "act_img_close_selected"):
+            self.act_img_close_selected.setEnabled(enabled)
 
     def refresh_ui(self) -> None:
         """UI文言更新"""
@@ -828,6 +927,12 @@ class ImageTab(QWidget):
         # Danger
         self.img_btn_sel_close.setText(tr("btn_close_selected_image"))
         self.btn_close_all_img.setText(tr("btn_close_all_images"))
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
+        self._apply_compact_labels()
 
     def set_compact_mode(self, enabled: bool) -> None:
+        self._is_compact_mode = bool(enabled)
         self.btn_add_image_main.setMinimumHeight(40 if enabled else 50)
+        self.btn_add_image_manage.setMinimumHeight(34 if enabled else 0)
+        self._apply_compact_labels()

@@ -1,20 +1,25 @@
 from typing import TYPE_CHECKING, Any, Optional
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from ui.action_priority_helper import ActionPriorityHelper
 from utils.translator import tr
 
 if TYPE_CHECKING:
@@ -27,6 +32,8 @@ class AnimationTab(QWidget):
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
         self.mw = main_window
+        self._is_compact_mode = False
+        self._compact_label_entries: list[tuple[Any, str, str]] = []
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -366,6 +373,8 @@ class AnimationTab(QWidget):
 
         self.btn_stop_all.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.btn_stop_all.setMinimumHeight(45)
+        self._init_priority_action_menu()
+        self._register_context_menu_paths()
 
         self.anim_scroll_area = QScrollArea()
         self.anim_scroll_area.setWidgetResizable(True)
@@ -375,13 +384,85 @@ class AnimationTab(QWidget):
         scroll_layout.setContentsMargins(0, 0, 0, 0)
         scroll_layout.setSpacing(4)
         scroll_layout.addWidget(self.anim_subtabs)
-        scroll_layout.addWidget(self.btn_stop_all)
         self.anim_scroll_area.setWidget(self.anim_scroll_content)
         layout.addWidget(self.anim_scroll_area, 1)
 
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
         # 初期状態更新
         self.set_compact_mode(False)
         self.refresh_enabled_state()
+
+    def _init_priority_action_menu(self) -> None:
+        self.menu_priority_actions = QMenu(self)
+
+        self.act_anim_stop_all = QAction("", self)
+        self.act_anim_stop_all.triggered.connect(self.mw.animation_manager.stop_all_animations)
+        self.menu_priority_actions.addAction(self.act_anim_stop_all)
+
+        self.act_anim_stop_move = QAction("", self)
+        self.act_anim_stop_move.triggered.connect(self.mw.animation_manager.stop_move)
+        self.menu_priority_actions.addAction(self.act_anim_stop_move)
+
+        self.act_anim_stop_fade = QAction("", self)
+        self.act_anim_stop_fade.triggered.connect(self.mw.animation_manager.stop_fade)
+        self.menu_priority_actions.addAction(self.act_anim_stop_fade)
+
+        self.btn_anim_priority_menu = QToolButton(self)
+        self.btn_anim_priority_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.btn_anim_priority_menu.setMenu(self.menu_priority_actions)
+        self.anim_subtabs.setCornerWidget(self.btn_anim_priority_menu, Qt.Corner.TopRightCorner)
+        self._refresh_priority_action_texts()
+
+    def _register_context_menu_paths(self) -> None:
+        self.anim_subtabs.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.anim_subtabs.customContextMenuRequested.connect(
+            lambda pos: self._show_priority_menu_global(self.anim_subtabs.mapToGlobal(pos))
+        )
+        self.anim_selected_label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.anim_selected_label.customContextMenuRequested.connect(
+            lambda pos: self._show_priority_menu_global(self.anim_selected_label.mapToGlobal(pos))
+        )
+
+    def _show_priority_menu_global(self, global_pos: Any) -> None:
+        self.menu_priority_actions.exec(global_pos)
+
+    def _refresh_priority_action_texts(self) -> None:
+        self.act_anim_stop_all.setText(tr("btn_stop_all_anim"))
+        self.act_anim_stop_move.setText(tr("btn_anim_stop_move"))
+        self.act_anim_stop_fade.setText(tr("btn_anim_stop_fade"))
+        self.btn_anim_priority_menu.setText(tr("anim_priority_actions"))
+        self.btn_anim_priority_menu.setToolTip(tr("anim_priority_actions_tooltip"))
+
+    def _build_compact_label_entries(self) -> list[tuple[Any, str, str]]:
+        return [
+            (
+                self.anim_btn_record_base,
+                tr("menu_record_relative_move_base"),
+                tr("menu_record_relative_move_base_short"),
+            ),
+            (self.anim_btn_record_end, tr("menu_record_relative_move_end"), tr("menu_record_relative_move_end_short")),
+            (
+                self.anim_btn_clear_offset,
+                tr("menu_clear_relative_move_offset"),
+                tr("menu_clear_relative_move_offset_short"),
+            ),
+            (self.anim_btn_abs_start, tr("menu_record_absolute_start"), tr("menu_record_absolute_start_short")),
+            (self.anim_btn_abs_end, tr("menu_record_absolute_end"), tr("menu_record_absolute_end_short")),
+            (
+                self.anim_btn_abs_clear,
+                tr("menu_clear_absolute_settings"),
+                tr("menu_clear_absolute_settings_short"),
+            ),
+            (self.anim_btn_apply_move_params, tr("btn_anim_apply_move_params"), tr("btn_anim_apply_move_params_short")),
+            (self.anim_btn_apply_fade_params, tr("btn_anim_apply_fade_params"), tr("btn_anim_apply_fade_params_short")),
+            (self.anim_btn_fade_in_only, tr("menu_toggle_fade_in_loop"), tr("menu_toggle_fade_in_loop_short")),
+            (self.anim_btn_fade_out_only, tr("menu_toggle_fade_out_loop"), tr("menu_toggle_fade_out_loop_short")),
+        ]
+
+    def _apply_compact_labels(self) -> None:
+        ActionPriorityHelper.apply_label_mode(self._compact_label_entries, self._is_compact_mode)
+        self._refresh_priority_action_texts()
 
     def on_selection_changed(self, window: Optional[Any]) -> None:
         """選択変更時のUI更新"""
@@ -445,6 +526,10 @@ class AnimationTab(QWidget):
         self.anim_fade_speed.setEnabled(enable_actions)
         self.anim_fade_pause.setEnabled(enable_actions)
         self.anim_fade_easing_combo.setEnabled(enable_actions)
+        if hasattr(self, "act_anim_stop_move"):
+            self.act_anim_stop_move.setEnabled(enable_actions)
+        if hasattr(self, "act_anim_stop_fade"):
+            self.act_anim_stop_fade.setEnabled(enable_actions)
 
     def refresh_ui(self) -> None:
         """UI文言更新"""
@@ -519,6 +604,11 @@ class AnimationTab(QWidget):
         if self.anim_target_combo.count() > 0:
             self.anim_target_combo.setCurrentIndex(max(0, min(cur, self.anim_target_combo.count() - 1)))
         self.anim_target_combo.blockSignals(False)
+        self._compact_label_entries = self._build_compact_label_entries()
+        ActionPriorityHelper.mark_compact_actions(self._compact_label_entries)
+        self._apply_compact_labels()
 
     def set_compact_mode(self, enabled: bool) -> None:
+        self._is_compact_mode = bool(enabled)
         self.btn_stop_all.setMinimumHeight(36 if enabled else 45)
+        self._apply_compact_labels()

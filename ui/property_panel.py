@@ -92,6 +92,7 @@ class PropertyPanel(QWidget):
         self.spin_anim_speed = self.slider_anim_speed = None
         self.btn_text_font = self.spin_text_font_size = None
         self.btn_task_mode = None
+        self.btn_text_orientation = None
         self.lbl_task_progress = None
         self.btn_complete_all = None
         self.btn_uncomplete_all = None
@@ -362,10 +363,17 @@ class PropertyPanel(QWidget):
     def _update_text_values(self) -> None:
         """テキスト系ウィンドウの数値を更新します。"""
         t = self.current_target
+        is_task_mode = bool(t.is_task_mode()) if hasattr(t, "is_task_mode") else False
         if self.btn_task_mode and hasattr(t, "is_task_mode"):
             self.btn_task_mode.blockSignals(True)
-            self.btn_task_mode.setChecked(bool(t.is_task_mode()))
+            self.btn_task_mode.setChecked(is_task_mode)
             self.btn_task_mode.blockSignals(False)
+
+        if self.btn_text_orientation:
+            self.btn_text_orientation.blockSignals(True)
+            self.btn_text_orientation.setChecked(bool(getattr(t, "is_vertical", False)))
+            self.btn_text_orientation.setToolTip(tr("msg_task_mode_horizontal_only") if is_task_mode else "")
+            self.btn_text_orientation.blockSignals(False)
 
         if self.lbl_task_progress and hasattr(t, "get_task_progress"):
             done, total = t.get_task_progress()
@@ -493,6 +501,12 @@ class PropertyPanel(QWidget):
         if selected is None:
             return
         self.edit_note_due_at.setText(selected)
+
+    def _on_text_orientation_toggled(self, checked: bool, target: Any) -> None:
+        if not hasattr(target, "set_undoable_property"):
+            return
+        target.set_undoable_property("is_vertical", bool(checked), "update_text")
+        self.update_property_values()
 
     @staticmethod
     def _parse_tags_csv(raw: str) -> list[str]:
@@ -1072,6 +1086,16 @@ class PropertyPanel(QWidget):
             self.btn_task_mode.setCheckable(True)
             self.btn_task_mode.setChecked(target.is_task_mode())
             t_layout.addRow("", typing.cast(QWidget, self.btn_task_mode))
+
+            self.btn_text_orientation = self.create_action_button(
+                tr("btn_toggle_orientation"),
+                lambda checked: self._on_text_orientation_toggled(checked, target),
+                "toggle",
+            )
+            self.btn_text_orientation.setCheckable(True)
+            self.btn_text_orientation.setChecked(bool(getattr(target, "is_vertical", False)))
+            self.btn_text_orientation.setToolTip(tr("msg_task_mode_horizontal_only") if target.is_task_mode() else "")
+            t_layout.addRow("", typing.cast(QWidget, self.btn_text_orientation))
 
             # タスク進捗UI（タスクモード時のみ表示）
             if target.is_task_mode():

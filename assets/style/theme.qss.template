@@ -93,6 +93,11 @@ QPushButton {
     color: #ffffff; /* Always white on blue */
 }
 
+QPushButton[compactAction="true"] {
+    padding: 4px 4px;
+    min-height: 28px;
+}
+
 QPushButton:hover {
     background-color: @accent_hover;
     border-color: @accent_primary;

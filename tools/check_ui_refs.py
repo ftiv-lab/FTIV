@@ -101,6 +101,8 @@ ALLOWED_ATTRIBUTES = {
     "show_image_window_context_menu",
     "_txt_open_style_gallery_selected",
     "apply_preset_to_all_text_windows",
+    "get_main_ui_density_mode",
+    "set_main_ui_density_mode",
 }
 
 
