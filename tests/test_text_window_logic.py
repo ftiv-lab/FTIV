@@ -430,3 +430,17 @@ class TestTaskModeHelpers:
         mock_prop.assert_not_called()
         w._touch_updated_at.assert_not_called()
         w.main_window.undo_stack.beginMacro.assert_not_called()
+
+
+class TestSelectionSync:
+    def test_set_selected_triggers_update_text_only_on_change(self):
+        w = _make_text_window()
+        w.is_selected = False
+        w.update_text = MagicMock()
+
+        with patch("windows.base_window.BaseOverlayWindow.set_selected", autospec=True) as mock_base_set_selected:
+            mock_base_set_selected.side_effect = lambda self_obj, selected: setattr(self_obj, "is_selected", selected)
+            w.set_selected(True)
+            w.set_selected(True)
+
+        w.update_text.assert_called_once()

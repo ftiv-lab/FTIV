@@ -130,6 +130,13 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         self.draw_selection_frame(painter)
         painter.end()
 
+    def set_selected(self, selected: bool):
+        """選択状態更新に加えて、必要時に再レンダリングを実行する。"""
+        prev = bool(getattr(self, "is_selected", False))
+        super().set_selected(selected)
+        if prev != bool(selected):
+            self.update_text()
+
     # update_text, update_text_debounced, _update_text_immediate, _restore_render_debounce_ms_after_wheel
     # Moved to TextPropertiesMixin. _update_text_immediate handles rendering.
 

@@ -420,6 +420,92 @@ class TestTaskRendering:
         # rail starts at left margin + outline width (outline min=1)
         assert rects[0].x() == 1
 
+    def test_should_show_meta_title_task_mode_when_height_is_enough(self):
+        r = TextRenderer()
+        w = _make_mock_window(content_mode="task", is_vertical=False)
+        assert r._should_show_meta_title(w, base_canvas_height=120) is True
+
+    def test_should_show_meta_title_note_mode_requires_selection(self):
+        r = TextRenderer()
+        w = _make_mock_window(content_mode="note", is_vertical=False, is_selected=False)
+        assert r._should_show_meta_title(w, base_canvas_height=120) is False
+        w.is_selected = True
+        assert r._should_show_meta_title(w, base_canvas_height=120) is True
+
+    def test_should_show_meta_title_hides_for_vertical(self):
+        r = TextRenderer()
+        w = _make_mock_window(content_mode="task", is_vertical=True)
+        assert r._should_show_meta_title(w, base_canvas_height=200) is False
+
+    def test_build_meta_tokens_includes_progress_due_tags_and_flags(self):
+        r = TextRenderer()
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=False,
+            text="a\nb\nc",
+            task_states=[True, False, True],
+            due_at="2026-03-01T00:00:00",
+            due_precision="date",
+            tags=["alpha", "beta", "gamma"],
+            is_starred=True,
+            is_archived=True,
+        )
+        tokens = r._build_meta_tokens(w)
+        texts = [text for _kind, text in tokens]
+        assert any("★" in t for t in texts)
+        assert any("2/3" in t for t in texts)
+        assert any("#alpha" in t for t in texts)
+        assert any("+1" in t for t in texts)
+        assert any("2026-03-01" in t for t in texts)
+        assert any("Archived" in t or "アーカイブ" in t for t in texts)
+
+    def test_build_horizontal_meta_layout_hides_meta_when_canvas_is_too_small(self):
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.height.return_value = 20
+        fm.horizontalAdvance.return_value = 10
+        w = _make_mock_window(content_mode="task", is_vertical=False, title="Task")
+        layout = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=20,
+            task_rail_width=10,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        assert layout["show_title"] is False
+        assert layout["show_chips"] is False
+
+    def test_task_line_rects_add_meta_top_offset_for_tall_task_window(self):
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.horizontalAdvance.side_effect = lambda ch: {"☐": 12, " ": 6}.get(ch, 10)
+        fm.height.return_value = 20
+        fm.ascent.return_value = 12
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=False,
+            text="1\n2\n3\n4\n5",
+            task_states=[False, False, False, False, False],
+            font_size=24,
+            title="Task Title",
+            margin_top_ratio=0.0,
+            margin_left_ratio=0.0,
+            margin_bottom_ratio=0.0,
+            margin_right_ratio=0.0,
+            background_outline_enabled=False,
+            background_outline_width_ratio=0.0,
+            shadow_enabled=False,
+            line_spacing_h=0.0,
+        )
+        rects = r._get_task_line_rects_horizontal(w, ["1", "2", "3", "4", "5"], fm)
+        assert len(rects) == 5
+        assert rects[0].y() > 1
+
 
 # ============================================================
 # __init__ defaults
@@ -438,3 +524,29 @@ class TestInit:
     def test_negative_blur_cache_size_clamped(self):
         r = TextRenderer(blur_cache_size=-10)
         assert r._blur_cache_size == 0
+
+
+class TestMetaCacheKey:
+    def test_cache_key_contains_lang(self):
+        r = TextRenderer()
+        w = _make_mock_window(content_mode="note", is_vertical=False, is_selected=False)
+        w.config = MagicMock()
+        w.config.model_dump.return_value = {}
+        key = r._make_render_cache_key(w)
+        parsed = json.loads(key)
+        assert "lang" in parsed["extra"]
+
+    def test_cache_key_selected_is_conditional_for_note_mode(self):
+        r = TextRenderer()
+
+        note_window = _make_mock_window(content_mode="note", is_vertical=False, is_selected=True)
+        note_window.config = MagicMock()
+        note_window.config.model_dump.return_value = {}
+        note_parsed = json.loads(r._make_render_cache_key(note_window))
+        assert note_parsed["extra"]["selected"] is True
+
+        task_window = _make_mock_window(content_mode="task", is_vertical=False, is_selected=True)
+        task_window.config = MagicMock()
+        task_window.config.model_dump.return_value = {}
+        task_parsed = json.loads(r._make_render_cache_key(task_window))
+        assert task_parsed["extra"]["selected"] is False
