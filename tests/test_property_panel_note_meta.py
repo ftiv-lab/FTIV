@@ -100,6 +100,18 @@ def test_pick_note_due_date_cancel_keeps_value(qapp):
     assert panel.edit_note_due_at.text() == "2026-03-10"
 
 
+def test_quick_due_offset_and_clear_updates_input_only(qapp):
+    _ = qapp
+    panel = _make_panel()
+
+    with patch.object(panel, "_due_text_for_offset", return_value="2026-03-11"):
+        panel._set_quick_due_offset(1)
+    assert panel.edit_note_due_at.text() == "2026-03-11"
+
+    panel._clear_quick_due()
+    assert panel.edit_note_due_at.text() == ""
+
+
 def test_apply_note_meta_invalid_due_shows_warning(qapp):
     _ = qapp
     panel = _make_panel()
@@ -112,6 +124,20 @@ def test_apply_note_meta_invalid_due_shows_warning(qapp):
     assert ok is False
     mock_warning.assert_called_once()
     assert target.calls == []
+
+
+def test_apply_note_meta_invalid_due_blur_is_soft_warning(qapp):
+    _ = qapp
+    panel = _make_panel()
+    target = _DummyTarget()
+    panel.edit_note_due_at.setText("2026/03/10")
+
+    with patch("ui.property_panel.QMessageBox.warning") as mock_warning:
+        ok = panel._apply_note_metadata_to_target(target, trigger_source="blur")
+
+    assert ok is False
+    mock_warning.assert_not_called()
+    assert panel.edit_note_due_at.property("inputInvalid") is True
 
 
 def test_apply_note_meta_valid_due_updates_target(qapp):

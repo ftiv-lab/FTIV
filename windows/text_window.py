@@ -481,14 +481,25 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         normalized_title = str(title or "").strip()
         normalized_tags = normalize_tags(tags or [])
 
+        title_changed = self.title != normalized_title
+        tags_changed = self.tags != normalized_tags
+        if not title_changed and not tags_changed:
+            return
+
         stack = getattr(self.main_window, "undo_stack", None)
-        use_macro = bool(stack is not None and hasattr(stack, "beginMacro") and hasattr(stack, "endMacro"))
+        use_macro = bool(
+            title_changed
+            and tags_changed
+            and stack is not None
+            and hasattr(stack, "beginMacro")
+            and hasattr(stack, "endMacro")
+        )
         if use_macro:
             stack.beginMacro("Update Note Metadata")
         try:
-            if self.title != normalized_title:
+            if title_changed:
                 self.set_undoable_property("title", normalized_title, "update_text")
-            if self.tags != normalized_tags:
+            if tags_changed:
                 self.set_undoable_property("tags", normalized_tags, "update_text")
             self._touch_updated_at()
         finally:

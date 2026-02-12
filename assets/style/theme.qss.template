@@ -214,6 +214,11 @@ QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
     border: 1px solid @accent_primary;
 }
 
+QLineEdit[inputInvalid="true"] {
+    border: 1px solid @danger;
+    background-color: rgba(211, 47, 47, 0.16);
+}
+
 /* ListView & ComboBox Popup */
 QListView, QComboBox QAbstractItemView {
     background-color: @bg_secondary;

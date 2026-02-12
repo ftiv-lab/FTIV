@@ -638,3 +638,46 @@ def test_info_tab_core_controls_visible_on_320px_width(qapp):
     assert tab.cmb_smart_view.isVisible() is True
     assert tab.cmb_archive_scope.isVisible() is True
     assert tab.btn_bulk_actions.isVisible() is True
+
+
+def test_smart_view_combo_items_have_tooltips(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    for value, tip_key in [
+        ("all", "info_view_tip_all"),
+        ("open", "info_view_tip_open"),
+        ("today", "info_view_tip_today"),
+        ("overdue", "info_view_tip_overdue"),
+        ("starred", "info_view_tip_starred"),
+        ("archived", "info_view_tip_archived"),
+        ("custom", "info_view_tip_custom"),
+    ]:
+        idx = tab.cmb_smart_view.findData(value)
+        assert idx >= 0
+        assert tab.cmb_smart_view.itemData(idx, Qt.ItemDataRole.ToolTipRole) == tr(tip_key)
+
+
+def test_empty_state_hint_first_time_shows_cta(qapp):
+    _ = qapp
+    mw, _ = _make_main_window(task_windows=[], note_windows=[])
+    tab = InfoTab(mw)
+    tab.refresh_data(immediate=True)
+
+    assert tab.empty_state_row.isHidden() is False
+    assert tab.lbl_empty_state_hint.text() == tr("info_empty_state_first_time")
+    assert tab.btn_empty_add_text.isHidden() is False
+
+
+def test_empty_state_hint_filtered_hides_cta(qapp):
+    _ = qapp
+    note_window = _DummyNoteWindow(uuid="n-1")
+    mw, _ = _make_main_window(task_windows=[], note_windows=[note_window])
+    tab = InfoTab(mw)
+    tab.edit_search.setText("no-match-keyword")
+    tab.refresh_data(immediate=True)
+
+    assert tab.empty_state_row.isHidden() is False
+    assert tab.lbl_empty_state_hint.text() == tr("info_empty_state_filtered")
+    assert tab.btn_empty_add_text.isHidden() is True

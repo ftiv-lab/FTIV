@@ -295,6 +295,22 @@ class InfoTab(QWidget):
         self.subtabs.addTab(self.notes_tab, tr("info_notes_tab"))
         layout.addWidget(self.subtabs, 1)
 
+        self.empty_state_row = QWidget()
+        empty_layout = QVBoxLayout(self.empty_state_row)
+        empty_layout.setContentsMargins(0, 0, 0, 0)
+        empty_layout.setSpacing(4)
+        self.lbl_empty_state_hint = QLabel("")
+        self.lbl_empty_state_hint.setProperty("class", "info-label")
+        self.lbl_empty_state_hint.setWordWrap(True)
+        self.lbl_empty_state_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.lbl_empty_state_hint)
+        self.btn_empty_add_text = QPushButton(tr("menu_add_text"))
+        self.btn_empty_add_text.setObjectName("ActionBtn")
+        self.btn_empty_add_text.clicked.connect(self._add_text_from_empty_state)
+        empty_layout.addWidget(self.btn_empty_add_text, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.empty_state_row.setVisible(False)
+        layout.addWidget(self.empty_state_row)
+
         self.btn_bulk_actions = QToolButton()
         self.btn_bulk_actions.setObjectName("ActionBtn")
         self.btn_bulk_actions.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -561,13 +577,19 @@ class InfoTab(QWidget):
         self._block_smart_view_events = True
         self.cmb_smart_view.blockSignals(True)
         self.cmb_smart_view.clear()
-        self.cmb_smart_view.addItem(tr("info_view_all"), "all")
-        self.cmb_smart_view.addItem(tr("info_view_open"), "open")
-        self.cmb_smart_view.addItem(tr("info_view_today"), "today")
-        self.cmb_smart_view.addItem(tr("info_view_overdue"), "overdue")
-        self.cmb_smart_view.addItem(tr("info_view_starred"), "starred")
-        self.cmb_smart_view.addItem(tr("info_view_archived"), "archived")
-        self.cmb_smart_view.addItem(tr("info_view_custom"), "custom")
+        entries = [
+            ("all", "info_view_all", "info_view_tip_all"),
+            ("open", "info_view_open", "info_view_tip_open"),
+            ("today", "info_view_today", "info_view_tip_today"),
+            ("overdue", "info_view_overdue", "info_view_tip_overdue"),
+            ("starred", "info_view_starred", "info_view_tip_starred"),
+            ("archived", "info_view_archived", "info_view_tip_archived"),
+            ("custom", "info_view_custom", "info_view_tip_custom"),
+        ]
+        for value, text_key, tip_key in entries:
+            self.cmb_smart_view.addItem(tr(text_key), value)
+            idx = self.cmb_smart_view.count() - 1
+            self.cmb_smart_view.setItemData(idx, tr(tip_key), Qt.ItemDataRole.ToolTipRole)
         idx = self.cmb_smart_view.findData(selected_data)
         self.cmb_smart_view.setCurrentIndex(idx if idx >= 0 else self.cmb_smart_view.findData("custom"))
         self.cmb_smart_view.blockSignals(False)
@@ -895,10 +917,32 @@ class InfoTab(QWidget):
 
             self._populate_tasks(filtered_tasks)
             self._populate_notes(filtered_notes)
+            self._update_empty_state_hint(len(task_items) + len(note_items), len(filtered_tasks) + len(filtered_notes))
             self._update_stats(stats)
             self._populate_operation_logs()
         finally:
             self._is_refreshing = False
+
+    def _add_text_from_empty_state(self) -> None:
+        main_controller = getattr(self.mw, "main_controller", None)
+        txt_actions = getattr(main_controller, "txt_actions", None)
+        if txt_actions is not None and hasattr(txt_actions, "add_new_text_window"):
+            txt_actions.add_new_text_window()
+
+    def _update_empty_state_hint(self, total_count: int, filtered_count: int) -> None:
+        total = max(int(total_count), 0)
+        filtered = max(int(filtered_count), 0)
+        if total == 0:
+            self.empty_state_row.setVisible(True)
+            self.lbl_empty_state_hint.setText(tr("info_empty_state_first_time"))
+            self.btn_empty_add_text.setVisible(True)
+            return
+        if filtered == 0:
+            self.empty_state_row.setVisible(True)
+            self.lbl_empty_state_hint.setText(tr("info_empty_state_filtered"))
+            self.btn_empty_add_text.setVisible(False)
+            return
+        self.empty_state_row.setVisible(False)
 
     def _build_due_badges(self, due_state: str, is_archived: bool = False, is_done_task: bool = False) -> list[str]:
         badges: list[str] = []
@@ -1300,6 +1344,7 @@ class InfoTab(QWidget):
         self.btn_view_update.setText(tr("info_view_update"))
         self.btn_view_delete.setText(tr("info_view_delete"))
         self.btn_open_operations.setText(tr("info_recent_operations_open"))
+        self.btn_empty_add_text.setText(tr("menu_add_text"))
         if self._operations_dialog is not None:
             self._operations_dialog.refresh_ui()
 

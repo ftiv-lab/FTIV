@@ -1,4 +1,5 @@
 import logging
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtCore import Qt
@@ -401,6 +402,7 @@ class TextTab(QWidget):
         )
 
         # Content Mode (Task toggle)
+        self.lbl_content_mode = QLabel(tr("label_content_mode"))
         self.btn_content_mode_task = QPushButton(tr("menu_toggle_task_mode"))
         self.btn_content_mode_task.setProperty("class", "toggle")
         self.btn_content_mode_task.setCheckable(True)
@@ -409,17 +411,17 @@ class TextTab(QWidget):
         self.lbl_note_title = QLabel(tr("label_note_title"))
         self.edit_note_title = QLineEdit()
         self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
-        self.edit_note_title.returnPressed.connect(self._apply_note_metadata)
+        self.edit_note_title.editingFinished.connect(lambda: self._apply_note_metadata("auto"))
 
         self.lbl_note_tags = QLabel(tr("label_note_tags"))
         self.edit_note_tags = QLineEdit()
         self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
-        self.edit_note_tags.returnPressed.connect(self._apply_note_metadata)
+        self.edit_note_tags.editingFinished.connect(lambda: self._apply_note_metadata("auto"))
 
         self.lbl_note_due_at = QLabel(tr("label_note_due_at"))
         self.edit_note_due_at = QLineEdit()
         self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))
-        self.edit_note_due_at.returnPressed.connect(self._apply_note_metadata)
+        self.edit_note_due_at.editingFinished.connect(lambda: self._apply_note_metadata("auto"))
         self.btn_pick_note_due_at = QPushButton(tr("btn_pick_due_date"))
         self.btn_pick_note_due_at.setObjectName("ActionBtn")
         self.btn_pick_note_due_at.clicked.connect(self._pick_due_date_for_note)
@@ -431,31 +433,54 @@ class TextTab(QWidget):
         due_row_layout.addWidget(self.edit_note_due_at, 1)
         due_row_layout.addWidget(self.btn_pick_note_due_at)
 
+        quick_due_row = QWidget()
+        quick_due_layout = QHBoxLayout(quick_due_row)
+        quick_due_layout.setContentsMargins(0, 0, 0, 0)
+        quick_due_layout.setSpacing(4)
+        self.btn_due_today = QPushButton(tr("btn_today"))
+        self.btn_due_today.setObjectName("ActionBtn")
+        self.btn_due_today.clicked.connect(lambda: self._set_quick_due_offset(0))
+        quick_due_layout.addWidget(self.btn_due_today)
+        self.btn_due_tomorrow = QPushButton(tr("due_quick_tomorrow"))
+        self.btn_due_tomorrow.setObjectName("ActionBtn")
+        self.btn_due_tomorrow.clicked.connect(lambda: self._set_quick_due_offset(1))
+        quick_due_layout.addWidget(self.btn_due_tomorrow)
+        self.btn_due_next_week = QPushButton(tr("due_quick_next_week"))
+        self.btn_due_next_week.setObjectName("ActionBtn")
+        self.btn_due_next_week.clicked.connect(lambda: self._set_quick_due_offset(7))
+        quick_due_layout.addWidget(self.btn_due_next_week)
+        self.btn_due_clear = QPushButton(tr("btn_clear"))
+        self.btn_due_clear.setObjectName("ActionBtn")
+        self.btn_due_clear.clicked.connect(self._clear_quick_due)
+        quick_due_layout.addWidget(self.btn_due_clear)
+
         self.chk_note_star = QCheckBox(tr("label_note_star"))
         self.chk_note_archived = QCheckBox(tr("label_note_archived"))
         self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
         self.btn_apply_note_meta.setObjectName("ActionBtn")
-        self.btn_apply_note_meta.clicked.connect(self._apply_note_metadata)
+        self.btn_apply_note_meta.clicked.connect(lambda: self._apply_note_metadata("button"))
 
-        grid_sel.addWidget(self.btn_content_mode_task, 0, 0, 1, 2)
+        grid_sel.addWidget(self.lbl_content_mode, 0, 0)
+        grid_sel.addWidget(self.btn_content_mode_task, 0, 1)
         grid_sel.addWidget(self.lbl_note_title, 1, 0)
         grid_sel.addWidget(self.edit_note_title, 1, 1)
         grid_sel.addWidget(self.lbl_note_tags, 2, 0)
         grid_sel.addWidget(self.edit_note_tags, 2, 1)
         grid_sel.addWidget(self.lbl_note_due_at, 3, 0)
         grid_sel.addWidget(due_row, 3, 1)
-        grid_sel.addWidget(self.chk_note_star, 4, 0)
-        grid_sel.addWidget(self.chk_note_archived, 4, 1)
-        grid_sel.addWidget(self.btn_apply_note_meta, 5, 0, 1, 2)
-        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 6, 0, 1, 2)
-        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 7, 0, 1, 2)
+        grid_sel.addWidget(quick_due_row, 4, 0, 1, 2)
+        grid_sel.addWidget(self.chk_note_star, 5, 0)
+        grid_sel.addWidget(self.chk_note_archived, 5, 1)
+        grid_sel.addWidget(self.btn_apply_note_meta, 6, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_toggle_vertical, 7, 0, 1, 2)
+        grid_sel.addWidget(self.txt_btn_sel_spacing_settings, 8, 0, 1, 2)
 
         # ✨ New: Save current as Default
         self.btn_save_default_selected = QPushButton("✨ " + tr("btn_save_as_default"))
         self.btn_save_default_selected.setObjectName("ActionBtn")
         self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
         self.btn_save_default_selected.clicked.connect(self.mw.main_controller.txt_actions.save_as_default)
-        grid_sel.addWidget(self.btn_save_default_selected, 8, 0, 1, 2)
+        grid_sel.addWidget(self.btn_save_default_selected, 9, 0, 1, 2)
 
         layout.addWidget(self.txt_layout_grp_selected)
 
@@ -500,6 +525,7 @@ class TextTab(QWidget):
 
         if selected_obj is None:
             self.txt_selected_label.setText(tr("label_anim_selected_none"))
+            self.txt_selected_label.setToolTip("")
 
             # 外部呼び出し（ボタン有効化状態のリセットなど）
             # 外部呼び出し（ボタン有効化状態のリセットなど）
@@ -526,6 +552,9 @@ class TextTab(QWidget):
             self.txt_selected_label.setText(f"{selected_text} / {first_line}")
         else:
             self.txt_selected_label.setText(selected_text)
+        self.txt_selected_label.setToolTip(
+            f"{self.txt_selected_label.text()}\n{tr('hint_shared_target_with_property_panel')}"
+        )
 
         # チェック状態の同期
         self._sync_check_states(selected_obj)
@@ -625,9 +654,48 @@ class TextTab(QWidget):
             return
         self.edit_note_due_at.setText(selected)
 
-    def _apply_note_metadata(self) -> None:
+    @staticmethod
+    def _due_text_for_offset(days: int) -> str:
+        return (date.today() + timedelta(days=int(days))).isoformat()
+
+    def _set_quick_due_offset(self, days: int) -> None:
+        if self.edit_note_due_at is None:
+            return
+        self.edit_note_due_at.setText(self._due_text_for_offset(days))
+        self._set_due_input_invalid(False)
+
+    def _clear_quick_due(self) -> None:
+        if self.edit_note_due_at is None:
+            return
+        self.edit_note_due_at.setText("")
+        self._set_due_input_invalid(False)
+
+    @staticmethod
+    def _resolve_note_meta_trigger_source(raw: str, sender_obj: Any) -> str:
+        normalized = str(raw or "button").strip().lower()
+        if normalized in {"button", "enter", "blur"}:
+            return normalized
+        if normalized != "auto":
+            return "button"
+        if isinstance(sender_obj, QLineEdit) and sender_obj.hasFocus():
+            return "enter"
+        return "blur"
+
+    def _set_due_input_invalid(self, invalid: bool, message: str = "") -> None:
+        if self.edit_note_due_at is None:
+            return
+        self.edit_note_due_at.setProperty("inputInvalid", bool(invalid))
+        self.edit_note_due_at.setToolTip(str(message or "") if invalid else "")
+        style = self.edit_note_due_at.style()
+        if style is not None:
+            style.unpolish(self.edit_note_due_at)
+            style.polish(self.edit_note_due_at)
+        self.edit_note_due_at.update()
+
+    def _apply_note_metadata(self, trigger_source: str = "button") -> None:
         """選択中のTextWindowへ note metadata を適用する。"""
         try:
+            trigger = self._resolve_note_meta_trigger_source(trigger_source, self.sender())
             wm = getattr(self.mw, "window_manager", None)
             if wm is None:
                 return
@@ -645,8 +713,11 @@ class TextTab(QWidget):
             is_starred = self.chk_note_star.isChecked()
             due_iso = self._normalize_due_input(self.edit_note_due_at.text() if self.edit_note_due_at else "")
             if due_iso is None:
-                QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
+                self._set_due_input_invalid(True, tr("msg_invalid_due_date_format"))
+                if trigger != "blur":
+                    QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
                 return
+            self._set_due_input_invalid(False)
             is_archived = self.chk_note_archived.isChecked()
 
             if hasattr(target, "set_title_and_tags"):
@@ -691,7 +762,15 @@ class TextTab(QWidget):
             if w is not None:
                 w.setEnabled(is_text_like)
 
-        for w in [self.edit_note_due_at, self.btn_pick_note_due_at, self.chk_note_archived]:
+        for w in [
+            self.edit_note_due_at,
+            self.btn_pick_note_due_at,
+            self.btn_due_today,
+            self.btn_due_tomorrow,
+            self.btn_due_next_week,
+            self.btn_due_clear,
+            self.chk_note_archived,
+        ]:
             if w is not None:
                 w.setEnabled(is_text_window)
 
@@ -767,6 +846,7 @@ class TextTab(QWidget):
         self.btn_save_default_selected.setToolTip(tr("tip_save_as_default"))
 
         self.txt_btn_sel_spacing_settings.setText(tr("menu_margin_settings"))
+        self.lbl_content_mode.setText(tr("label_content_mode"))
         self.btn_content_mode_task.setText(tr("menu_toggle_task_mode"))
         self.lbl_note_title.setText(tr("label_note_title"))
         self.lbl_note_tags.setText(tr("label_note_tags"))
@@ -775,6 +855,10 @@ class TextTab(QWidget):
         self.chk_note_archived.setText(tr("label_note_archived"))
         self.btn_apply_note_meta.setText(tr("btn_apply_note_meta"))
         self.btn_pick_note_due_at.setText(tr("btn_pick_due_date"))
+        self.btn_due_today.setText(tr("btn_today"))
+        self.btn_due_tomorrow.setText(tr("due_quick_tomorrow"))
+        self.btn_due_next_week.setText(tr("due_quick_next_week"))
+        self.btn_due_clear.setText(tr("btn_clear"))
         self.edit_note_title.setPlaceholderText(tr("placeholder_note_title"))
         self.edit_note_tags.setPlaceholderText(tr("placeholder_note_tags"))
         self.edit_note_due_at.setPlaceholderText(tr("placeholder_note_due_at"))

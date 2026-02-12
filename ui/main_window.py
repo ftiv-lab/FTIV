@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # PySide6 Imports
 from PySide6.QtCore import QPoint, Qt, QTimer, QUrl  # ← QUrl 追加
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QDialog,
+    QHBoxLayout,
     QLabel,
     QListWidget,
     QMessageBox,
@@ -475,10 +476,27 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         main_layout.addWidget(self.tabs)
         self._build_main_tabs()
 
+        self.footer_row = QWidget()
+        footer_layout = QHBoxLayout(self.footer_row)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setSpacing(6)
         self.footer_label = QLabel(tr("footer_msg"))
         self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.footer_label.setProperty("class", "footer-text")
-        main_layout.addWidget(self.footer_label)
+        footer_layout.addWidget(self.footer_label, 1)
+
+        self.footer_undo_button = QPushButton(tr("menu_undo"))
+        self.footer_undo_button.setProperty("class", "secondary-button")
+        self.footer_undo_button.setVisible(False)
+        self.footer_undo_button.setEnabled(False)
+        self.footer_undo_button.clicked.connect(self._handle_footer_undo_clicked)
+        footer_layout.addWidget(self.footer_undo_button, 0)
+
+        main_layout.addWidget(self.footer_row)
+        self._footer_restore_timer = QTimer(self)
+        self._footer_restore_timer.setSingleShot(True)
+        self._footer_restore_timer.timeout.connect(self._restore_footer_status)
+        self._footer_undo_callback: Optional[Callable[[], None]] = None
 
         self._init_property_panel()
 
@@ -808,7 +826,9 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
             # MainWindow自体
             self.setWindowTitle(tr("app_title"))
             if hasattr(self, "footer_label"):
-                self.footer_label.setText(tr("footer_msg"))
+                if hasattr(self, "_footer_restore_timer"):
+                    self._footer_restore_timer.stop()
+                self._restore_footer_status()
 
             # Sceneカテゴリ表示を現在言語へ同期（defaultカテゴリ表記を含む）
             if hasattr(self, "scenes"):
@@ -1425,22 +1445,60 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         except Exception as e:
             QMessageBox.critical(self, tr("msg_error"), f"Failed to open log folder: {e}")
 
-    def show_status_message(self, text: str, timeout_ms: int = 2000) -> None:
-        """
-        フッターに一時メッセージを表示し、timeout後に footer_msg に戻す。
-        """
+    def _restore_footer_status(self) -> None:
         try:
-            self.footer_label.setText(text)
-
-            def _restore():
-                try:
-                    self.footer_label.setText(tr("footer_msg"))
-                except Exception:
-                    logger.debug("Failed to restore footer status message", exc_info=True)
-
-            QTimer.singleShot(int(timeout_ms), _restore)
+            self.footer_label.setText(tr("footer_msg"))
+            self.footer_undo_button.setVisible(False)
+            self.footer_undo_button.setEnabled(False)
+            self._footer_undo_callback = None
         except Exception:
-            logger.warning("Failed to show status message", exc_info=True)
+            logger.debug("Failed to restore footer status message", exc_info=True)
+
+    def _set_footer_undo_callback(self, undo_callback: Optional[Callable[[], None]]) -> None:
+        self._footer_undo_callback = undo_callback
+        has_undo = callable(undo_callback)
+        self.footer_undo_button.setVisible(has_undo)
+        self.footer_undo_button.setEnabled(has_undo)
+        if has_undo:
+            self.footer_undo_button.setText(tr("menu_undo"))
+
+    def _handle_footer_undo_clicked(self) -> None:
+        callback = self._footer_undo_callback
+        if callback is None:
+            return
+
+        self._footer_undo_callback = None
+        self.footer_undo_button.setVisible(False)
+        self.footer_undo_button.setEnabled(False)
+        try:
+            callback()
+        except Exception:
+            logger.warning("Failed to run footer undo callback", exc_info=True)
+        finally:
+            if hasattr(self, "_footer_restore_timer"):
+                self._footer_restore_timer.stop()
+            self._restore_footer_status()
+
+    def show_feedback_message(
+        self,
+        text: str,
+        timeout_ms: int = 3000,
+        undo_callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """フッターに通知メッセージを表示し、必要に応じてUndo導線を提供する。"""
+        try:
+            if hasattr(self, "_footer_restore_timer"):
+                self._footer_restore_timer.stop()
+            self.footer_label.setText(str(text or ""))
+            self._set_footer_undo_callback(undo_callback)
+            if hasattr(self, "_footer_restore_timer"):
+                self._footer_restore_timer.start(max(int(timeout_ms), 0))
+        except Exception:
+            logger.warning("Failed to show feedback message", exc_info=True)
+
+    def show_status_message(self, text: str, timeout_ms: int = 2000) -> None:
+        """互換API: フッターステータスメッセージを一時表示する。"""
+        self.show_feedback_message(text, timeout_ms=timeout_ms, undo_callback=None)
 
     def toggle_main_frontmost(self) -> None:
         """メインウィンドウの最前面表示（WindowStaysOnTopHint）を切り替えます。"""

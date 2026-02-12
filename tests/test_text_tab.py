@@ -119,3 +119,29 @@ def test_text_tab_task_mode_toggle_enabled_only_for_text_window(qapp):
 
     tab.update_enabled_state(None)
     assert tab.btn_content_mode_task.isEnabled() is False
+
+
+def test_text_tab_quick_due_buttons_update_due_input(qapp):
+    _ = qapp
+    tab = TextTab(_make_main_window())
+    tab.edit_note_due_at.setText("")
+
+    with patch.object(tab, "_due_text_for_offset", return_value="2026-03-02"):
+        tab._set_quick_due_offset(1)
+
+    assert tab.edit_note_due_at.text() == "2026-03-02"
+
+    tab._clear_quick_due()
+    assert tab.edit_note_due_at.text() == ""
+
+
+def test_text_tab_selected_label_tooltip_includes_property_panel_hint(qapp):
+    _ = qapp
+    tab = TextTab(_make_main_window())
+    selected = TextWindow()
+    selected.text = "first line\nsecond line"
+
+    with patch.object(tab, "_sync_check_states"), patch.object(tab, "update_enabled_state"):
+        tab.on_selection_changed(selected)
+
+    assert tr("hint_shared_target_with_property_panel") in tab.txt_selected_label.toolTip()

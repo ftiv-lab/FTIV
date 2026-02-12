@@ -416,3 +416,17 @@ class TestTaskModeHelpers:
 
         mock_prop.assert_called_once_with("task_states", [True, True, True], "update_text")
         w._touch_updated_at.assert_called_once()
+
+    def test_set_title_and_tags_no_change_is_noop(self):
+        w = _make_text_window()
+        w.config.title = "Title"
+        w.config.tags = ["a"]
+        w.main_window.undo_stack = MagicMock()
+        w._touch_updated_at = MagicMock()
+
+        with patch.object(type(w), "set_undoable_property") as mock_prop:
+            w.set_title_and_tags("Title", ["a"])
+
+        mock_prop.assert_not_called()
+        w._touch_updated_at.assert_not_called()
+        w.main_window.undo_stack.beginMacro.assert_not_called()

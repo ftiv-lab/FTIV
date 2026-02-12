@@ -2,6 +2,7 @@
 
 import logging
 import typing
+from datetime import date, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Optional, Tuple, Union, cast
 
 from PySide6.QtCore import QSignalBlocker, Qt
@@ -94,6 +95,7 @@ class PropertyPanel(QWidget):
         self.spin_anim_speed = self.slider_anim_speed = None
         self.btn_text_font = self.spin_text_font_size = None
         self.btn_task_mode = None
+        self.lbl_editing_target = None
         self.btn_text_orientation = None
         self.btn_text_style_more = None
         self.lbl_task_progress = None
@@ -106,6 +108,10 @@ class PropertyPanel(QWidget):
         self.edit_note_due_time = None
         self.edit_note_due_timezone = None
         self.btn_pick_note_due_at = None
+        self.btn_due_today = None
+        self.btn_due_tomorrow = None
+        self.btn_due_next_week = None
+        self.btn_due_clear = None
         self.btn_note_star = None
         self.btn_note_archived = None
         self.btn_apply_note_meta = None
@@ -401,6 +407,8 @@ class PropertyPanel(QWidget):
         """テキスト系ウィンドウの数値を更新します。"""
         t = self.current_target
         is_task_mode = bool(t.is_task_mode()) if hasattr(t, "is_task_mode") else False
+        if self.lbl_editing_target is not None:
+            self.lbl_editing_target.setText(self._format_editing_target_text(t))
         if self.btn_task_mode and hasattr(t, "is_task_mode"):
             self.btn_task_mode.blockSignals(True)
             self.btn_task_mode.setChecked(is_task_mode)
@@ -430,6 +438,7 @@ class PropertyPanel(QWidget):
             due_text = display_due_iso(str(getattr(t, "due_at", "") or ""))
             with QSignalBlocker(self.edit_note_due_at):
                 self.edit_note_due_at.setText(due_text)
+            self._set_due_input_invalid(False)
 
         if self.cmb_note_due_precision is not None:
             due_precision = self._sanitize_due_precision(getattr(t, "due_precision", "date"))
@@ -554,11 +563,50 @@ class PropertyPanel(QWidget):
         if selected is None:
             return
         self.edit_note_due_at.setText(selected)
+        self._set_due_input_invalid(False)
+
+    @staticmethod
+    def _due_text_for_offset(days: int) -> str:
+        return (date.today() + timedelta(days=int(days))).isoformat()
+
+    def _set_quick_due_offset(self, days: int) -> None:
+        if self.edit_note_due_at is None:
+            return
+        self.edit_note_due_at.setText(self._due_text_for_offset(days))
+        self._set_due_input_invalid(False)
+
+    def _clear_quick_due(self) -> None:
+        if self.edit_note_due_at is None:
+            return
+        self.edit_note_due_at.setText("")
+        self._set_due_input_invalid(False)
 
     @staticmethod
     def _sanitize_due_precision(value: Any) -> str:
         raw = str(value or "").strip().lower()
         return "datetime" if raw == "datetime" else "date"
+
+    @staticmethod
+    def _resolve_note_meta_trigger_source(raw: str, sender_obj: Any) -> str:
+        normalized = str(raw or "button").strip().lower()
+        if normalized in {"button", "enter", "blur"}:
+            return normalized
+        if normalized != "auto":
+            return "button"
+        if isinstance(sender_obj, QLineEdit) and sender_obj.hasFocus():
+            return "enter"
+        return "blur"
+
+    def _set_due_input_invalid(self, invalid: bool, message: str = "") -> None:
+        if self.edit_note_due_at is None:
+            return
+        self.edit_note_due_at.setProperty("inputInvalid", bool(invalid))
+        self.edit_note_due_at.setToolTip(str(message or "") if invalid else "")
+        style = self.edit_note_due_at.style()
+        if style is not None:
+            style.unpolish(self.edit_note_due_at)
+            style.polish(self.edit_note_due_at)
+        self.edit_note_due_at.update()
 
     def _sync_due_detail_enabled_state(self) -> None:
         precision = self._sanitize_due_precision(
@@ -592,7 +640,8 @@ class PropertyPanel(QWidget):
             seen.add(key)
         return tags
 
-    def _apply_note_metadata_to_target(self, target: Any) -> bool:
+    def _apply_note_metadata_to_target(self, target: Any, trigger_source: str = "button") -> bool:
+        trigger = self._resolve_note_meta_trigger_source(trigger_source, self.sender())
         title = self.edit_note_title.text().strip() if self.edit_note_title is not None else ""
         tags = self._parse_tags_csv(self.edit_note_tags.text() if self.edit_note_tags is not None else "")
         due_raw = self.edit_note_due_at.text().strip() if self.edit_note_due_at is not None else ""
@@ -606,8 +655,11 @@ class PropertyPanel(QWidget):
 
         due_iso = normalize_due_input_allow_empty(due_raw)
         if due_iso is None:
-            QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
+            self._set_due_input_invalid(True, tr("msg_invalid_due_date_format"))
+            if trigger != "blur":
+                QMessageBox.warning(self, tr("msg_error"), tr("msg_invalid_due_date_format"))
             return False
+        self._set_due_input_invalid(False)
 
         normalized_due_time = normalize_due_time(due_time_raw)
         if normalized_due_time is None:
@@ -730,6 +782,19 @@ class PropertyPanel(QWidget):
             self.slider_bg_outline_opacity.setValue(val)
             self.spin_bg_outline_opacity.blockSignals(False)
             self.slider_bg_outline_opacity.blockSignals(False)
+
+    @staticmethod
+    def _format_editing_target_text(target: Any) -> str:
+        base = tr("label_anim_selected_fmt").format(name=type(target).__name__)
+        text = str(getattr(target, "text", "") or "").strip()
+        if not text:
+            return base
+        first_line = text.split("\n")[0].strip()
+        if len(first_line) > 30:
+            first_line = first_line[:30] + "..."
+        if not first_line:
+            return base
+        return f"{base} / {first_line}"
 
     # --- UI Helper Methods ---
 
@@ -1186,10 +1251,17 @@ class PropertyPanel(QWidget):
             self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost, "secondary-button")
 
         if isinstance(target, TextWindow):
+            self.lbl_editing_target = QLabel(self._format_editing_target_text(target))
+            self.lbl_editing_target.setProperty("class", "info-label")
+            self.scroll_layout.addWidget(self.lbl_editing_target)
+
+            mode_row = QWidget()
+            mode_row_layout = QHBoxLayout(mode_row)
+            mode_row_layout.setContentsMargins(0, 0, 0, 0)
+            mode_row_layout.setSpacing(4)
+            lbl_mode = QLabel(tr("label_content_mode"))
+            lbl_mode.setProperty("class", "small")
             # Text Content (TextWindow only)
-            text_content_layout = self.create_collapsible_group(
-                tr("prop_grp_text_content"), expanded=True, state_key="text_content"
-            )
             self.btn_task_mode = self.create_action_button(
                 tr("menu_toggle_task_mode"),
                 lambda checked: target.set_content_mode("task" if checked else "note"),
@@ -1197,7 +1269,13 @@ class PropertyPanel(QWidget):
             )
             self.btn_task_mode.setCheckable(True)
             self.btn_task_mode.setChecked(target.is_task_mode())
-            text_content_layout.addRow("", typing.cast(QWidget, self.btn_task_mode))
+            mode_row_layout.addWidget(lbl_mode, 0)
+            mode_row_layout.addWidget(self.btn_task_mode, 1)
+            self.scroll_layout.addWidget(mode_row)
+
+            text_content_layout = self.create_collapsible_group(
+                tr("prop_grp_text_content"), expanded=True, state_key="text_content"
+            )
 
             self.btn_text_orientation = self.create_action_button(
                 tr("btn_toggle_orientation"),
@@ -1263,6 +1341,28 @@ class PropertyPanel(QWidget):
             due_row_layout.addWidget(self.btn_pick_note_due_at)
             text_content_layout.addRow(tr("label_note_due_at"), due_row)
 
+            quick_due_row = QWidget()
+            quick_due_layout = QHBoxLayout(quick_due_row)
+            quick_due_layout.setContentsMargins(0, 0, 0, 0)
+            quick_due_layout.setSpacing(4)
+            self.btn_due_today = QPushButton(tr("btn_today"))
+            self.btn_due_today.setProperty("class", "secondary-button")
+            self.btn_due_today.clicked.connect(lambda: self._set_quick_due_offset(0))
+            quick_due_layout.addWidget(self.btn_due_today)
+            self.btn_due_tomorrow = QPushButton(tr("due_quick_tomorrow"))
+            self.btn_due_tomorrow.setProperty("class", "secondary-button")
+            self.btn_due_tomorrow.clicked.connect(lambda: self._set_quick_due_offset(1))
+            quick_due_layout.addWidget(self.btn_due_tomorrow)
+            self.btn_due_next_week = QPushButton(tr("due_quick_next_week"))
+            self.btn_due_next_week.setProperty("class", "secondary-button")
+            self.btn_due_next_week.clicked.connect(lambda: self._set_quick_due_offset(7))
+            quick_due_layout.addWidget(self.btn_due_next_week)
+            self.btn_due_clear = QPushButton(tr("btn_clear"))
+            self.btn_due_clear.setProperty("class", "secondary-button")
+            self.btn_due_clear.clicked.connect(self._clear_quick_due)
+            quick_due_layout.addWidget(self.btn_due_clear)
+            text_content_layout.addRow("", quick_due_row)
+
             due_details_box = CollapsibleBox(tr("label_due_details"))
             due_details_widget = QWidget()
             due_details_layout = QFormLayout(due_details_widget)
@@ -1302,14 +1402,18 @@ class PropertyPanel(QWidget):
 
             self.btn_apply_note_meta = QPushButton(tr("btn_apply_note_meta"))
             self.btn_apply_note_meta.setProperty("class", "secondary-button")
-            self.edit_note_title.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
-            self.edit_note_tags.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
-            self.edit_note_due_at.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
+            self.edit_note_title.editingFinished.connect(lambda: self._apply_note_metadata_to_target(target, "auto"))
+            self.edit_note_tags.editingFinished.connect(lambda: self._apply_note_metadata_to_target(target, "auto"))
+            self.edit_note_due_at.editingFinished.connect(lambda: self._apply_note_metadata_to_target(target, "auto"))
             if self.edit_note_due_time is not None:
-                self.edit_note_due_time.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
+                self.edit_note_due_time.returnPressed.connect(
+                    lambda: self._apply_note_metadata_to_target(target, "enter")
+                )
             if self.edit_note_due_timezone is not None:
-                self.edit_note_due_timezone.returnPressed.connect(lambda: self._apply_note_metadata_to_target(target))
-            self.btn_apply_note_meta.clicked.connect(lambda: self._apply_note_metadata_to_target(target))
+                self.edit_note_due_timezone.returnPressed.connect(
+                    lambda: self._apply_note_metadata_to_target(target, "enter")
+                )
+            self.btn_apply_note_meta.clicked.connect(lambda: self._apply_note_metadata_to_target(target, "button"))
 
             meta_btn_row = QWidget()
             meta_btn_layout = QHBoxLayout(meta_btn_row)

@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from utils.due_date import normalize_due_iso
 from utils.error_reporter import ErrorNotifyState, report_unexpected_error
 from utils.tag_ops import merge_tags, normalize_tags
+from utils.translator import tr
 
 if TYPE_CHECKING:
     from ui.main_window import MainWindow
@@ -87,6 +88,45 @@ class InfoActions:
         settings_manager = getattr(self.mw, "settings_manager", None)
         if settings_manager is not None and hasattr(settings_manager, "save_app_settings"):
             settings_manager.save_app_settings()
+
+    @staticmethod
+    def _feedback_action_label_key(action: str) -> str:
+        action_key = str(action or "").strip().lower()
+        mapping = {
+            "bulk_complete": "info_log_action_bulk_complete",
+            "bulk_uncomplete": "info_log_action_bulk_uncomplete",
+            "bulk_archive": "info_log_action_bulk_archive",
+            "bulk_restore": "info_log_action_bulk_restore",
+            "bulk_star": "info_log_action_bulk_star",
+            "bulk_unstar": "info_log_action_bulk_unstar",
+            "bulk_tags_merge": "info_log_action_bulk_tags_merge",
+        }
+        return mapping.get(action_key, "info_bulk_actions_menu")
+
+    def _build_feedback_message(self, action: str, count: int) -> str:
+        action_text = tr(self._feedback_action_label_key(action))
+        return f"{action_text} ({max(int(count), 1)})"
+
+    def _build_undo_callback(self) -> Optional[Callable[[], None]]:
+        stack = getattr(self.mw, "undo_stack", None)
+        if stack is None or not hasattr(stack, "canUndo") or not hasattr(stack, "undo"):
+            return None
+        if not stack.canUndo():
+            return None
+
+        def _undo() -> None:
+            stack.undo()
+            self._refresh_info_tab()
+
+        return _undo
+
+    def _notify_feedback(self, action: str, count: int) -> None:
+        if int(count) < 1:
+            return
+        show_feedback = getattr(self.mw, "show_feedback_message", None)
+        if show_feedback is None or not callable(show_feedback):
+            return
+        show_feedback(self._build_feedback_message(action, count), 3000, self._build_undo_callback())
 
     def _append_operation_log(self, action: str, target_count: int, detail: str = "") -> None:
         try:
@@ -266,12 +306,10 @@ class InfoActions:
                 self._end_undo_macro(macro_opened)
 
             if changed_count > 0:
-                self._append_operation_log(
-                    "bulk_archive" if target else "bulk_restore",
-                    changed_count,
-                    "archive" if target else "restore",
-                )
+                action = "bulk_archive" if target else "bulk_restore"
+                self._append_operation_log(action, changed_count, "archive" if target else "restore")
                 self._refresh_info_tab()
+                self._notify_feedback(action, changed_count)
         except Exception as e:
             report_unexpected_error(self.mw, "Failed to bulk archive", e, self._err_state)
 
@@ -298,12 +336,10 @@ class InfoActions:
                 self._end_undo_macro(macro_opened)
 
             if changed_count > 0:
-                self._append_operation_log(
-                    "bulk_star" if target else "bulk_unstar",
-                    changed_count,
-                    "star" if target else "unstar",
-                )
+                action = "bulk_star" if target else "bulk_unstar"
+                self._append_operation_log(action, changed_count, "star" if target else "unstar")
                 self._refresh_info_tab()
+                self._notify_feedback(action, changed_count)
         except Exception as e:
             report_unexpected_error(self.mw, "Failed to bulk set star", e, self._err_state)
 
@@ -345,12 +381,10 @@ class InfoActions:
                 self._end_undo_macro(macro_opened)
 
             if changed_count > 0:
-                self._append_operation_log(
-                    "bulk_tags_merge",
-                    changed_count,
-                    f"add={len(add_norm)} remove={len(remove_norm)}",
-                )
+                action = "bulk_tags_merge"
+                self._append_operation_log(action, changed_count, f"add={len(add_norm)} remove={len(remove_norm)}")
                 self._refresh_info_tab()
+                self._notify_feedback(action, changed_count)
         except Exception as e:
             report_unexpected_error(self.mw, "Failed to bulk merge tags", e, self._err_state)
 
@@ -409,11 +443,10 @@ class InfoActions:
                 self._end_undo_macro(macro_opened)
 
             if changed:
-                self._append_operation_log(
-                    "bulk_complete" if value else "bulk_uncomplete",
-                    max(processed_item_count, 1),
-                    "task",
-                )
+                action = "bulk_complete" if value else "bulk_uncomplete"
+                count = max(processed_item_count, 1)
+                self._append_operation_log(action, count, "task")
                 self._refresh_info_tab()
+                self._notify_feedback(action, count)
         except Exception as e:
             report_unexpected_error(self.mw, "Failed to bulk update task state", e, self._err_state)
