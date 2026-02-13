@@ -107,7 +107,8 @@ class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):
             # CanvasSizeに合わせてリサイズ（当たり判定用）
             # Note: TextRenderer.render で self.canvas_size が更新されている前提
             if hasattr(self, "canvas_size") and self.canvas_size:
-                self.resize(self.canvas_size)
+                if not getattr(self, "_is_editing", False):
+                    self.resize(self.canvas_size)
 
             # 親のコネクタ位置も再計算
             if self.connector:

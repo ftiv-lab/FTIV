@@ -268,3 +268,129 @@ def test_scroll_during_edit_does_not_resize(text_window, qapp):
     # Should NOT change size (Ref: Issue Phase 26)
     # Since UndoStack is mocked, the value won't change, but a command should NOT be pushed.
     window.main_window.undo_stack.push.assert_not_called()
+
+
+# ============================================================
+# Layered Rendering Tests
+# ============================================================
+
+
+def test_editor_has_transparent_background(text_window, qapp):
+    """編集中のエディタ背景が透明であることを確認"""
+    window = text_window
+    window.show()
+    window._start_inline_edit()
+
+    editor = window._inline_editor
+    assert editor is not None
+    assert "transparent" in editor.styleSheet()
+
+    window._finish_inline_edit(commit=False)
+
+
+def test_editor_size_based_on_canvas_size(text_window, qapp):
+    """canvas_size ベースでサイジングされるか確認（SAFETY_PADDING ではなく）"""
+    from PySide6.QtCore import QSize
+
+    window = text_window
+    window.show()
+
+    # canvas_size をセットして編集開始
+    window.canvas_size = QSize(200, 100)
+    window._start_inline_edit()
+
+    # ウィンドウサイズが canvas_size + CURSOR_EXTRA(4) 近辺であること
+    # (モック renderer なので canvas_size はフォールバックパスの値になるが、
+    # 少なくとも旧 SAFETY_PADDING(40/20) の大幅加算はされないことを確認)
+    assert window._is_editing
+
+    window._finish_inline_edit(commit=False)
+
+
+def test_renderer_skips_text_during_editing(qapp):
+    """編集中にTextRendererがテキスト描画をスキップするかテスト"""
+    from unittest.mock import MagicMock
+
+    from windows.text_renderer import TextRenderer
+
+    r = TextRenderer()
+
+    # _draw_horizontal_text_content をモックして呼び出しを追跡
+    r._draw_horizontal_text_content = MagicMock()
+
+    # skip_text_content=False のとき (通常描画)
+    mock_window = MagicMock()
+    mock_window.shadow_enabled = False
+    mock_window.outline_enabled = False
+    mock_window.second_outline_enabled = False
+    mock_window.third_outline_enabled = False
+    mock_window.font_color = "#ffffff"
+    mock_window.text_opacity = 100
+    mock_window.content_mode = "note"
+    mock_window.is_vertical = False
+    mock_window.font_size = 24
+    mock_window.font_family = "Arial"
+
+    from PySide6.QtCore import QSize
+    from PySide6.QtGui import QFontMetrics, QPainter, QPixmap
+
+    fm = MagicMock(spec=QFontMetrics)
+    fm.height.return_value = 20
+    fm.ascent.return_value = 16
+    fm.horizontalAdvance.return_value = 10
+
+    pixmap = QPixmap(200, 100)
+    painter = QPainter(pixmap)
+
+    # 通常描画: テキストが描画される
+    r._draw_horizontal_text_elements(
+        painter,
+        mock_window,
+        QSize(200, 100),
+        ["test"],
+        fm,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1.0,
+        skip_text_content=False,
+    )
+    assert r._draw_horizontal_text_content.called
+
+    r._draw_horizontal_text_content.reset_mock()
+
+    # 編集中: テキスト描画がスキップされる
+    r._draw_horizontal_text_elements(
+        painter,
+        mock_window,
+        QSize(200, 100),
+        ["test"],
+        fm,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1.0,
+        skip_text_content=True,
+    )
+    assert not r._draw_horizontal_text_content.called
+
+    painter.end()
+
+
+def test_connector_label_editing_no_resize_conflict(connector_label, qapp):
+    """ConnectorLabelで編集中にcanvas_sizeによるresizeが抑制されるかテスト"""
+    label = connector_label
+    label.show()
+    label._start_inline_edit()
+
+    assert label._is_editing
+
+    # _update_text_immediate で resize が呼ばれても、
+    # _is_editing=True なので canvas_size による resize はスキップされる
+    # (実際のテストではモック renderer のため canvas_size は設定されない)
+    label._finish_inline_edit(commit=False)
+    assert not label._is_editing

@@ -231,6 +231,69 @@ class TextRenderer:
 
         return pad_left, pad_top, pad_right, pad_bottom
 
+    def get_editing_layout_info(self, window: Any) -> dict[str, Any]:
+        """インライン編集用のレイアウト情報を返す。
+
+        TextRenderer の正確なマージン計算結果を提供し、
+        InlineEditorMixin がエディタのパディングを一致させるために使用する。
+        """
+        font = QFont(window.font_family, int(window.font_size))
+        fm = QFontMetrics(font)
+
+        margin = int(window.font_size * getattr(window, "char_spacing_h", window.horizontal_margin_ratio))
+        line_spacing = int(window.font_size * getattr(window, "line_spacing_h", 0.0))
+
+        m_top = int(window.font_size * window.margin_top_ratio)
+        m_bottom = int(window.font_size * window.margin_bottom_ratio)
+        m_left = int(window.font_size * window.margin_left_ratio)
+        m_right = int(window.font_size * window.margin_right_ratio)
+
+        pad_left_s, pad_top_s, pad_right_s, pad_bottom_s = self._calculate_shadow_padding(window)
+        m_left += pad_left_s
+        m_top += pad_top_s
+        m_right += pad_right_s
+        m_bottom += pad_bottom_s
+
+        lines, _done_flags = self._build_render_lines(window)
+        task_rail_width, _, _, _ = self._get_task_rail_metrics(window, fm)
+
+        max_line_width = 0
+        for line in lines:
+            line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * max(0, len(line) - 1)
+            max_line_width = max(max_line_width, line_width)
+
+        line_height = fm.height()
+        total_height = (line_height + line_spacing) * len(lines)
+
+        outline_width = max(
+            window.font_size * window.background_outline_width_ratio if window.background_outline_enabled else 0, 1
+        )
+
+        meta_layout = self._build_horizontal_meta_layout(
+            window,
+            fm,
+            max_line_width=max_line_width,
+            total_text_height=total_height,
+            task_rail_width=task_rail_width,
+            m_top=m_top,
+            m_bottom=m_bottom,
+            m_left=m_left,
+            m_right=m_right,
+            outline_width=outline_width,
+        )
+
+        canvas_size = QSize(int(meta_layout["canvas_width"]), int(meta_layout["canvas_height"]))
+
+        return {
+            "pad_left": int(m_left + outline_width + task_rail_width),
+            "pad_top": int(m_top + outline_width + meta_layout["top_offset"]),
+            "pad_right": int(m_right + outline_width),
+            "pad_bottom": int(m_bottom + outline_width),
+            "canvas_size": canvas_size,
+            "line_spacing_px": line_spacing,
+            "char_spacing_px": margin,
+        }
+
     def render(self, window: Any) -> QPixmap:
         """ウィンドウの状態を読み取り、描画結果を生成します（分解プロファイル対応）。"""
         profiling: bool = bool(getattr(self, "_profile_enabled", False))
@@ -615,6 +678,7 @@ class TextRenderer:
                 outline_width,
                 line_spacing=line_spacing,
                 done_flags=done_flags,
+                skip_text_content=bool(getattr(window, "_is_editing", False)),
             )
         finally:
             painter.end()
@@ -1097,6 +1161,7 @@ class TextRenderer:
         outline_width: float,
         line_spacing: int = 0,
         done_flags: Optional[List[bool]] = None,
+        skip_text_content: bool = False,
     ) -> None:
         t0_total: Optional[float] = None
         if self._active_profile is not None:
@@ -1108,124 +1173,135 @@ class TextRenderer:
         task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
         start_x = margin_left + outline_width + task_rail_width
 
-        # 1. 影
-        if window.shadow_enabled:
-            s_color = QColor(window.shadow_color)
-            s_color.setAlpha(int(window.shadow_opacity * 2.55))
-            s_font = QFont(window.font_family, int(window.font_size * window.shadow_scale))
-            s_fm = QFontMetrics(s_font)
+        if not skip_text_content:
+            # 1. 影
+            if window.shadow_enabled:
+                s_color = QColor(window.shadow_color)
+                s_color.setAlpha(int(window.shadow_opacity * 2.55))
+                s_font = QFont(window.font_family, int(window.font_size * window.shadow_scale))
+                s_fm = QFontMetrics(s_font)
 
-            if window.shadow_blur == 0:
-                # 直接描画 (最高品質)
-                painter.save()
-                painter.setFont(s_font)
-                painter.setPen(s_color)
-                self._draw_horizontal_text_content(
-                    painter,
-                    window,
-                    lines,
-                    fm,
-                    margin,
-                    start_x,
-                    start_y,
-                    custom_offset=QPointF(shadow_offset_x, shadow_offset_y),
-                    shadow_fm=s_fm,
-                    line_spacing=line_spacing,
-                )
-                painter.restore()
-            else:
-                # ブラー付き描画 (QPixmap 経由)
-                s_pixmap = QPixmap(canvas_size)
-                s_pixmap.fill(Qt.transparent)
-                s_painter = QPainter(s_pixmap)
-                s_painter.setRenderHint(QPainter.Antialiasing, True)
-                s_painter.setFont(s_font)
-                s_painter.setPen(s_color)
-                self._draw_horizontal_text_content(
-                    s_painter,
-                    window,
-                    lines,
-                    fm,
-                    margin,
-                    start_x,
-                    start_y,
-                    custom_offset=QPointF(shadow_offset_x, shadow_offset_y),
-                    shadow_fm=s_fm,
-                    line_spacing=line_spacing,
-                )
-                s_painter.end()
-                painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(s_pixmap, window.shadow_blur))
+                if window.shadow_blur == 0:
+                    # 直接描画 (最高品質)
+                    painter.save()
+                    painter.setFont(s_font)
+                    painter.setPen(s_color)
+                    self._draw_horizontal_text_content(
+                        painter,
+                        window,
+                        lines,
+                        fm,
+                        margin,
+                        start_x,
+                        start_y,
+                        custom_offset=QPointF(shadow_offset_x, shadow_offset_y),
+                        shadow_fm=s_fm,
+                        line_spacing=line_spacing,
+                    )
+                    painter.restore()
+                else:
+                    # ブラー付き描画 (QPixmap 経由)
+                    s_pixmap = QPixmap(canvas_size)
+                    s_pixmap.fill(Qt.transparent)
+                    s_painter = QPainter(s_pixmap)
+                    s_painter.setRenderHint(QPainter.Antialiasing, True)
+                    s_painter.setFont(s_font)
+                    s_painter.setPen(s_color)
+                    self._draw_horizontal_text_content(
+                        s_painter,
+                        window,
+                        lines,
+                        fm,
+                        margin,
+                        start_x,
+                        start_y,
+                        custom_offset=QPointF(shadow_offset_x, shadow_offset_y),
+                        shadow_fm=s_fm,
+                        line_spacing=line_spacing,
+                    )
+                    s_painter.end()
+                    painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(s_pixmap, window.shadow_blur))
 
-        # 2. 縁取り (背面から前面へ: 3 -> 2 -> 1)
-        outlines = [
-            (
-                window.third_outline_enabled,
-                window.third_outline_color,
-                window.third_outline_opacity,
-                window.third_outline_width,
-                window.third_outline_blur,
-            ),
-            (
-                window.second_outline_enabled,
-                window.second_outline_color,
-                window.second_outline_opacity,
-                window.second_outline_width,
-                window.second_outline_blur,
-            ),
-            (
-                window.outline_enabled,
-                window.outline_color,
-                window.outline_opacity,
-                window.outline_width,
-                window.outline_blur,
-            ),
-        ]
+            # 2. 縁取り (背面から前面へ: 3 -> 2 -> 1)
+            outlines = [
+                (
+                    window.third_outline_enabled,
+                    window.third_outline_color,
+                    window.third_outline_opacity,
+                    window.third_outline_width,
+                    window.third_outline_blur,
+                ),
+                (
+                    window.second_outline_enabled,
+                    window.second_outline_color,
+                    window.second_outline_opacity,
+                    window.second_outline_width,
+                    window.second_outline_blur,
+                ),
+                (
+                    window.outline_enabled,
+                    window.outline_color,
+                    window.outline_opacity,
+                    window.outline_width,
+                    window.outline_blur,
+                ),
+            ]
 
-        for enabled, color, opacity, width, blur in outlines:
-            if not enabled:
-                continue
+            for enabled, color, opacity, width, blur in outlines:
+                if not enabled:
+                    continue
 
-            c = QColor(color)
-            c.setAlpha(int(opacity * 2.55))
-            pen = QPen(c, width)
-            pen.setJoinStyle(Qt.RoundJoin)
+                c = QColor(color)
+                c.setAlpha(int(opacity * 2.55))
+                pen = QPen(c, width)
+                pen.setJoinStyle(Qt.RoundJoin)
 
-            if blur == 0:
-                # 直接描画 (最高品質)
-                painter.setPen(pen)
-                self._draw_horizontal_text_content(
-                    painter, window, lines, fm, margin, start_x, start_y, is_outline=True, line_spacing=line_spacing
-                )
-            else:
-                # ブラー付き描画 (QPixmap 経由)
-                o_pixmap = QPixmap(canvas_size)
-                o_pixmap.fill(Qt.transparent)
-                o_painter = QPainter(o_pixmap)
-                o_painter.setRenderHint(QPainter.Antialiasing, True)
-                o_painter.setFont(font)
-                o_painter.setPen(pen)
-                self._draw_horizontal_text_content(
-                    o_painter, window, lines, fm, margin, start_x, start_y, is_outline=True, line_spacing=line_spacing
-                )
-                o_painter.end()
-                painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(o_pixmap, blur))
+                if blur == 0:
+                    # 直接描画 (最高品質)
+                    painter.setPen(pen)
+                    self._draw_horizontal_text_content(
+                        painter, window, lines, fm, margin, start_x, start_y, is_outline=True, line_spacing=line_spacing
+                    )
+                else:
+                    # ブラー付き描画 (QPixmap 経由)
+                    o_pixmap = QPixmap(canvas_size)
+                    o_pixmap.fill(Qt.transparent)
+                    o_painter = QPainter(o_pixmap)
+                    o_painter.setRenderHint(QPainter.Antialiasing, True)
+                    o_painter.setFont(font)
+                    o_painter.setPen(pen)
+                    self._draw_horizontal_text_content(
+                        o_painter,
+                        window,
+                        lines,
+                        fm,
+                        margin,
+                        start_x,
+                        start_y,
+                        is_outline=True,
+                        line_spacing=line_spacing,
+                    )
+                    o_painter.end()
+                    painter.drawPixmap(0, 0, self._apply_blur_to_pixmap(o_pixmap, blur))
 
-        # 3. メインテキスト
-        main_color = QColor(window.font_color)
-        main_color.setAlpha(int(window.text_opacity * 2.55))
-        painter.setPen(main_color)
-        painter.setBrush(Qt.NoBrush)
-        self._draw_horizontal_text_content(
-            painter,
-            window,
-            lines,
-            fm,
-            margin,
-            start_x,
-            start_y,
-            is_main_text=True,
-            line_spacing=line_spacing,
-        )
+            # 3. メインテキスト
+            main_color = QColor(window.font_color)
+            main_color.setAlpha(int(window.text_opacity * 2.55))
+            painter.setPen(main_color)
+            painter.setBrush(Qt.NoBrush)
+            self._draw_horizontal_text_content(
+                painter,
+                window,
+                lines,
+                fm,
+                margin,
+                start_x,
+                start_y,
+                is_main_text=True,
+                line_spacing=line_spacing,
+            )
+
+        # タスクチェックボックスは常に描画（編集中でも表示を維持）
         if done_flags is not None and self._is_task_mode(window):
             self._draw_horizontal_task_checkboxes(
                 painter=painter,
@@ -1236,17 +1312,18 @@ class TextRenderer:
                 start_y=float(start_y),
                 line_spacing=line_spacing,
             )
-            self._draw_horizontal_task_strike(
-                painter=painter,
-                window=window,
-                lines=lines,
-                done_flags=done_flags,
-                fm=fm,
-                start_x=float(start_x),
-                start_y=float(start_y),
-                margin=margin,
-                line_spacing=line_spacing,
-            )
+            if not skip_text_content:
+                self._draw_horizontal_task_strike(
+                    painter=painter,
+                    window=window,
+                    lines=lines,
+                    done_flags=done_flags,
+                    fm=fm,
+                    start_x=float(start_x),
+                    start_y=float(start_y),
+                    margin=margin,
+                    line_spacing=line_spacing,
+                )
 
         if t0_total is not None:
             self._prof_add("h_text_elements_total", (time.perf_counter() - t0_total) * 1000.0)
