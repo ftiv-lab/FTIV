@@ -28,7 +28,7 @@ from ui.dialogs import (
     TextInputDialog,
     TextSpacingDialog,
 )
-from utils.due_date import normalize_due_iso
+from utils.due_date import classify_due, format_due_for_display, normalize_due_iso
 from utils.font_dialog import choose_font
 from utils.tag_ops import normalize_tags
 from utils.translator import tr
@@ -102,6 +102,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
             self.setContextMenuPolicy(Qt.CustomContextMenu)
             self.customContextMenuRequested.connect(self.show_context_menu)
             self.setMouseTracking(True)  # タスクモードのホバーカーソル変更用
+            self._overlay_meta_tooltip_append: str = ""
 
             self._last_loaded_font_path: str = ""
 
@@ -127,8 +128,10 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         """
         super().paintEvent(event)
         painter = QPainter(self)
-        self.draw_selection_frame(painter)
-        painter.end()
+        try:
+            self.draw_selection_frame(painter)
+        finally:
+            painter.end()
 
     def set_selected(self, selected: bool):
         """選択状態更新に加えて、必要時に再レンダリングを実行する。"""
@@ -143,6 +146,101 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
     def _update_text_immediate(self) -> None:
         self._ensure_task_mode_constraints()
         super()._update_text_immediate()
+        self._refresh_overlay_meta_tooltip()
+
+    def _classify_due_state(self) -> str:
+        raw_due = getattr(self, "due_at", "")
+        due_at = str(raw_due).strip() if isinstance(raw_due, str) else ""
+        if not due_at:
+            return ""
+        try:
+            return str(
+                classify_due(
+                    due_at,
+                    due_time=str(getattr(self, "due_time", "") or ""),
+                    due_timezone=str(getattr(self, "due_timezone", "") or ""),
+                    due_precision=str(getattr(self, "due_precision", "date") or "date"),
+                )
+            )
+        except Exception:
+            return ""
+
+    def _task_progress_counts(self) -> tuple[int, int]:
+        lines = self._split_lines(str(getattr(self, "text", "") or ""))
+        total = len(lines)
+        raw_states = getattr(self, "task_states", [])
+        normalized = self._normalize_task_states(list(raw_states) if isinstance(raw_states, list) else [], total)
+        done = sum(1 for state in normalized if state)
+        return done, total
+
+    def _build_overlay_meta_tooltip_lines(self) -> List[str]:
+        lines: List[str] = []
+
+        title = str(getattr(self, "title", "") or "").strip()
+        if title:
+            lines.append(f"{tr('label_note_title')}: {title}")
+
+        if self.is_task_mode():
+            done, total = self._task_progress_counts()
+            lines.append(str(tr("label_task_progress_fmt")).format(done=done, total=total))
+
+        raw_due = getattr(self, "due_at", "")
+        due_at = str(raw_due).strip() if isinstance(raw_due, str) else ""
+        if due_at:
+            due_display = format_due_for_display(
+                due_at,
+                due_time=str(getattr(self, "due_time", "") or ""),
+                due_timezone=str(getattr(self, "due_timezone", "") or ""),
+                due_precision=str(getattr(self, "due_precision", "date") or "date"),
+            )
+            if due_display:
+                lines.append(f"{tr('label_note_due_at')}: {due_display}")
+            due_state = self._classify_due_state()
+            if due_state == "today":
+                lines.append(tr("text_meta_due_today"))
+            elif due_state == "overdue":
+                lines.append(tr("text_meta_due_overdue"))
+
+        raw_tags = getattr(self, "tags", [])
+        tags = [str(tag).strip() for tag in raw_tags] if isinstance(raw_tags, list) else []
+        tags = [tag for tag in tags if tag]
+        if tags:
+            lines.append(f"{tr('label_note_tags')}: {', '.join(tags)}")
+
+        if bool(getattr(self, "is_starred", False)):
+            lines.append(f"★ {tr('text_meta_starred')}")
+        if bool(getattr(self, "is_archived", False)):
+            lines.append(tr("text_meta_archived"))
+        return lines
+
+    def _refresh_overlay_meta_tooltip(self) -> None:
+        prev_append = str(getattr(self, "_overlay_meta_tooltip_append", "") or "")
+        try:
+            current = str(self.toolTip() or "")
+        except Exception:
+            return
+
+        base = current
+        if prev_append and current.endswith(prev_append):
+            base = current[: -len(prev_append)]
+        base = base.rstrip()
+
+        lines = self._build_overlay_meta_tooltip_lines()
+        if not lines:
+            try:
+                self.setToolTip(base)
+            except Exception:
+                pass
+            self._overlay_meta_tooltip_append = ""
+            return
+
+        suffix = "\n".join(lines)
+        append = f"\n\n{suffix}" if base else suffix
+        try:
+            self.setToolTip(base + append)
+            self._overlay_meta_tooltip_append = append
+        except Exception:
+            self._overlay_meta_tooltip_append = ""
 
     def set_undoable_property(
         self,

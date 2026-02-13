@@ -420,51 +420,38 @@ class TestTaskRendering:
         # rail starts at left margin + outline width (outline min=1)
         assert rects[0].x() == 1
 
-    def test_should_show_meta_title_task_mode_when_height_is_enough(self):
-        r = TextRenderer()
-        w = _make_mock_window(content_mode="task", is_vertical=False)
-        assert r._should_show_meta_title(w, base_canvas_height=120) is True
+    # --- Title + Divider Tests (Phase 7B title-only approach) ---
 
-    def test_should_show_meta_title_note_mode_requires_selection(self):
+    def test_title_shown_when_title_set(self):
+        """title が設定されている場合、show_title=True で top_offset > 0"""
         r = TextRenderer()
-        w = _make_mock_window(content_mode="note", is_vertical=False, is_selected=False)
-        assert r._should_show_meta_title(w, base_canvas_height=120) is False
-        w.is_selected = True
-        assert r._should_show_meta_title(w, base_canvas_height=120) is True
-
-    def test_should_show_meta_title_hides_for_vertical(self):
-        r = TextRenderer()
-        w = _make_mock_window(content_mode="task", is_vertical=True)
-        assert r._should_show_meta_title(w, base_canvas_height=200) is False
-
-    def test_build_meta_tokens_includes_progress_due_tags_and_flags(self):
-        r = TextRenderer()
-        w = _make_mock_window(
-            content_mode="task",
-            is_vertical=False,
-            text="a\nb\nc",
-            task_states=[True, False, True],
-            due_at="2026-03-01T00:00:00",
-            due_precision="date",
-            tags=["alpha", "beta", "gamma"],
-            is_starred=True,
-            is_archived=True,
+        fm = MagicMock()
+        fm.height.return_value = 20
+        fm.horizontalAdvance.return_value = 80
+        w = _make_mock_window(content_mode="task", is_vertical=False, title="My Task")
+        layout = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=20,
+            task_rail_width=10,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
         )
-        tokens = r._build_meta_tokens(w)
-        texts = [text for _kind, text in tokens]
-        assert any("★" in t for t in texts)
-        assert any("2/3" in t for t in texts)
-        assert any("#alpha" in t for t in texts)
-        assert any("+1" in t for t in texts)
-        assert any("2026-03-01" in t for t in texts)
-        assert any("Archived" in t or "アーカイブ" in t for t in texts)
+        assert layout["show_title"] is True
+        assert layout["title_text"] == "My Task"
+        assert layout["top_offset"] > 0
 
-    def test_build_horizontal_meta_layout_hides_meta_when_canvas_is_too_small(self):
+    def test_title_hidden_when_title_empty(self):
+        """title が空の場合、show_title=False で top_offset=0"""
         r = TextRenderer()
         fm = MagicMock()
         fm.height.return_value = 20
         fm.horizontalAdvance.return_value = 10
-        w = _make_mock_window(content_mode="task", is_vertical=False, title="Task")
+        w = _make_mock_window(content_mode="task", is_vertical=False, title="")
         layout = r._build_horizontal_meta_layout(
             w,
             fm,
@@ -478,9 +465,113 @@ class TestTaskRendering:
             outline_width=1.0,
         )
         assert layout["show_title"] is False
-        assert layout["show_chips"] is False
+        assert layout["top_offset"] == 0
 
-    def test_task_line_rects_add_meta_top_offset_for_tall_task_window(self):
+    def test_title_hidden_in_vertical_mode(self):
+        """縦書きモードではタイトル非表示"""
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.height.return_value = 20
+        fm.horizontalAdvance.return_value = 80
+        w = _make_mock_window(content_mode="task", is_vertical=True, title="My Task")
+        layout = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=20,
+            task_rail_width=10,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        assert layout["show_title"] is False
+        assert layout["top_offset"] == 0
+
+    def test_title_with_divider_height(self):
+        """top_offset = title_fm.height() + divider(1px) + gap(4px)"""
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.height.return_value = 20
+        fm.horizontalAdvance.return_value = 80
+        w = _make_mock_window(content_mode="note", is_vertical=False, title="Note Title")
+        layout = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=40,
+            task_rail_width=0,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        assert layout["show_title"] is True
+        # top_offset = title_fm.height() + divider(1) + gap(4)
+        expected = layout["title_height"] + 1 + 4
+        assert layout["top_offset"] == expected
+
+    def test_title_no_fallback_to_first_line(self):
+        """title が空なら本文1行目にフォールバックしない（フォールバック無し）"""
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.height.return_value = 20
+        fm.horizontalAdvance.return_value = 10
+        w = _make_mock_window(content_mode="task", is_vertical=False, title="", text="Hello World")
+        layout = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=20,
+            task_rail_width=10,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        assert layout["show_title"] is False
+        assert layout["title_text"] == ""
+
+    def test_canvas_height_includes_title_offset(self):
+        """タイトルがある場合、canvas_height に top_offset が加算される"""
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.height.return_value = 20
+        fm.horizontalAdvance.return_value = 80
+        w = _make_mock_window(content_mode="task", is_vertical=False, title="Title")
+        layout_with = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=40,
+            task_rail_width=10,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        w_no_title = _make_mock_window(content_mode="task", is_vertical=False, title="")
+        layout_without = r._build_horizontal_meta_layout(
+            w_no_title,
+            fm,
+            max_line_width=50,
+            total_text_height=40,
+            task_rail_width=10,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        assert layout_with["canvas_height"] > layout_without["canvas_height"]
+        assert layout_with["canvas_height"] - layout_without["canvas_height"] == layout_with["top_offset"]
+
+    def test_task_hit_test_offset_with_title(self):
+        """タイトル設定時のヒットテスト座標が top_offset 分ずれる"""
         r = TextRenderer()
         fm = MagicMock()
         fm.horizontalAdvance.side_effect = lambda ch: {"☐": 12, " ": 6}.get(ch, 10)
@@ -489,10 +580,10 @@ class TestTaskRendering:
         w = _make_mock_window(
             content_mode="task",
             is_vertical=False,
-            text="1\n2\n3\n4\n5",
-            task_states=[False, False, False, False, False],
+            text="1\n2",
+            task_states=[False, False],
             font_size=24,
-            title="Task Title",
+            title="My Task",
             margin_top_ratio=0.0,
             margin_left_ratio=0.0,
             margin_bottom_ratio=0.0,
@@ -502,9 +593,50 @@ class TestTaskRendering:
             shadow_enabled=False,
             line_spacing_h=0.0,
         )
-        rects = r._get_task_line_rects_horizontal(w, ["1", "2", "3", "4", "5"], fm)
-        assert len(rects) == 5
-        assert rects[0].y() > 1
+        rects = r._get_task_line_rects_horizontal(w, ["1", "2"], fm)
+        assert len(rects) == 2
+        # top_offset uses real QFontMetrics from _meta_title_font, not the mock fm
+        layout = r._build_horizontal_meta_layout(
+            w,
+            fm,
+            max_line_width=50,
+            total_text_height=40,
+            task_rail_width=0,
+            m_top=0,
+            m_bottom=0,
+            m_left=0,
+            m_right=0,
+            outline_width=1.0,
+        )
+        expected_y = 0 + 1 + layout["top_offset"]  # m_top(0) + outline(1) + top_offset
+        assert rects[0].y() == expected_y
+
+    def test_task_hit_test_no_title_no_offset(self):
+        """タイトル未設定時、ヒットテスト座標はオフセットなし"""
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.horizontalAdvance.side_effect = lambda ch: {"☐": 12, " ": 6}.get(ch, 10)
+        fm.height.return_value = 20
+        fm.ascent.return_value = 12
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=False,
+            text="1\n2",
+            task_states=[False, False],
+            font_size=24,
+            title="",
+            margin_top_ratio=0.0,
+            margin_left_ratio=0.0,
+            margin_bottom_ratio=0.0,
+            margin_right_ratio=0.0,
+            background_outline_enabled=False,
+            background_outline_width_ratio=0.0,
+            shadow_enabled=False,
+            line_spacing_h=0.0,
+        )
+        rects = r._get_task_line_rects_horizontal(w, ["1", "2"], fm)
+        assert len(rects) == 2
+        assert rects[0].y() == 1  # m_top(0) + outline(1) + top_offset(0)
 
 
 # ============================================================
@@ -536,17 +668,11 @@ class TestMetaCacheKey:
         parsed = json.loads(key)
         assert "lang" in parsed["extra"]
 
-    def test_cache_key_selected_is_conditional_for_note_mode(self):
+    def test_cache_key_does_not_contain_selected(self):
+        """selected はキャッシュキーに含まれない（タイトル表示は title 内容で決定）"""
         r = TextRenderer()
-
-        note_window = _make_mock_window(content_mode="note", is_vertical=False, is_selected=True)
-        note_window.config = MagicMock()
-        note_window.config.model_dump.return_value = {}
-        note_parsed = json.loads(r._make_render_cache_key(note_window))
-        assert note_parsed["extra"]["selected"] is True
-
-        task_window = _make_mock_window(content_mode="task", is_vertical=False, is_selected=True)
-        task_window.config = MagicMock()
-        task_window.config.model_dump.return_value = {}
-        task_parsed = json.loads(r._make_render_cache_key(task_window))
-        assert task_parsed["extra"]["selected"] is False
+        w = _make_mock_window(content_mode="note", is_vertical=False, is_selected=True)
+        w.config = MagicMock()
+        w.config.model_dump.return_value = {}
+        parsed = json.loads(r._make_render_cache_key(w))
+        assert "selected" not in parsed["extra"]

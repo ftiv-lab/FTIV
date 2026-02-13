@@ -31,6 +31,7 @@ def _make_text_window(**overrides):
     obj.child_windows = []
     obj.connected_lines = []
     obj.is_selected = False
+    obj._overlay_meta_tooltip_append = ""
     for k, v in overrides.items():
         setattr(obj, k, v)
     return obj
@@ -444,3 +445,50 @@ class TestSelectionSync:
             w.set_selected(True)
 
         w.update_text.assert_called_once()
+
+
+class TestMetaTooltip:
+    def test_build_overlay_meta_tooltip_lines_quiet_note_when_empty(self):
+        w = _make_text_window()
+        w.config.content_mode = "note"
+        w.config.title = ""
+        w.config.tags = []
+        w.config.due_at = ""
+        w.config.is_starred = False
+        w.config.is_archived = False
+
+        lines = w._build_overlay_meta_tooltip_lines()
+        assert lines == []
+
+    def test_build_overlay_meta_tooltip_lines_task_includes_progress(self):
+        w = _make_text_window()
+        w.config.content_mode = "task"
+        w.config.text = "a\nb\nc"
+        w.config.task_states = [True, False, True]
+
+        lines = w._build_overlay_meta_tooltip_lines()
+        assert any("2/3" in line for line in lines)
+
+    def test_refresh_overlay_meta_tooltip_appends_lines(self):
+        w = _make_text_window()
+        w._overlay_meta_tooltip_append = ""
+        w.toolTip = MagicMock(return_value="")
+        w.setToolTip = MagicMock()
+        w._build_overlay_meta_tooltip_lines = MagicMock(return_value=["0/1", "#alpha"])
+
+        w._refresh_overlay_meta_tooltip()
+
+        w.setToolTip.assert_called_once_with("0/1\n#alpha")
+        assert w._overlay_meta_tooltip_append == "0/1\n#alpha"
+
+    def test_refresh_overlay_meta_tooltip_removes_previous_append(self):
+        w = _make_text_window()
+        w._overlay_meta_tooltip_append = "\n\n0/1"
+        w.toolTip = MagicMock(return_value="Base\n\n0/1")
+        w.setToolTip = MagicMock()
+        w._build_overlay_meta_tooltip_lines = MagicMock(return_value=[])
+
+        w._refresh_overlay_meta_tooltip()
+
+        w.setToolTip.assert_called_once_with("Base")
+        assert w._overlay_meta_tooltip_append == ""

@@ -13,8 +13,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter
 from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
 
 from models.constants import AppDefaults
-from utils.due_date import classify_due, format_due_for_display
-from utils.translator import get_lang, tr
+from utils.translator import get_lang
 
 logger = logging.getLogger(__name__)
 
@@ -63,118 +62,16 @@ class TextRenderer:
         self._glyph_cache_size: int = AppDefaults.GLYPH_CACHE_SIZE
         self._glyph_cache: "OrderedDict[tuple[str, int, str], QPainterPath]" = OrderedDict()
 
-        # --- meta header/chips layout constants ---
-        self._meta_gap_px: int = 4
-        self._meta_chip_h_padding_px: int = 6
-        self._meta_chip_v_padding_px: int = 2
-        self._meta_chip_gap_px: int = 4
-        self._meta_min_width_for_chips_px: int = 180
-        self._meta_min_height_for_any_px: int = 96
+        # --- meta title layout constants ---
+        self._meta_title_divider_px: int = 1
+        self._meta_title_gap_px: int = 4
 
     @staticmethod
     def _is_note_mode(window: Any) -> bool:
         return str(getattr(window, "content_mode", "note")).lower() != "task"
 
-    @staticmethod
-    def _safe_title_source(window: Any) -> str:
-        raw_title = getattr(window, "title", "")
-        title = str(raw_title).strip() if isinstance(raw_title, str) else ""
-        if title:
-            return title
-        raw_text_value = getattr(window, "text", "")
-        raw_text = str(raw_text_value) if isinstance(raw_text_value, str) else ""
-        first_line = raw_text.split("\n")[0].strip() if raw_text else ""
-        if first_line:
-            return first_line
-        return tr("text_meta_untitled")
-
-    def _should_show_meta_title(self, window: Any, base_canvas_height: int) -> bool:
-        if bool(getattr(window, "is_vertical", False)):
-            return False
-        if int(base_canvas_height) < int(self._meta_min_height_for_any_px):
-            return False
-        if self._is_task_mode(window):
-            return True
-        if self._is_note_mode(window):
-            return bool(getattr(window, "is_selected", False))
-        return False
-
-    def _build_meta_tokens(self, window: Any) -> list[tuple[str, str]]:
-        tokens: list[tuple[str, str]] = []
-
-        raw_starred = getattr(window, "is_starred", False)
-        if isinstance(raw_starred, bool) and raw_starred:
-            tokens.append(("star", f"★ {tr('text_meta_starred')}"))
-
-        if self._is_task_mode(window):
-            raw_lines = self._split_raw_lines(str(getattr(window, "text", "") or ""))
-            total = len(raw_lines)
-            done_flags = self._normalize_task_states(getattr(window, "task_states", []), total)
-            done = sum(1 for is_done in done_flags if is_done)
-            progress_text = tr("text_meta_progress_fmt").format(done=done, total=total)
-            if total > 0 and done == total:
-                progress_text = f"{progress_text} ✓"
-            tokens.append(("progress_done" if total > 0 and done == total else "progress", progress_text))
-
-        raw_due_at = getattr(window, "due_at", "")
-        due_at = str(raw_due_at).strip() if isinstance(raw_due_at, str) else ""
-        if due_at:
-            due_display = format_due_for_display(
-                due_at,
-                due_time=str(getattr(window, "due_time", "") or ""),
-                due_timezone=str(getattr(window, "due_timezone", "") or ""),
-                due_precision=str(getattr(window, "due_precision", "date") or "date"),
-            )
-            if due_display:
-                tokens.append(("due", due_display))
-            due_state = classify_due(
-                due_at,
-                due_time=str(getattr(window, "due_time", "") or ""),
-                due_timezone=str(getattr(window, "due_timezone", "") or ""),
-                due_precision=str(getattr(window, "due_precision", "date") or "date"),
-            )
-            if due_state == "today":
-                tokens.append(("due_today", tr("text_meta_due_today")))
-            elif due_state == "overdue":
-                tokens.append(("due_overdue", tr("text_meta_due_overdue")))
-
-        raw_tags = getattr(window, "tags", [])
-        tags = [str(tag).strip() for tag in raw_tags] if isinstance(raw_tags, list) else []
-        tags = [tag for tag in tags if tag]
-        if tags:
-            for tag in tags[:2]:
-                tokens.append(("tag", f"#{tag}"))
-            if len(tags) > 2:
-                tokens.append(("tag_overflow", tr("text_meta_tags_overflow_fmt").format(count=len(tags) - 2)))
-
-        raw_archived = getattr(window, "is_archived", False)
-        if isinstance(raw_archived, bool) and raw_archived:
-            tokens.append(("archived", tr("text_meta_archived")))
-
-        return tokens
-
-    @staticmethod
-    def _split_raw_lines(text: str) -> list[str]:
-        src = str(text or "")
-        return src.split("\n") if src else [""]
-
     def _meta_title_font(self, window: Any) -> QFont:
         return QFont(str(getattr(window, "font_family", "Arial") or "Arial"), int(getattr(window, "font_size", 12)))
-
-    def _meta_chip_font(self, window: Any) -> QFont:
-        base_size = int(getattr(window, "font_size", 12) or 12)
-        chip_size = max(9, min(16, int(base_size * 0.32)))
-        return QFont(str(getattr(window, "font_family", "Arial") or "Arial"), chip_size)
-
-    def _measure_meta_chips_width(self, fm: QFontMetrics, tokens: list[tuple[str, str]]) -> int:
-        if not tokens:
-            return 0
-        total = 0
-        for i, (_kind, text) in enumerate(tokens):
-            if i > 0:
-                total += self._meta_chip_gap_px
-            total += fm.horizontalAdvance(str(text)) + (self._meta_chip_h_padding_px * 2)
-        return int(total)
 
     def _build_horizontal_meta_layout(
         self,
@@ -192,70 +89,34 @@ class TextRenderer:
     ) -> dict[str, Any]:
         outline = int(max(outline_width, 1))
         content_width = int(max(max_line_width, 0))
-        base_canvas_height = int(total_text_height + m_top + m_bottom + 2 * outline)
 
-        show_title = self._should_show_meta_title(window, base_canvas_height)
-        title_text = ""
+        # タイトル表示判定: title が明示的に設定されている場合のみ（フォールバック無し）
+        raw_title = str(getattr(window, "title", "") or "").strip()
+        show_title = bool(raw_title) and not bool(getattr(window, "is_vertical", False))
+
         title_font = self._meta_title_font(window)
         title_fm = QFontMetrics(title_font)
         title_height = 0
-        title_width = 0
-        if show_title:
-            icon = "☑" if self._is_task_mode(window) else "📝"
-            title_text = f"{icon} {self._safe_title_source(window)}"
-            title_height = title_fm.height()
-            title_width = title_fm.horizontalAdvance(title_text)
-            content_width = max(content_width, int(title_width))
+        top_offset = 0
 
-        tentative_canvas_width = int(content_width + task_rail_width + m_left + m_right + 2 * outline)
-        show_chips = show_title and tentative_canvas_width >= int(self._meta_min_width_for_chips_px)
-        tokens = self._build_meta_tokens(window) if show_chips else []
-        chip_font = self._meta_chip_font(window)
-        chip_fm = QFontMetrics(chip_font)
-        chip_height = 0
-        chip_width = 0
-        if show_chips and tokens:
-            chip_height = chip_fm.height() + (self._meta_chip_v_padding_px * 2)
-            chip_width = self._measure_meta_chips_width(chip_fm, tokens)
-            content_width = max(content_width, int(chip_width))
+        if show_title:
+            title_height = title_fm.height()
+            title_width = title_fm.horizontalAdvance(raw_title)
+            content_width = max(content_width, int(title_width))
+            top_offset = title_height + self._meta_title_divider_px + self._meta_title_gap_px
 
         canvas_width = int(content_width + task_rail_width + m_left + m_right + 2 * outline)
-        if canvas_width < int(self._meta_min_width_for_chips_px):
-            show_chips = False
-            tokens = []
-            chip_height = 0
-            chip_width = 0
-
-        top_offset = int(title_height + (self._meta_gap_px if title_height > 0 else 0))
-        bottom_offset = int(chip_height + (self._meta_gap_px if chip_height > 0 else 0))
-        canvas_height = int(total_text_height + top_offset + bottom_offset + m_top + m_bottom + 2 * outline)
-
-        if base_canvas_height < int(self._meta_min_height_for_any_px):
-            show_title = False
-            show_chips = False
-            title_text = ""
-            tokens = []
-            title_height = 0
-            chip_height = 0
-            top_offset = 0
-            bottom_offset = 0
-            canvas_height = int(total_text_height + m_top + m_bottom + 2 * outline)
+        canvas_height = int(total_text_height + top_offset + m_top + m_bottom + 2 * outline)
 
         return {
-            "show_title": bool(show_title),
-            "show_chips": bool(show_chips and bool(tokens)),
-            "title_text": title_text,
+            "show_title": show_title,
+            "title_text": raw_title if show_title else "",
             "title_font": title_font,
             "title_fm": title_fm,
-            "chip_font": chip_font,
-            "chip_fm": chip_fm,
-            "tokens": tokens,
             "top_offset": int(top_offset),
-            "bottom_offset": int(bottom_offset),
             "canvas_width": int(canvas_width),
             "canvas_height": int(canvas_height),
             "title_height": int(title_height),
-            "chip_height": int(chip_height),
             "content_width": int(content_width),
         }
 
@@ -264,30 +125,6 @@ class TextRenderer:
         out = QColor(color)
         out.setAlpha(max(0, min(int(alpha), 255)))
         return out
-
-    def _chip_palette(self, window: Any, kind: str) -> tuple[QColor, QColor, QColor]:
-        base = QColor(getattr(window, "font_color", "#ffffff"))
-        text_color = self._with_alpha(base, 204)
-        bg_color = self._with_alpha(base, 40)
-        border_color = self._with_alpha(base, 64)
-
-        if kind == "due_overdue":
-            border_color = QColor("#ff6b6b")
-            border_color.setAlpha(180)
-        elif kind == "due_today":
-            border_color = QColor("#e8c15d")
-            border_color.setAlpha(190)
-        elif kind == "archived":
-            border_color = QColor("#9a9a9a")
-            border_color.setAlpha(190)
-        elif kind == "star":
-            border_color = QColor("#d6af36")
-            border_color.setAlpha(190)
-        elif kind == "progress_done":
-            border_color = QColor("#70c47b")
-            border_color.setAlpha(190)
-
-        return text_color, bg_color, border_color
 
     def _draw_meta_title(
         self,
@@ -327,62 +164,13 @@ class TextRenderer:
             painter.setPen(pen_color)
             baseline = int(start_y + title_fm.ascent())
             painter.drawText(QPointF(float(start_x), float(baseline)), elided)
-        finally:
-            painter.restore()
 
-    def _draw_meta_chips(
-        self,
-        painter: QPainter,
-        window: Any,
-        *,
-        canvas_size: QSize,
-        start_x: int,
-        start_y: int,
-        right_padding: int,
-        layout: dict[str, Any],
-    ) -> None:
-        if not bool(layout.get("show_chips", False)):
-            return
-
-        chip_font = layout.get("chip_font")
-        chip_fm = layout.get("chip_fm")
-        tokens = layout.get("tokens", [])
-        if not isinstance(chip_font, QFont) or not isinstance(chip_fm, QFontMetrics) or not isinstance(tokens, list):
-            return
-        if not tokens:
-            return
-
-        available_right = int(canvas_size.width() - right_padding)
-        cursor_x = int(start_x)
-        chip_h = int(layout.get("chip_height", chip_fm.height() + (self._meta_chip_v_padding_px * 2)))
-        baseline_y = int(start_y + self._meta_chip_v_padding_px + chip_fm.ascent())
-        rounding = float(max(3, int(chip_h / 2)))
-
-        painter.save()
-        try:
-            painter.setFont(chip_font)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            for token in tokens:
-                if not isinstance(token, tuple) or len(token) != 2:
-                    continue
-                kind, text = str(token[0]), str(token[1])
-                text_w = int(chip_fm.horizontalAdvance(text))
-                chip_w = int(text_w + (self._meta_chip_h_padding_px * 2))
-                if cursor_x + chip_w > available_right:
-                    break
-
-                text_color, bg_color, border_color = self._chip_palette(window, kind)
-                chip_rect = QRectF(float(cursor_x), float(start_y), float(chip_w), float(chip_h))
-                painter.setPen(QPen(border_color, 1))
-                painter.setBrush(bg_color)
-                painter.drawRoundedRect(chip_rect, rounding, rounding)
-
-                painter.setPen(text_color)
-                painter.drawText(
-                    QPointF(float(cursor_x + self._meta_chip_h_padding_px), float(baseline_y)),
-                    text,
-                )
-                cursor_x += chip_w + self._meta_chip_gap_px
+            # 区切り線: タイトル下に 1px ライン (font_color alpha 40%)
+            divider_y = float(start_y + title_fm.height() + 0.5)
+            divider_color = self._with_alpha(QColor(getattr(window, "font_color", "#ffffff")), 102)
+            painter.setPen(QPen(divider_color, 1.0))
+            line_right = float(canvas_size.width() - right_padding)
+            painter.drawLine(QPointF(float(start_x), divider_y), QPointF(line_right, divider_y))
         finally:
             painter.restore()
 
@@ -631,18 +419,6 @@ class TextRenderer:
                 line_spacing=line_spacing,
                 done_flags=done_flags,
             )
-            if bool(meta_layout["show_chips"]):
-                chip_h = int(meta_layout["chip_height"])
-                chip_top = int(canvas_size.height() - m_bottom_for_size - outline_width - chip_h)
-                self._draw_meta_chips(
-                    painter,
-                    window,
-                    canvas_size=canvas_size,
-                    start_x=text_start_x,
-                    start_y=chip_top,
-                    right_padding=right_padding,
-                    layout=meta_layout,
-                )
         finally:
             painter.restore()
 
@@ -840,18 +616,6 @@ class TextRenderer:
                 line_spacing=line_spacing,
                 done_flags=done_flags,
             )
-            if bool(meta_layout["show_chips"]):
-                chip_h = int(meta_layout["chip_height"])
-                chip_top = int(canvas_size.height() - m_bottom - outline_width - chip_h)
-                self._draw_meta_chips(
-                    painter,
-                    window,
-                    canvas_size=canvas_size,
-                    start_x=text_start_x,
-                    start_y=chip_top,
-                    right_padding=right_padding,
-                    layout=meta_layout,
-                )
         finally:
             painter.end()
 
@@ -987,14 +751,9 @@ class TextRenderer:
             else:
                 data = {}
 
-            # TextRendererが参照する補助情報も含める
-            # （canvas_sizeは出力結果に依存するのでキーには入れない）
-            note_mode = self._is_note_mode(window)
-            include_selected = note_mode and not bool(getattr(window, "is_vertical", False))
             extra = {
                 "_type": type(window).__name__,
                 "lang": get_lang(),
-                "selected": bool(getattr(window, "is_selected", False)) if include_selected else False,
             }
 
             # JSON化（順序を安定させる）
