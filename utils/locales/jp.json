@@ -391,6 +391,7 @@
     "label_anim_apply_to": "適用先:",
     "label_anim_selected_none": "選択中: なし",
     "label_anim_selected_fmt": "選択中: {name}",
+    "label_selected_preview_prefix": "内容:",
     "btn_anim_apply_offset": "オフセットを適用",
     "btn_anim_apply_move_params": "移動設定を適用",
     "btn_anim_stop_move": "移動を停止",

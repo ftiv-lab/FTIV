@@ -391,6 +391,7 @@
     "label_anim_apply_to": "Apply to:",
     "label_anim_selected_none": "Selected: None",
     "label_anim_selected_fmt": "Selected: {name}",
+    "label_selected_preview_prefix": "Preview:",
     "btn_anim_apply_offset": "Apply Offset",
     "btn_anim_apply_move_params": "Apply Move Params",
     "btn_anim_stop_move": "Stop Move",

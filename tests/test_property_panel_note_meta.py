@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton
+from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit, QPushButton
 
 from ui.property_panel import PropertyPanel
 
@@ -264,3 +264,36 @@ def test_create_collapsible_group_uses_saved_state(qapp):
     _ = panel.create_collapsible_group("Shadow", expanded=True, state_key="shadow")
 
     assert panel._section_boxes["shadow"].toggle_button.isChecked() is False
+
+
+def test_editing_target_preview_label_elides_long_text_and_keeps_tooltip(qapp):
+    _ = qapp
+    panel = _make_panel()
+    panel.lbl_editing_target = QLabel("")
+    panel.lbl_editing_target_preview = QLabel("")
+    panel.lbl_editing_target_preview.resize(80, 20)
+    panel.lbl_editing_target_preview.setFixedWidth(80)
+
+    raw = "A" * 200
+    target = SimpleNamespace(text=raw)
+    panel._update_editing_target_labels(target)
+
+    assert panel.lbl_editing_target.text() != ""
+    assert panel.lbl_editing_target_preview.toolTip().endswith(raw)
+    assert len(panel.lbl_editing_target_preview.text()) < len(panel.lbl_editing_target_preview.toolTip())
+    assert panel.lbl_editing_target_preview.isHidden() is False
+
+
+def test_editing_target_preview_label_hides_for_empty_text(qapp):
+    _ = qapp
+    panel = _make_panel()
+    panel.lbl_editing_target = QLabel("")
+    panel.lbl_editing_target_preview = QLabel("")
+
+    target = SimpleNamespace(text="   ")
+    panel._update_editing_target_labels(target)
+
+    assert panel.lbl_editing_target.text() != ""
+    assert panel.lbl_editing_target_preview.text() == ""
+    assert panel.lbl_editing_target_preview.toolTip() == ""
+    assert panel.lbl_editing_target_preview.isHidden() is True

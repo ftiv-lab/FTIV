@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QToolButton,
@@ -96,6 +97,7 @@ class PropertyPanel(QWidget):
         self.btn_text_font = self.spin_text_font_size = None
         self.btn_task_mode = None
         self.lbl_editing_target = None
+        self.lbl_editing_target_preview = None
         self.btn_text_orientation = None
         self.btn_text_style_more = None
         self.lbl_task_progress = None
@@ -407,8 +409,7 @@ class PropertyPanel(QWidget):
         """テキスト系ウィンドウの数値を更新します。"""
         t = self.current_target
         is_task_mode = bool(t.is_task_mode()) if hasattr(t, "is_task_mode") else False
-        if self.lbl_editing_target is not None:
-            self.lbl_editing_target.setText(self._format_editing_target_text(t))
+        self._update_editing_target_labels(t)
         if self.btn_task_mode and hasattr(t, "is_task_mode"):
             self.btn_task_mode.blockSignals(True)
             self.btn_task_mode.setChecked(is_task_mode)
@@ -785,16 +786,43 @@ class PropertyPanel(QWidget):
 
     @staticmethod
     def _format_editing_target_text(target: Any) -> str:
-        base = tr("label_anim_selected_fmt").format(name=type(target).__name__)
+        return tr("label_anim_selected_fmt").format(name=type(target).__name__)
+
+    @staticmethod
+    def _extract_editing_target_preview_text(target: Any) -> str:
         text = str(getattr(target, "text", "") or "").strip()
         if not text:
-            return base
+            return ""
         first_line = text.split("\n")[0].strip()
-        if len(first_line) > 30:
-            first_line = first_line[:30] + "..."
-        if not first_line:
-            return base
-        return f"{base} / {first_line}"
+        return first_line
+
+    def _elide_editing_target_preview_text(self, text: str) -> str:
+        label = self.lbl_editing_target_preview
+        if label is None or not text:
+            return text
+        available = label.contentsRect().width()
+        if available <= 0:
+            available = label.width()
+        if available <= 0:
+            available = max(1, self.width() - 36)
+        return label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, max(1, available))
+
+    def _update_editing_target_labels(self, target: Any) -> None:
+        if self.lbl_editing_target is not None:
+            self.lbl_editing_target.setText(self._format_editing_target_text(target))
+        preview_label = self.lbl_editing_target_preview
+        if preview_label is None:
+            return
+        preview_text = self._extract_editing_target_preview_text(target)
+        if not preview_text:
+            preview_label.setHidden(True)
+            preview_label.setText("")
+            preview_label.setToolTip("")
+            return
+        prefixed_full_text = f"{tr('label_selected_preview_prefix')} {preview_text}"
+        preview_label.setHidden(False)
+        preview_label.setToolTip(prefixed_full_text)
+        preview_label.setText(self._elide_editing_target_preview_text(prefixed_full_text))
 
     # --- UI Helper Methods ---
 
@@ -1251,9 +1279,21 @@ class PropertyPanel(QWidget):
             self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost, "secondary-button")
 
         if isinstance(target, TextWindow):
-            self.lbl_editing_target = QLabel(self._format_editing_target_text(target))
+            self.lbl_editing_target = QLabel("")
             self.lbl_editing_target.setProperty("class", "info-label")
+            self.lbl_editing_target.setWordWrap(False)
+            self.lbl_editing_target.setMinimumWidth(0)
             self.scroll_layout.addWidget(self.lbl_editing_target)
+            self.lbl_editing_target_preview = QLabel("")
+            self.lbl_editing_target_preview.setProperty("class", "info-label")
+            self.lbl_editing_target_preview.setWordWrap(False)
+            self.lbl_editing_target_preview.setMinimumWidth(0)
+            self.lbl_editing_target_preview.setSizePolicy(
+                QSizePolicy.Policy.Ignored,
+                QSizePolicy.Policy.Preferred,
+            )
+            self.scroll_layout.addWidget(self.lbl_editing_target_preview)
+            self._update_editing_target_labels(target)
 
             mode_row = QWidget()
             mode_row_layout = QHBoxLayout(mode_row)
@@ -1944,6 +1984,12 @@ class PropertyPanel(QWidget):
         self.setWindowTitle(tr("prop_panel_title"))
         # レイアウトを再構築することで全ラベルの翻訳を反映
         self.refresh_ui()
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        if self.current_target is None:
+            return
+        self._update_editing_target_labels(self.current_target)
 
     def closeEvent(self, event: Any) -> None:
         """×で閉じられた場合に、MainWindow側のトグル状態もOFFへ同期する。
