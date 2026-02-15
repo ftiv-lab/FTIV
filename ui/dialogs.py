@@ -473,6 +473,7 @@ class TextInputDialog(BaseTranslatableDialog):
         initial_text: str,
         parent: Optional[QWidget] = None,
         callback: Optional[Callable[[str], None]] = None,
+        initial_font: Optional[QFont] = None,
     ) -> None:
         """TextInputDialogを初期化する。
 
@@ -498,10 +499,16 @@ class TextInputDialog(BaseTranslatableDialog):
         layout.addWidget(self.text_edit)
 
         settings: Dict[str, Any] = self.load_settings()
-        self.current_font: QFont = QFont(
-            str(settings.get("family", "Arial")),
-            int(settings.get("point_size", 20)),
-        )
+        if initial_font is not None:
+            point_size = int(initial_font.pointSize())
+            if point_size <= 0:
+                point_size = int(settings.get("point_size", 20))
+            self.current_font = QFont(initial_font.family(), point_size)
+        else:
+            self.current_font = QFont(
+                str(settings.get("family", "Arial")),
+                int(settings.get("point_size", 20)),
+            )
         self.dialog_size: QSize = QSize(
             int(settings.get("width", 500)),
             int(settings.get("height", 500)),
@@ -518,7 +525,7 @@ class TextInputDialog(BaseTranslatableDialog):
         self.font_button.clicked.connect(self.change_font)
         layout.addWidget(self.font_button)
 
-        button_layout: QVBoxLayout = QVBoxLayout()
+        button_layout: QHBoxLayout = QHBoxLayout()
         ok_button: QPushButton = QPushButton(tr("btn_ok"), self)
         cancel_button: QPushButton = QPushButton(tr("btn_cancel"), self)
         ok_button.setDefault(True)
@@ -581,24 +588,17 @@ class TextInputDialog(BaseTranslatableDialog):
                 pass
 
     def apply_font_to_text(self, font: QFont) -> None:
-        """QTextEditのフォントを更新する（Windows向け：絵文字/記号が化けない表示を優先）。
-
-        Args:
-            font (QFont): 希望フォント（設定保存用）。表示用にはフォールバックを優先する。
-        """
+        """QTextEdit のフォントを更新する。"""
         try:
-            effective: QFont = QFont("Segoe UI", font.pointSize())
-            effective_emoji: QFont = QFont("Segoe UI Emoji", font.pointSize())
-
-            try:
-                self.text_edit.setFont(effective_emoji)
-            except Exception:
-                self.text_edit.setFont(effective)
+            effective_font = QFont(font)
+            if effective_font.pointSize() <= 0:
+                effective_font.setPointSize(20)
+            self.text_edit.setFont(effective_font)
 
             cursor: QTextCursor = self.text_edit.textCursor()
             cursor.select(QTextCursor.Document)
             fmt = cursor.charFormat()
-            fmt.setFont(self.text_edit.font())
+            fmt.setFont(effective_font)
             cursor.setCharFormat(fmt)
 
         except Exception:

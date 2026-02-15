@@ -34,7 +34,6 @@ def _make_text_window(**overrides):
     obj.is_selected = False
     obj._previous_text_opacity = 100
     obj._previous_background_opacity = 100
-    obj._is_editing = False
     obj._render_debounce_ms = 25
     obj._wheel_render_relax_timer = MagicMock()
     obj.canvas_size = MagicMock()
@@ -116,15 +115,6 @@ class TestWheelEvent:
         event.angleDelta.return_value = delta
         return event
 
-    def test_editing_mode_skips(self):
-        w = _make_text_window()
-        w._is_editing = True
-        w.config.font_size = 24
-        event = self._make_event(120)
-        w.wheelEvent(event)
-        # Font size should not change
-        assert w.config.font_size == 24
-
     def test_locked_skips(self):
         w = _make_text_window()
         w.config.is_locked = True
@@ -180,6 +170,97 @@ class TestWheelEvent:
             w.update_text_debounced = MagicMock()
             w.wheelEvent(event)
         mock_prop.assert_not_called()
+
+
+# ============================================================
+# mouseDoubleClickEvent / dialog-only
+# ============================================================
+class TestMouseDoubleClickDialogOnly:
+    def _make_event(self):
+        event = MagicMock()
+        event.modifiers.return_value = Qt.NoModifier
+        event.button.return_value = Qt.MouseButton.LeftButton
+        return event
+
+    def test_double_click_always_uses_dialog_even_when_setting_inline(self):
+        w = _make_text_window()
+        w.main_window.app_settings = MagicMock()
+        w.main_window.app_settings.text_editing_mode = "inline"
+        w.change_text = MagicMock()
+        event = self._make_event()
+
+        w.mouseDoubleClickEvent(event)
+
+        w.change_text.assert_called_once()
+        event.accept.assert_called_once()
+
+    def test_double_click_uses_dialog_when_mode_dialog(self):
+        w = _make_text_window()
+        w.main_window.app_settings = MagicMock()
+        w.main_window.app_settings.text_editing_mode = "dialog"
+        w.change_text = MagicMock()
+        event = self._make_event()
+
+        w.mouseDoubleClickEvent(event)
+
+        w.change_text.assert_called_once()
+        event.accept.assert_called_once()
+
+    def test_context_menu_does_not_include_text_editing_mode_submenu(self):
+        w = _make_text_window()
+
+        class DummyBuilder:
+            last_instance = None
+
+            def __init__(self, *_args, **_kwargs):
+                self.submenus = []
+                DummyBuilder.last_instance = self
+
+            def add_connect_group_menu(self):
+                return None
+
+            def add_action(self, *_args, **_kwargs):
+                return MagicMock()
+
+            def add_submenu(self, text_key, **_kwargs):
+                self.submenus.append(text_key)
+                return MagicMock()
+
+            def add_separator(self, **_kwargs):
+                return None
+
+            def exec(self, *_args, **_kwargs):
+                return None
+
+        with patch("windows.text_window.ContextMenuBuilder", DummyBuilder):
+            with patch.object(type(w), "mapToGlobal", return_value=QPoint(0, 0)):
+                w.show_context_menu(QPoint(0, 0))
+
+        assert DummyBuilder.last_instance is not None
+        assert "menu_text_editing_mode" not in DummyBuilder.last_instance.submenus
+
+
+# ============================================================
+# change_text / dialog independent font
+# ============================================================
+class TestChangeTextDialogFontMode:
+    @patch("windows.text_window.TextInputDialog")
+    def test_change_text_does_not_pass_initial_font(self, mock_dialog_cls):
+        w = _make_text_window()
+        w.config.text = "abc"
+        w.config.font = "Arial"
+        w.config.font_size = 48
+        w.update_text = MagicMock()
+        w.screen = MagicMock(return_value=None)
+
+        dialog = MagicMock()
+        dialog.exec.return_value = 0  # Rejected
+        mock_dialog_cls.return_value = dialog
+
+        w.change_text()
+
+        _args, kwargs = mock_dialog_cls.call_args
+        assert "initial_font" not in kwargs
 
 
 # ============================================================

@@ -441,7 +441,6 @@
     "menu_arrow_end": "Arrow: End",
     "menu_arrow_both": "Arrow: Both",
     "msg_info": "Info",
-    "msg_task_toggle_requires_inline_edit": "Open inline edit first, then press Ctrl+Enter to toggle the current task line.",
     "msg_task_mode_horizontal_only": "Task mode supports horizontal text only.",
     "label_content_mode": "Content Mode",
     "label_content_mode_note": "Note",

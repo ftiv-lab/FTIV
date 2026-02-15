@@ -249,14 +249,6 @@ class TestTaskModeHelpers:
         w.toggle_vertical_text()
         mock_info.assert_called_once()
 
-    @patch("windows.text_window.QMessageBox.information")
-    def test_toggle_task_line_under_cursor_requires_inline_edit(self, mock_info):
-        w = _make_text_window()
-        w.config.content_mode = "task"
-        w._is_editing = False
-        w._toggle_task_line_under_cursor()
-        mock_info.assert_called_once()
-
     def test_iter_task_items_returns_refs(self):
         w = _make_text_window()
         w.config.content_mode = "task"

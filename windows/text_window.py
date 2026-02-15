@@ -34,7 +34,6 @@ from utils.tag_ops import normalize_tags
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
-from .mixins.inline_editor_mixin import InlineEditorMixin
 from .mixins.text_properties_mixin import TextPropertiesMixin
 
 # ロガーの取得
@@ -52,7 +51,7 @@ class TaskLineRef:
     done: bool
 
 
-class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # type: ignore
+class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     """テキストを表示・制御するためのオーバーレイウィンドウクラス。
 
     テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
@@ -67,7 +66,6 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
             pos (QPoint): 表示位置。
         """
         BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
-        InlineEditorMixin.__init__(self)
 
         try:
             self._init_text_renderer(main_window)
@@ -497,29 +495,6 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
         """指定行の完了状態をトグルする。"""
         self.toggle_task_line_state(idx)
 
-    def _toggle_task_line_under_cursor(self) -> None:
-        """インライン編集中のカーソル行の完了状態をトグルする。"""
-        if not self.is_task_mode() or not getattr(self, "_is_editing", False):
-            QMessageBox.information(self, tr("msg_info"), tr("msg_task_toggle_requires_inline_edit"))
-            return
-
-        editor = getattr(self, "_inline_editor", None)
-        if editor is None:
-            QMessageBox.information(self, tr("msg_info"), tr("msg_task_toggle_requires_inline_edit"))
-            return
-
-        cursor = editor.textCursor()
-        line_idx = cursor.blockNumber()
-
-        lines = editor.toPlainText().split("\n")
-        if line_idx < 0 or line_idx >= len(lines):
-            return
-
-        self._toggle_task_line_by_index(line_idx)
-
-        self._touch_updated_at()
-        self.update_text()
-
     def get_task_progress(self) -> tuple[int, int]:
         """タスクの進捗を返す（完了数, 総数）。"""
         if not self.is_task_mode():
@@ -810,8 +785,8 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
                 return
 
             if event.button() == Qt.MouseButton.LeftButton:
-                # インライン編集を開始
-                self._start_inline_edit()
+                logger.info("Text edit start by double-click: uuid=%s mode=dialog", self.uuid)
+                self.change_text()
                 event.accept()
             else:
                 super().mouseDoubleClickEvent(event)
@@ -829,11 +804,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
     def mouseReleaseEvent(self, event: Any) -> None:
         """マウスリリースイベント。タスクモードでチェックボックスクリックを処理。"""
-        if (
-            event.button() == Qt.MouseButton.LeftButton
-            and self.is_task_mode()
-            and not getattr(self, "_is_editing", False)
-        ):
+        if event.button() == Qt.MouseButton.LeftButton and self.is_task_mode():
             release_pos = event.position().toPoint()
             press_pos = getattr(self, "_task_press_pos", None)
             if press_pos is not None:
@@ -848,7 +819,7 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
     def mouseMoveEvent(self, event: Any) -> None:
         """マウスムーブイベント。タスクモード時にチェックボックス上でカーソル変更。"""
-        if self.is_task_mode() and not self.is_dragging and not getattr(self, "_is_editing", False):
+        if self.is_task_mode() and not self.is_dragging:
             pos = event.position().toPoint()
             idx = self._hit_test_task_checkbox(pos)
             if idx >= 0:
@@ -884,10 +855,6 @@ class TextWindow(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # 
 
         ロック中は誤操作防止のため無効化する。
         """
-        # インライン編集中はスクロール（リサイズ）を無効化
-        if self._is_editing:
-            return
-
         try:
             if bool(getattr(self, "is_locked", False)):
                 event.accept()

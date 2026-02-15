@@ -441,7 +441,6 @@
     "menu_arrow_end": "矢印: 終点",
     "menu_arrow_both": "矢印: 両端",
     "msg_info": "情報",
-    "msg_task_toggle_requires_inline_edit": "先にインライン編集を開き、Ctrl+Enter で現在行の完了状態を切り替えてください。",
     "msg_task_mode_horizontal_only": "タスクモードは横書き専用です。",
     "label_content_mode": "コンテンツモード",
     "label_content_mode_note": "ノート",

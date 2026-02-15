@@ -9,7 +9,7 @@ _toggle_label_visibility, _clear_label_text, _change_label_font/color をカバ�
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QFont
 
 from models.enums import ArrowStyle
@@ -59,7 +59,6 @@ def _make_connector_label(**overrides):
     obj.child_windows = []
     obj.connected_lines = []
     obj.is_selected = False
-    obj._is_editing = False
     for k, v in overrides.items():
         setattr(obj, k, v)
     return obj
@@ -291,6 +290,22 @@ class TestLabelToggleVisibility:
             with patch.object(type(label), "show"):
                 label._toggle_label_visibility()
         label.edit_text_realtime.assert_called_once()
+
+
+# ============================================================
+# ConnectorLabel: mouseDoubleClickEvent (Dialog-only)
+# ============================================================
+class TestConnectorLabelDoubleClick:
+    def test_left_double_click_uses_dialog_edit(self):
+        label = _make_connector_label()
+        label.edit_text_realtime = MagicMock()
+        event = MagicMock()
+        event.button.return_value = Qt.MouseButton.LeftButton
+
+        label.mouseDoubleClickEvent(event)
+
+        label.edit_text_realtime.assert_called_once()
+        event.accept.assert_called_once()
 
 
 # ============================================================

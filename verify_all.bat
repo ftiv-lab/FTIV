@@ -47,10 +47,10 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [5/7] Running Tests: Group 2 (Inline Editing)...
-uv run pytest tests/test_inline_edit.py --maxfail=1 --showlocals -v
+echo [5/7] Running Tests: Group 2 (Dialog Editing)...
+uv run pytest tests/test_dialog_edit_flow.py --maxfail=1 --showlocals -v
 if %errorlevel% neq 0 (
-    echo [ERROR] Inline Editing Tests failed.
+    echo [ERROR] Dialog Editing Tests failed.
     goto :FAIL
 )
 

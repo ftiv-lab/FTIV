@@ -29,13 +29,12 @@ from ui.dialogs import (
 from utils.font_dialog import choose_font
 from utils.translator import tr
 from windows.base_window import BaseOverlayWindow
-from windows.mixins.inline_editor_mixin import InlineEditorMixin
 from windows.mixins.text_properties_mixin import TextPropertiesMixin
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):  # type: ignore
+class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     """
     接続線の上に表示されるラベル専用のウィンドウ
     TextWindowとほぼ同じ機能を持つが、位置はConnectorLineによって管理される
@@ -51,7 +50,6 @@ class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):
         """
         # TextWindowConfigを使用して初期化
         BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
-        InlineEditorMixin.__init__(self)
 
         self.connector: Any = connector
 
@@ -107,8 +105,7 @@ class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):
             # CanvasSizeに合わせてリサイズ（当たり判定用）
             # Note: TextRenderer.render で self.canvas_size が更新されている前提
             if hasattr(self, "canvas_size") and self.canvas_size:
-                if not getattr(self, "_is_editing", False):
-                    self.resize(self.canvas_size)
+                self.resize(self.canvas_size)
 
             # 親のコネクタ位置も再計算
             if self.connector:
@@ -146,8 +143,7 @@ class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):
 
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            # InlineEditorMixin start
-            self._start_inline_edit()
+            self.edit_text_realtime()
             event.accept()
         else:
             super().mouseDoubleClickEvent(event)
@@ -373,9 +369,6 @@ class ConnectorLabel(TextPropertiesMixin, InlineEditorMixin, BaseOverlayWindow):
         Args:
             event (Any): QWheelEvent
         """
-        if self._is_editing:
-            return
-
         try:
             delta: int = int(event.angleDelta().y())
             if delta == 0:
