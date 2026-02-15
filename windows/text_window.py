@@ -919,6 +919,12 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     def closeEvent(self, event: Any) -> None:
         """クローズ時に編集ダイアログをクリーンアップする。"""
         if getattr(self, "_edit_dialog", None) is not None:
+            # Disconnect first to prevent _on_edit_dialog_finished from
+            # calling update_text() on a dying widget.
+            try:
+                self._edit_dialog.finished.disconnect(self._on_edit_dialog_finished)
+            except (RuntimeError, TypeError):
+                pass
             try:
                 self._edit_dialog.reject()
             except RuntimeError:

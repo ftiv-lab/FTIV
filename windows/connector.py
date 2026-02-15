@@ -135,6 +135,10 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         # Phase F: 編集ダイアログクリーンアップ
         if getattr(self, "_edit_dialog", None) is not None:
             try:
+                self._edit_dialog.finished.disconnect(self._on_edit_dialog_finished)
+            except (RuntimeError, TypeError):
+                pass
+            try:
                 self._edit_dialog.reject()
             except RuntimeError:
                 pass
