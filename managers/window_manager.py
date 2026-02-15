@@ -629,9 +629,11 @@ class WindowManager(QObject):
     def set_selected_window(self, window: Optional[QObject]):
         self._prune_invalid_refs()
 
-        if self.last_selected_window and self.last_selected_window != window:
-            if hasattr(self.last_selected_window, "set_selected"):
-                self.last_selected_window.set_selected(False)
+        old_selected = self.last_selected_window
+
+        if old_selected and old_selected != window:
+            if hasattr(old_selected, "set_selected"):
+                old_selected.set_selected(False)
 
         self.last_selected_window = window
 
@@ -641,6 +643,45 @@ class WindowManager(QObject):
                 self.last_selected_window.raise_()
 
         self.sig_selection_changed.emit(window)
+
+        # --- Auto-Follow: 編集ダイアログの所有権を移譲 ---
+        self._try_transfer_edit_dialog(old_selected, window)
+
+    def _try_transfer_edit_dialog(
+        self,
+        old_window: Optional[QObject],
+        new_window: Optional[QObject],
+    ) -> None:
+        """Auto-Follow: TextWindow 間で編集ダイアログを移譲する。
+
+        old_window がダイアログを持ち、new_window も TextWindow であれば、
+        ダイアログの所有権を new_window に移す（auto-commit + switch_target）。
+        """
+        if old_window is None or new_window is None:
+            return
+        if old_window is new_window:
+            return
+
+        # Only transfer between TextWindows
+        if not isinstance(old_window, TextWindow) or not isinstance(new_window, TextWindow):
+            return
+
+        dialog = getattr(old_window, "_edit_dialog", None)
+        if dialog is None:
+            return
+
+        # Release from old (auto-commits current text)
+        released = old_window._release_edit_dialog()
+        if released is None:
+            return
+
+        # Take over by new window
+        new_window._take_over_edit_dialog(released)
+        logger.info(
+            "Auto-Follow: dialog transferred %s -> %s",
+            getattr(old_window, "uuid", "?"),
+            getattr(new_window, "uuid", "?"),
+        )
 
     # ==========================================
     # Node Logic (Clone & Create Related)

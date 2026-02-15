@@ -52,6 +52,8 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
 
         self.connector: Any = connector
+        self._edit_dialog: Optional[Any] = None
+        self._edit_original_text: str = ""
 
         try:
             self._init_text_renderer(main_window)
@@ -124,12 +126,19 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         painter.end()
 
     def closeEvent(self, event: Any) -> None:
-        """ラベルが閉じられた場合の互換通知（元の方針へ戻す）。
+        """ラベルが閉じられた場合に編集ダイアログをクリーンアップし互換通知する。
 
         Notes:
             ConnectorLabel が予期せず閉じられた時に、上位側が状態を保てるよう
             互換シグナルを出す（既存挙動に合わせる）。
         """
+        # Phase F: 編集ダイアログクリーンアップ
+        if getattr(self, "_edit_dialog", None) is not None:
+            try:
+                self._edit_dialog.reject()
+            except RuntimeError:
+                pass
+            self._edit_dialog = None
         try:
             try:
                 self.sig_connector_deleted.emit(self)
@@ -174,36 +183,103 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         except Exception:
             pass
 
-    def edit_text_realtime(self):
-        original_text = self.text
+    def edit_text_realtime(self) -> None:
+        """モードレスダイアログでテキストを変更する（Persistent Mode）。"""
+        # 二重起動ガード
+        if self._edit_dialog is not None:
+            try:
+                self._edit_dialog.activateWindow()
+                self._edit_dialog.raise_()
+            except RuntimeError:
+                self._edit_dialog = None
+            return
 
-        def live_update(new_text):
+        self._edit_original_text = self.text
+
+        def live_update(new_text: str) -> None:
             self.text = new_text
             self.update_text()
 
         dialog = TextInputDialog(self.text, self, callback=live_update)
+        self._edit_dialog = dialog
 
-        screen_geo = self.screen().availableGeometry()
+        # --- スマート配置 ---
+        self._position_edit_dialog(dialog)
+
+        dialog.finished.connect(self._on_edit_dialog_finished)
+        dialog.show()
+        dialog.activateWindow()
+
+    def _position_edit_dialog(self, dialog: Any) -> None:
+        """ダイアログの位置を決定する。"""
+        screen = self.screen()
+        if not screen:
+            return
+
+        screen_geo = screen.availableGeometry()
         dlg_w = dialog.width()
         dlg_h = dialog.height()
-        target_x = self.x() + self.width() + 20
-        target_y = self.y()
-        if target_x + dlg_w > screen_geo.right():
-            target_x = self.x() - dlg_w - 20
-        if target_y + dlg_h > screen_geo.bottom():
-            target_y = screen_geo.bottom() - dlg_h
+
+        # 保存位置があれば画面内チェックして使用
+        saved_pos = dialog.get_saved_position()
+        if saved_pos is not None:
+            sx, sy = saved_pos
+            if (
+                screen_geo.left() <= sx <= screen_geo.right() - 50
+                and screen_geo.top() <= sy <= screen_geo.bottom() - 50
+            ):
+                dialog.move(sx, sy)
+                return
+
+        # 4方向配置
+        padding = 20
+        candidates = [
+            (self.x() + self.width() + padding, self.y()),
+            (self.x() - dlg_w - padding, self.y()),
+            (self.x(), self.y() + self.height() + padding),
+            (self.x(), self.y() - dlg_h - padding),
+        ]
+
+        for cx, cy in candidates:
+            if (
+                screen_geo.left() <= cx
+                and cx + dlg_w <= screen_geo.right()
+                and screen_geo.top() <= cy
+                and cy + dlg_h <= screen_geo.bottom()
+            ):
+                dialog.move(cx, cy)
+                return
+
+        # フォールバック
+        target_x = min(self.x() + self.width() + padding, screen_geo.right() - dlg_w)
+        target_x = max(screen_geo.left(), target_x)
+        target_y = max(screen_geo.top(), min(self.y(), screen_geo.bottom() - dlg_h))
         dialog.move(target_x, target_y)
 
-        if dialog.exec() == QDialog.Accepted:
-            final_text = dialog.get_text()
-            if final_text != original_text:
-                self.set_undoable_property("text", final_text, "update_text")
-        else:
-            try:
-                self.text = original_text
+    def _on_edit_dialog_finished(self, result: int) -> None:
+        """ダイアログの確定/キャンセルを処理する。"""
+        dialog = self._edit_dialog
+        self._edit_dialog = None
+
+        if dialog is None:
+            return
+
+        try:
+            if result == QDialog.Accepted:
+                final_text = dialog.get_text()
+                original = self._edit_original_text
+                if final_text != original:
+                    self.set_undoable_property("text", final_text, "update_text")
+            else:
+                self.text = self._edit_original_text
                 self.update_text()
-            except Exception:
-                pass
+        except Exception:
+            pass
+
+        try:
+            dialog.deleteLater()
+        except RuntimeError:
+            pass
 
     # --- 余白設定用メソッド (★追加) ---
 
