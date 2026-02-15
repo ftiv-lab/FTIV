@@ -244,7 +244,7 @@ class TestMouseDoubleClickDialogOnly:
 # change_text / dialog independent font
 # ============================================================
 class TestChangeTextDialogFontMode:
-    @patch("windows.text_window.TextInputDialog")
+    @patch("ui.dialogs.TextInputDialog")
     def test_change_text_does_not_pass_initial_font(self, mock_dialog_cls):
         w = _make_text_window()
         w.config.text = "abc"

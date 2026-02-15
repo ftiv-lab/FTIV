@@ -25,7 +25,6 @@ from ui.dialogs import (
     MarginRatioDialog,
     ShadowOffsetDialog,
     StyleGalleryDialog,
-    TextInputDialog,
     TextSpacingDialog,
 )
 from utils.due_date import classify_due, format_due_for_display, normalize_due_iso
@@ -34,6 +33,7 @@ from utils.tag_ops import normalize_tags
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
+from .mixins.edit_dialog_mixin import EditDialogMixin
 from .mixins.text_properties_mixin import TextPropertiesMixin
 
 # ロガーの取得
@@ -51,7 +51,7 @@ class TaskLineRef:
     done: bool
 
 
-class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
+class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     """テキストを表示・制御するためのオーバーレイウィンドウクラス。
 
     テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
@@ -918,184 +918,12 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
     def closeEvent(self, event: Any) -> None:
         """クローズ時に編集ダイアログをクリーンアップする。"""
-        if getattr(self, "_edit_dialog", None) is not None:
-            # Disconnect first to prevent _on_edit_dialog_finished from
-            # calling update_text() on a dying widget.
-            try:
-                self._edit_dialog.finished.disconnect(self._on_edit_dialog_finished)
-            except (RuntimeError, TypeError):
-                pass
-            try:
-                self._edit_dialog.reject()
-            except RuntimeError:
-                pass
-            self._edit_dialog = None
+        self._cleanup_edit_dialog()
         super().closeEvent(event)
 
     def change_text(self) -> None:
         """モードレスダイアログでテキストを変更する（Persistent Mode）。"""
-        # 二重起動ガード: 既にダイアログが開いている場合はアクティブにするだけ
-        if getattr(self, "_edit_dialog", None) is not None:
-            try:
-                self._edit_dialog.activateWindow()
-                self._edit_dialog.raise_()
-            except RuntimeError:
-                self._edit_dialog = None
-            return
-
-        self._edit_original_text = self.text
-
-        def live_update_callback(new_text: str) -> None:
-            try:
-                self.text = new_text
-                self.update_text()
-            except Exception as e:
-                logger.error(f"Live update failed: {e}")
-
-        try:
-            dialog = TextInputDialog(self.text, self, callback=live_update_callback)
-            self._edit_dialog = dialog
-
-            # --- スマート配置: 保存位置 → 4方向最適配置 ---
-            self._position_edit_dialog(dialog)
-
-            # --- モードレス: show() + finished シグナル ---
-            dialog.finished.connect(self._on_edit_dialog_finished)
-            dialog.show()
-            dialog.activateWindow()
-
-        except Exception as e:
-            logger.error(f"Error in change_text dialog: {e}\n{traceback.format_exc()}")
-            self._edit_dialog = None
-            self.text = self._edit_original_text
-            self.update_text()
-
-    def _position_edit_dialog(self, dialog: Any) -> None:
-        """ダイアログの位置を決定する（保存位置優先、画面内に収まるよう調整）。"""
-        screen = self.screen()
-        if not screen:
-            return
-
-        screen_geo = screen.availableGeometry()
-        dlg_w = dialog.width()
-        dlg_h = dialog.height()
-
-        # 保存位置があれば画面内チェックして使用
-        saved_pos = dialog.get_saved_position()
-        if saved_pos is not None:
-            sx, sy = saved_pos
-            if (
-                screen_geo.left() <= sx <= screen_geo.right() - 50
-                and screen_geo.top() <= sy <= screen_geo.bottom() - 50
-            ):
-                dialog.move(sx, sy)
-                return
-
-        # 4方向配置: TextWindow と重ならない最適位置を選択
-        win_geo = self.geometry()
-        padding = 20
-        candidates = [
-            (win_geo.right() + padding, win_geo.top()),  # 右
-            (win_geo.left() - dlg_w - padding, win_geo.top()),  # 左
-            (win_geo.left(), win_geo.bottom() + padding),  # 下
-            (win_geo.left(), win_geo.top() - dlg_h - padding),  # 上
-        ]
-
-        for cx, cy in candidates:
-            # 画面内に収まるか
-            if (
-                screen_geo.left() <= cx
-                and cx + dlg_w <= screen_geo.right()
-                and screen_geo.top() <= cy
-                and cy + dlg_h <= screen_geo.bottom()
-            ):
-                dialog.move(cx, cy)
-                return
-
-        # フォールバック: 右に配置し、画面からはみ出す分を調整
-        target_x = min(win_geo.right() + padding, screen_geo.right() - dlg_w)
-        target_x = max(screen_geo.left(), target_x)
-        target_y = max(screen_geo.top(), min(win_geo.top(), screen_geo.bottom() - dlg_h))
-        dialog.move(target_x, target_y)
-
-    def _on_edit_dialog_finished(self, result: int) -> None:
-        """ダイアログの確定/キャンセルを処理する。"""
-        dialog = self._edit_dialog
-        self._edit_dialog = None
-
-        if dialog is None:
-            return
-
-        try:
-            if result == QDialog.Accepted:
-                final_text = dialog.get_text()
-                original = self._edit_original_text
-                self.text = original
-                if final_text != original:
-                    self.set_undoable_property("text", final_text, "update_text")
-                    logger.info(f"Text changed for {self.uuid}")
-                else:
-                    self.update_text()
-            else:
-                self.text = self._edit_original_text
-                self.update_text()
-        except RuntimeError:
-            pass
-
-        try:
-            dialog.deleteLater()
-        except RuntimeError:
-            pass
-
-    # --- Auto-Follow: TextWindow 間のダイアログ移譲 ---
-
-    def _release_edit_dialog(self) -> Any:
-        """Auto-Follow: 編集ダイアログの所有権を手放す（auto-commit 付き）。
-
-        Returns:
-            TextInputDialog if released, None otherwise.
-        """
-        dialog = self._edit_dialog
-        if dialog is None:
-            return None
-
-        self._edit_dialog = None
-
-        # auto-commit: changes are saved as a single Undo entry
-        try:
-            final_text = dialog.get_text()
-            original = self._edit_original_text
-            self.text = original
-            if final_text != original:
-                self.set_undoable_property("text", final_text, "update_text")
-                logger.info(f"Auto-commit text for {self.uuid}")
-            else:
-                self.update_text()
-        except RuntimeError:
-            pass
-
-        # Disconnect finished signal from this window
-        try:
-            dialog.finished.disconnect(self._on_edit_dialog_finished)
-        except (RuntimeError, TypeError):
-            pass
-
-        return dialog
-
-    def _take_over_edit_dialog(self, dialog: Any) -> None:
-        """Auto-Follow: 別の TextWindow から編集ダイアログの所有権を引き取る。"""
-        self._edit_original_text = self.text
-        self._edit_dialog = dialog
-
-        def live_update_callback(new_text: str) -> None:
-            try:
-                self.text = new_text
-                self.update_text()
-            except Exception as e:
-                logger.error(f"Live update failed: {e}")
-
-        dialog.switch_target(self.text, live_update_callback)
-        dialog.finished.connect(self._on_edit_dialog_finished)
+        self.start_edit_dialog()
 
     def change_font(self) -> None:
         """フォント選択ダイアログを表示し、適用する。"""

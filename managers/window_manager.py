@@ -652,18 +652,19 @@ class WindowManager(QObject):
         old_window: Optional[QObject],
         new_window: Optional[QObject],
     ) -> None:
-        """Auto-Follow: TextWindow 間で編集ダイアログを移譲する。
+        """Auto-Follow: テキスト編集可能ウィジェット間でダイアログを移譲する。
 
-        old_window がダイアログを持ち、new_window も TextWindow であれば、
+        old_window がダイアログを持ち、new_window も EditDialogMixin を備えていれば、
         ダイアログの所有権を new_window に移す（auto-commit + switch_target）。
+        Duck Typing により TextWindow ↔ ConnectorLabel 間でも動作する。
         """
         if old_window is None or new_window is None:
             return
         if old_window is new_window:
             return
 
-        # Only transfer between TextWindows
-        if not isinstance(old_window, TextWindow) or not isinstance(new_window, TextWindow):
+        # Duck Typing: EditDialogMixin を備えているか
+        if not hasattr(old_window, "_release_edit_dialog") or not hasattr(new_window, "_take_over_edit_dialog"):
             return
 
         dialog = getattr(old_window, "_edit_dialog", None)
