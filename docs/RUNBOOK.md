@@ -67,3 +67,17 @@ If you are new to the repository or switching environments, start here.
 - `uv run pytest tests/test_dialog_edit_flow.py -q -p no:cacheprovider`
 5. Final integrated verification:
 - `cmd /c verify_all.bat`
+
+## 9. Phase 10C Lane (UI Regression CI Operationalization)
+1. Visual contract suite:
+- `uv run pytest tests/test_visual_profile_contract.py tests/test_visual_regression_minimal.py tests/test_visual_regression_contract.py -q -p no:cacheprovider`
+2. CI helper tests:
+- `uv run pytest tests/test_ci_ui_visual_lane.py tests/test_ui_visual_diff_report.py -q -p no:cacheprovider`
+3. UI visual lane (monitor):
+- `uv run python scripts/ci_ui_visual_lane.py --mode monitor`
+4. UI visual lane (enforce):
+- `uv run python scripts/ci_ui_visual_lane.py --mode enforce`
+5. UI visual diff report:
+- `uv run python scripts/ui_visual_diff_report.py`
+6. Final integrated verification:
+- `cmd /c verify_all.bat`
