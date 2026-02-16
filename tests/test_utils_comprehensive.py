@@ -322,7 +322,8 @@ class TestAppSettings:
                         "open_tasks_only": False,
                         "archive_scope": "all",
                         "due_filter": "today",
-                        "mode_filter": "task",
+                        "item_scope": "tasks",
+                        "content_mode_filter": "task",
                         "sort_by": "due",
                         "sort_desc": False,
                     },
@@ -422,6 +423,27 @@ class TestAppSettings:
         assert loaded.info_last_view_preset_id == "user:1"
         assert len(loaded.info_view_presets) == 1
         assert loaded.info_view_presets[0]["id"] == "user:1"
+
+    def test_load_legacy_mode_filter_is_not_migrated(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {
+            "info_view_presets": [
+                {"id": "user:1", "name": "legacy", "filters": {"mode_filter": "task", "due_filter": "today"}}
+            ],
+        }
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert len(loaded.info_view_presets) == 1
+        filters = loaded.info_view_presets[0]["filters"]
+        assert filters["item_scope"] == "all"
+        assert filters["content_mode_filter"] == "all"
+        assert filters["due_filter"] == "today"
+        assert "mode_filter" not in filters
 
     def test_load_invalid_info_operation_logs_skips_bad_entries(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import load_app_settings

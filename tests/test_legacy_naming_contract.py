@@ -37,14 +37,14 @@ def test_info_preset_sanitizer_drops_mode_filter_on_save_contract() -> None:
     )
     assert len(presets) == 1
     filters = presets[0]["filters"]
-    assert filters["item_scope"] == "tasks"
-    assert filters["content_mode_filter"] == "task"
+    assert filters["item_scope"] == "all"
+    assert filters["content_mode_filter"] == "all"
     assert "mode_filter" not in filters
 
 
-def test_mode_filter_migration_boundary_is_app_settings_only() -> None:
+def test_mode_filter_migration_path_is_removed_from_runtime() -> None:
     app_settings_src = _read_text("utils/app_settings.py")
     info_tab_src = _read_text("ui/tabs/info_tab.py")
 
-    assert 'raw.get("mode_filter"' in app_settings_src
+    assert 'raw.get("mode_filter"' not in app_settings_src
     assert 'raw.get("mode_filter"' not in info_tab_src

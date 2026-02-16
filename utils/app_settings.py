@@ -55,27 +55,14 @@ def _sanitize_app_settings_schema_version(value: Any) -> int:
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
-    # Migration path only (Phase 8D): legacy `mode_filter` is accepted only here.
-    # Do not duplicate this migration in UI-level sanitizers.
-    # Removal target: Phase 8E+ after migration window closes.
-    migrated_mode_filter = str(raw.get("mode_filter", "")).strip().lower()
-    if migrated_mode_filter not in _INFO_MODE_FILTERS:
-        migrated_mode_filter = ""
 
     item_scope = str(raw.get("item_scope", "all")).strip().lower()
     if item_scope not in _INFO_ITEM_SCOPE_FILTERS:
         item_scope = "all"
-    if item_scope == "all":
-        if migrated_mode_filter == "task":
-            item_scope = "tasks"
-        elif migrated_mode_filter == "note":
-            item_scope = "notes"
 
     content_mode_filter = str(raw.get("content_mode_filter", "")).strip().lower()
     if content_mode_filter not in _INFO_MODE_FILTERS:
-        if migrated_mode_filter in {"task", "note"}:
-            content_mode_filter = migrated_mode_filter
-        elif item_scope == "tasks":
+        if item_scope == "tasks":
             content_mode_filter = "task"
         elif item_scope == "notes":
             content_mode_filter = "note"
