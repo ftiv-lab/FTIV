@@ -27,7 +27,7 @@ from ui.dialogs import (
     StyleGalleryDialog,
     TextSpacingDialog,
 )
-from utils.due_date import classify_due, format_due_for_display, normalize_due_iso
+from utils.due_date import normalize_due_iso
 from utils.font_dialog import choose_font
 from utils.translator import tr
 
@@ -37,6 +37,7 @@ from .mixins.text_properties_mixin import TextPropertiesMixin
 from .text_window_parts import metadata_ops as text_window_metadata_ops
 from .text_window_parts import selection_ops as text_window_selection_ops
 from .text_window_parts import task_ops as text_window_task_ops
+from .text_window_parts import tooltip_ops as text_window_tooltip_ops
 from .text_window_parts.runtime_bridge import ensure_runtime_services
 
 # ロガーの取得
@@ -160,93 +161,16 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         self._refresh_overlay_meta_tooltip()
 
     def _classify_due_state(self) -> str:
-        raw_due = getattr(self, "due_at", "")
-        due_at = str(raw_due).strip() if isinstance(raw_due, str) else ""
-        if not due_at:
-            return ""
-        try:
-            return str(
-                classify_due(
-                    due_at,
-                    due_time=str(getattr(self, "due_time", "") or ""),
-                    due_timezone=str(getattr(self, "due_timezone", "") or ""),
-                    due_precision=str(getattr(self, "due_precision", "date") or "date"),
-                )
-            )
-        except Exception:
-            return ""
+        return text_window_tooltip_ops.classify_due_state(self)
 
     def _task_progress_counts(self) -> tuple[int, int]:
         return text_window_task_ops.task_progress_counts(self)
 
     def _build_overlay_meta_tooltip_lines(self) -> List[str]:
-        lines: List[str] = []
-
-        title = str(getattr(self, "title", "") or "").strip()
-        if title:
-            lines.append(f"{tr('label_note_title')}: {title}")
-
-        if self.is_task_mode():
-            done, total = self._task_progress_counts()
-            lines.append(str(tr("label_task_progress_fmt")).format(done=done, total=total))
-
-        raw_due = getattr(self, "due_at", "")
-        due_at = str(raw_due).strip() if isinstance(raw_due, str) else ""
-        if due_at:
-            due_display = format_due_for_display(
-                due_at,
-                due_time=str(getattr(self, "due_time", "") or ""),
-                due_timezone=str(getattr(self, "due_timezone", "") or ""),
-                due_precision=str(getattr(self, "due_precision", "date") or "date"),
-            )
-            if due_display:
-                lines.append(f"{tr('label_note_due_at')}: {due_display}")
-            due_state = self._classify_due_state()
-            if due_state == "today":
-                lines.append(tr("text_meta_due_today"))
-            elif due_state == "overdue":
-                lines.append(tr("text_meta_due_overdue"))
-
-        raw_tags = getattr(self, "tags", [])
-        tags = [str(tag).strip() for tag in raw_tags] if isinstance(raw_tags, list) else []
-        tags = [tag for tag in tags if tag]
-        if tags:
-            lines.append(f"{tr('label_note_tags')}: {', '.join(tags)}")
-
-        if bool(getattr(self, "is_starred", False)):
-            lines.append(f"★ {tr('text_meta_starred')}")
-        if bool(getattr(self, "is_archived", False)):
-            lines.append(tr("text_meta_archived"))
-        return lines
+        return text_window_tooltip_ops.build_overlay_meta_tooltip_lines(self)
 
     def _refresh_overlay_meta_tooltip(self) -> None:
-        prev_append = str(getattr(self, "_overlay_meta_tooltip_append", "") or "")
-        try:
-            current = str(self.toolTip() or "")
-        except Exception:
-            return
-
-        base = current
-        if prev_append and current.endswith(prev_append):
-            base = current[: -len(prev_append)]
-        base = base.rstrip()
-
-        lines = self._build_overlay_meta_tooltip_lines()
-        if not lines:
-            try:
-                self.setToolTip(base)
-            except Exception:
-                pass
-            self._overlay_meta_tooltip_append = ""
-            return
-
-        suffix = "\n".join(lines)
-        append = f"\n\n{suffix}" if base else suffix
-        try:
-            self.setToolTip(base + append)
-            self._overlay_meta_tooltip_append = append
-        except Exception:
-            self._overlay_meta_tooltip_append = ""
+        text_window_tooltip_ops.refresh_overlay_meta_tooltip(self)
 
     def set_undoable_property(
         self,

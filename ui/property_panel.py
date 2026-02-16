@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QSlider,
     QSpinBox,
     QVBoxLayout,
@@ -28,7 +27,13 @@ from PySide6.QtWidgets import (
 from models.enums import ArrowStyle
 from models.protocols import NoteMetadataEditableTarget, UndoableConfigurable
 from ui.dialogs import DatePickerDialog
-from ui.property_panel_sections import build_text_content_section, build_text_style_section
+from ui.property_panel_orchestrator import (
+    build_text_window_primary_sections,
+    elide_label_text,
+    extract_editing_target_preview_text,
+    format_editing_target_text,
+    update_editing_target_labels,
+)
 from ui.widgets import CollapsibleBox
 from utils.due_date import display_due_iso, is_valid_timezone, normalize_due_input_allow_empty, normalize_due_time
 from utils.translator import tr
@@ -792,43 +797,20 @@ class PropertyPanel(QWidget):
 
     @staticmethod
     def _format_editing_target_text(target: Any) -> str:
-        return tr("label_anim_selected_fmt").format(name=type(target).__name__)
+        return format_editing_target_text(target)
 
     @staticmethod
     def _extract_editing_target_preview_text(target: Any) -> str:
-        text = str(getattr(target, "text", "") or "").strip()
-        if not text:
-            return ""
-        first_line = text.split("\n")[0].strip()
-        return first_line
+        return extract_editing_target_preview_text(target)
 
     def _elide_editing_target_preview_text(self, text: str) -> str:
         label = self.lbl_editing_target_preview
         if label is None or not text:
             return text
-        available = label.contentsRect().width()
-        if available <= 0:
-            available = label.width()
-        if available <= 0:
-            available = max(1, self.width() - 36)
-        return label.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, max(1, available))
+        return elide_label_text(self, label, text)
 
     def _update_editing_target_labels(self, target: Any) -> None:
-        if self.lbl_editing_target is not None:
-            self.lbl_editing_target.setText(self._format_editing_target_text(target))
-        preview_label = self.lbl_editing_target_preview
-        if preview_label is None:
-            return
-        preview_text = self._extract_editing_target_preview_text(target)
-        if not preview_text:
-            preview_label.setHidden(True)
-            preview_label.setText("")
-            preview_label.setToolTip("")
-            return
-        prefixed_full_text = f"{tr('label_selected_preview_prefix')} {preview_text}"
-        preview_label.setHidden(False)
-        preview_label.setToolTip(prefixed_full_text)
-        preview_label.setText(self._elide_editing_target_preview_text(prefixed_full_text))
+        update_editing_target_labels(self, target)
 
     # --- UI Helper Methods ---
 
@@ -1272,37 +1254,8 @@ class PropertyPanel(QWidget):
 
     def build_text_window_ui(self) -> None:
         """テキストウィンドウ用のUI構築。"""
-        from windows.connector import ConnectorLabel
-        from windows.text_window import TextWindow
-
         target = self.current_target
-
-        if not isinstance(target, ConnectorLabel):
-            self.build_common_ui(target)
-        else:
-            layout = self.create_group(tr("prop_grp_transform"))
-            layout.addRow(QLabel(tr("prop_pos_auto_linked")))
-            self.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost, "secondary-button")
-
-        if isinstance(target, TextWindow):
-            self.lbl_editing_target = QLabel("")
-            self.lbl_editing_target.setProperty("class", "info-label")
-            self.lbl_editing_target.setWordWrap(False)
-            self.lbl_editing_target.setMinimumWidth(0)
-            self.scroll_layout.addWidget(self.lbl_editing_target)
-            self.lbl_editing_target_preview = QLabel("")
-            self.lbl_editing_target_preview.setProperty("class", "info-label")
-            self.lbl_editing_target_preview.setWordWrap(False)
-            self.lbl_editing_target_preview.setMinimumWidth(0)
-            self.lbl_editing_target_preview.setSizePolicy(
-                QSizePolicy.Policy.Ignored,
-                QSizePolicy.Policy.Preferred,
-            )
-            self.scroll_layout.addWidget(self.lbl_editing_target_preview)
-            self._update_editing_target_labels(target)
-            build_text_content_section(self, target)
-
-        build_text_style_section(self, target)
+        build_text_window_primary_sections(self, target)
 
         # --- Appearance Group (Collapsed) ---
         layout = self.create_collapsible_group(tr("prop_grp_background"), expanded=False, state_key="background")

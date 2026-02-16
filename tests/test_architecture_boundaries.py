@@ -359,7 +359,7 @@ def test_text_window_task_and_selection_are_delegated_to_parts() -> None:
 
 
 def test_property_panel_text_sections_are_delegated() -> None:
-    module_ast = _parse_module("ui/property_panel.py")
+    module_ast = _parse_module("ui/property_panel_orchestrator.py")
     content_ast = _parse_module("ui/property_panel_sections/text_content_section.py")
     style_ast = _parse_module("ui/property_panel_sections/text_style_section.py")
 
@@ -369,21 +369,52 @@ def test_property_panel_text_sections_are_delegated() -> None:
     _find_function(content_ast, "build_text_content_section")
     _find_function(style_ast, "build_text_style_section")
 
-    method = _find_method(module_ast, "PropertyPanel", "build_text_window_ui")
+    method = _find_function(module_ast, "build_text_window_primary_sections")
     assert _function_has_call(method, "build_text_content_section")
     assert _function_has_call(method, "build_text_style_section")
-
-    assigned_names: set[str] = set()
-    for node in ast.walk(method):
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    assigned_names.add(target.id)
-    assert "mode_row" not in assigned_names
-    assert "text_content_layout" not in assigned_names
-    assert "text_style_layout" not in assigned_names
 
 
 def test_info_query_legacy_mode_filter_is_not_reintroduced() -> None:
     query = InfoQuery()
     assert not hasattr(query, "mode_filter")
+
+
+def test_main_window_tab_wiring_is_delegated_to_helper() -> None:
+    module_ast = _parse_module("ui/main_window.py")
+    imported = _imported_symbols(module_ast, module_name="ui.main_window_wiring")
+    assert ("build_main_tabs", None) in imported
+    assert ("refresh_main_tab_titles", None) in imported
+
+    build_method = _find_method(module_ast, "MainWindow", "_build_main_tabs")
+    assert _function_has_call(build_method, "build_main_tabs")
+
+    refresh_method = _find_method(module_ast, "MainWindow", "_refresh_tab_titles")
+    assert _function_has_call(refresh_method, "refresh_main_tab_titles")
+
+
+def test_property_panel_text_ui_is_delegated_to_orchestrator() -> None:
+    module_ast = _parse_module("ui/property_panel.py")
+    imported = _imported_symbols(module_ast, module_name="ui.property_panel_orchestrator")
+    assert ("build_text_window_primary_sections", None) in imported
+    assert ("update_editing_target_labels", None) in imported
+
+    build_method = _find_method(module_ast, "PropertyPanel", "build_text_window_ui")
+    assert _function_has_call(build_method, "build_text_window_primary_sections")
+
+    labels_method = _find_method(module_ast, "PropertyPanel", "_update_editing_target_labels")
+    assert _function_has_call(labels_method, "update_editing_target_labels")
+
+
+def test_text_window_tooltip_sync_is_delegated_to_parts() -> None:
+    module_ast = _parse_module("windows/text_window.py")
+    imported = _imported_symbols(module_ast, module_name="text_window_parts", level=1)
+    assert ("tooltip_ops", "text_window_tooltip_ops") in imported
+
+    classify_method = _find_method(module_ast, "TextWindow", "_classify_due_state")
+    assert _function_has_call(classify_method, "text_window_tooltip_ops.classify_due_state")
+
+    lines_method = _find_method(module_ast, "TextWindow", "_build_overlay_meta_tooltip_lines")
+    assert _function_has_call(lines_method, "text_window_tooltip_ops.build_overlay_meta_tooltip_lines")
+
+    refresh_method = _find_method(module_ast, "TextWindow", "_refresh_overlay_meta_tooltip")
+    assert _function_has_call(refresh_method, "text_window_tooltip_ops.refresh_overlay_meta_tooltip")

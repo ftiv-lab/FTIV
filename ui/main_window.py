@@ -44,16 +44,10 @@ from ui.controllers.connector_actions import ConnectorActions
 from ui.controllers.image_actions import ImageActions
 from ui.controllers.info_actions import InfoActions
 from ui.controllers.text_actions import TextActions
+from ui.main_window_wiring import build_main_tabs, refresh_main_tab_titles
 from ui.mixins.dnd_mixin import DnDMixin
 from ui.mixins.shortcut_mixin import ShortcutMixin
 from ui.property_panel import PropertyPanel
-from ui.tabs.about_tab import AboutTab
-from ui.tabs.animation_tab import AnimationTab
-from ui.tabs.general_tab import GeneralTab
-from ui.tabs.image_tab import ImageTab
-from ui.tabs.info_tab import InfoTab
-from ui.tabs.scene_tab import ConnectionsTab, SceneTab
-from ui.tabs.text_tab import TextTab
 from utils.app_settings import AppSettings
 from utils.overlay_settings import OverlaySettings
 
@@ -464,30 +458,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def _build_main_tabs(self) -> None:
         """メインのタブ構成を追加する（順序の集中管理）。"""
-        # 1. 一般タブ (クラス化済み)
-        self.general_tab = GeneralTab(self)
-        self.tabs.addTab(self.general_tab, tr("tab_general"))
-        # 2. テキストタブ (クラス化済み)
-        self.text_tab = TextTab(self)
-        self.tabs.addTab(self.text_tab, tr("tab_text"))
-        # 3. 画像タブ (クラス化済み)
-        self.image_tab = ImageTab(self)
-        self.tabs.addTab(self.image_tab, tr("tab_image"))
-        # 4. シーンタブ (クラス化済み)
-        self.scene_tab = SceneTab(self)
-        self.tabs.addTab(self.scene_tab, tr("tab_scene"))
-        # 5. 接続タブ (クラス化済み)
-        self.connections_tab = ConnectionsTab(self)
-        self.tabs.addTab(self.connections_tab, tr("tab_connections"))
-        # 6. 情報管理タブ (クラス化済み)
-        self.info_tab = InfoTab(self)
-        self.tabs.addTab(self.info_tab, tr("tab_info"))
-        # 7. アニメーションタブ (クラス化済み)
-        self.animation_tab = AnimationTab(self)
-        self.tabs.addTab(self.animation_tab, tr("tab_animation"))
-        # 8. 情報タブ (クラス化済み)
-        self.about_tab = AboutTab(self)
-        self.tabs.addTab(self.about_tab, tr("tab_about"))
+        build_main_tabs(self, self.tabs)
 
     def _init_property_panel(self) -> None:
         """プロパティパネルの初期化（Undo/Redo action の取り込み含む）。"""
@@ -550,24 +521,8 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def _refresh_tab_titles(self) -> None:
         """メインタブ/サブタブのタブ名を現在言語で更新する。"""
-        # メインタブ
         if hasattr(self, "tabs"):
-            if self.tabs.count() >= 1:
-                self.tabs.setTabText(0, tr("tab_general"))
-            if self.tabs.count() >= 2:
-                self.tabs.setTabText(1, tr("tab_text"))
-            if self.tabs.count() >= 3:
-                self.tabs.setTabText(2, tr("tab_image"))
-            if self.tabs.count() >= 4:
-                self.tabs.setTabText(3, tr("tab_scene"))
-            if self.tabs.count() >= 5:
-                self.tabs.setTabText(4, tr("tab_connections"))
-            if self.tabs.count() >= 6:
-                self.tabs.setTabText(5, tr("tab_info"))
-            if self.tabs.count() >= 7:
-                self.tabs.setTabText(6, tr("tab_animation"))
-            if self.tabs.count() >= 8:
-                self.tabs.setTabText(7, tr("tab_about"))
+            refresh_main_tab_titles(self.tabs)
 
     def _refresh_selected_labels(self) -> None:
         """

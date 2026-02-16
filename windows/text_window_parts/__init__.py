@@ -21,6 +21,7 @@ from .task_ops import (
     toggle_task_line_state,
     uncomplete_all_tasks,
 )
+from .tooltip_ops import build_overlay_meta_tooltip_lines, classify_due_state, refresh_overlay_meta_tooltip
 
 __all__ = [
     "after_set_selected",
@@ -45,4 +46,7 @@ __all__ = [
     "toggle_task_line_by_index",
     "toggle_task_line_state",
     "uncomplete_all_tasks",
+    "build_overlay_meta_tooltip_lines",
+    "classify_due_state",
+    "refresh_overlay_meta_tooltip",
 ]

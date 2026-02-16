@@ -43,3 +43,15 @@ If you are new to the repository or switching environments, start here.
 2. Keep push human-only unless explicitly requested.
 3. If terminal output becomes garbled, restore UTF-8 before editing:
 - `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+
+## 7. Phase 10A Lane (UI Structure + Visual Regression)
+1. Boundary guard:
+- `uv run pytest tests/test_architecture_boundaries.py -q -p no:cacheprovider`
+2. UI orchestration scope:
+- `uv run pytest tests -q -p no:cacheprovider -k "property_panel or text_window"`
+3. Visual minimal regression:
+- `uv run pytest tests/test_visual_regression_minimal.py -q -p no:cacheprovider`
+4. Dialog-only flow guard:
+- `uv run pytest tests/test_dialog_edit_flow.py -q -p no:cacheprovider`
+5. Final integrated verification:
+- `cmd /c verify_all.bat`
