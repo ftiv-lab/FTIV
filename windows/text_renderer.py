@@ -55,6 +55,8 @@ class TextRenderer:
         self._blur_cache: "OrderedDict[tuple[int, int, int, int], QPixmap]" = OrderedDict()
         self._render_cache_size: int = AppDefaults.RENDER_CACHE_SIZE
         self._render_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
+        self._task_rect_cache_size: int = AppDefaults.RENDER_CACHE_SIZE
+        self._task_rect_cache: "OrderedDict[str, tuple[QRect, ...]]" = OrderedDict()
         # --- profiling (debug) ---
         self._profile_enabled: bool = False
         self._profile_warn_ms: float = 16.0
@@ -239,15 +241,36 @@ class TextRenderer:
     def _adapt_renderer_input(window: RendererInput) -> RendererInputAdapter:
         return adapt_renderer_input(window)
 
+    @staticmethod
+    def _sync_window_canvas_from_cached_pixmap(window: Any, pixmap: QPixmap) -> None:
+        """キャッシュ復帰時に canvas_size / geometry を同期する。"""
+        try:
+            size = pixmap.size()
+            window.canvas_size = size
+            pos_getter = getattr(window, "pos", None)
+            set_geometry = getattr(window, "setGeometry", None)
+            if callable(pos_getter) and callable(set_geometry):
+                set_geometry(QRect(pos_getter(), size))
+        except Exception:
+            pass
+
     def render(self, window: RendererInput) -> QPixmap:
         """ウィンドウの状態を読み取り、描画結果を生成します（分解プロファイル対応）。"""
         adapted = self._adapt_renderer_input(window)
         profiling: bool = bool(getattr(self, "_profile_enabled", False))
 
         if not profiling:
+            cache_key = self._make_render_cache_key(adapted)
+            cached = self._render_cache_get(cache_key)
+            if cached is not None:
+                self._sync_window_canvas_from_cached_pixmap(adapted, cached)
+                return cached
             if adapted.is_vertical:
-                return self._render_vertical(adapted)
-            return self._render_horizontal(adapted)
+                pix = self._render_vertical(adapted)
+            else:
+                pix = self._render_horizontal(adapted)
+            self._render_cache_put(cache_key, pix)
+            return pix
 
         self._active_profile = _RenderProfile()
         t0: float = time.perf_counter()
@@ -745,6 +768,34 @@ class TextRenderer:
         except Exception:
             pass
 
+    def _task_rect_cache_get(self, key: str) -> Optional[List[QRect]]:
+        """タスク矩形キャッシュから取得する（LRU更新あり）。"""
+        if self._task_rect_cache_size <= 0:
+            return None
+        try:
+            cached = self._task_rect_cache.get(key)
+            if cached is None:
+                return None
+            self._task_rect_cache.move_to_end(key)
+            return [QRect(rect) for rect in cached]
+        except Exception:
+            return None
+
+    def _task_rect_cache_put(self, key: str, rects: List[QRect]) -> None:
+        """タスク矩形キャッシュへ格納する（LRU上限あり）。"""
+        if self._task_rect_cache_size <= 0:
+            return
+        try:
+            self._task_rect_cache[key] = tuple(QRect(rect) for rect in rects)
+            self._task_rect_cache.move_to_end(key)
+            while len(self._task_rect_cache) > self._task_rect_cache_size:
+                self._task_rect_cache.popitem(last=False)
+        except Exception:
+            pass
+
+    def _make_task_rect_cache_key(self, window: Any) -> str:
+        return f"task_rect:{self._make_render_cache_key(window)}"
+
     def _make_render_cache_key(self, window: Any) -> str:
         """window状態から、最終レンダ結果キャッシュ用のキーを生成する。
 
@@ -839,6 +890,10 @@ class TextRenderer:
         adapted = self._adapt_renderer_input(window)
         if not self._is_task_mode(adapted):
             return []
+        cache_key = self._make_task_rect_cache_key(adapted)
+        cached = self._task_rect_cache_get(cache_key)
+        if cached is not None:
+            return cached
 
         lines, _done_flags = self._build_render_lines(adapted)
         if not lines:
@@ -849,7 +904,9 @@ class TextRenderer:
         font = QFont(adapted.font_family, int(adapted.font_size))
         fm = QFontMetrics(font)
 
-        return self._get_task_line_rects_horizontal(adapted, lines, fm)
+        rects = self._get_task_line_rects_horizontal(adapted, lines, fm)
+        self._task_rect_cache_put(cache_key, rects)
+        return rects
 
     def _get_task_line_rects_horizontal(self, window: Any, lines: List[str], fm: QFontMetrics) -> List[QRect]:
         """横書きタスクモード時のチェックボックス矩形リスト。"""

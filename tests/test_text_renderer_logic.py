@@ -5,9 +5,9 @@
 """
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QRect, QSize
 
 from windows.text_renderer import TextRenderer, _RenderProfile
 
@@ -308,6 +308,46 @@ class TestRenderCachePut:
         r._render_cache_size = 0
         r._render_cache_put("k1", MagicMock())
         assert len(r._render_cache) == 0
+
+
+class TestRenderCacheUsage:
+    def test_render_reuses_cached_pixmap_for_same_signature(self):
+        r = TextRenderer()
+        w = _make_mock_window(is_vertical=False, font_family="Arial")
+        fake_pix = MagicMock()
+        fake_pix.size.return_value = QSize(120, 40)
+
+        with patch.object(r, "_render_horizontal", return_value=fake_pix) as render_mock:
+            out1 = r.render(w)
+            out2 = r.render(w)
+
+        assert render_mock.call_count == 1
+        assert out1 is fake_pix
+        assert out2 is fake_pix
+
+
+class TestTaskRectCacheUsage:
+    def test_get_task_line_rects_reuses_cache_for_same_signature(self):
+        r = TextRenderer()
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=False,
+            text="line-1\nline-2",
+            task_states=[False, True],
+            font_family="Arial",
+            font_size=24,
+        )
+        expected = QRect(0, 0, 12, 20)
+
+        with patch.object(r, "_get_task_line_rects_horizontal", return_value=[expected]) as rect_mock:
+            first = r.get_task_line_rects(w)
+            second = r.get_task_line_rects(w)
+
+        assert rect_mock.call_count == 1
+        assert len(first) == 1
+        assert len(second) == 1
+        assert first[0] == expected
+        assert second[0] == expected
 
 
 # ============================================================

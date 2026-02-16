@@ -704,3 +704,26 @@ def test_empty_state_hint_filtered_hides_cta(qapp):
     assert tab.empty_state_row.isHidden() is False
     assert tab.lbl_empty_state_hint.text() == tr("info_empty_state_filtered")
     assert tab.btn_empty_add_text.isHidden() is True
+
+
+def test_refresh_data_reuses_cached_index_for_unchanged_windows(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    with patch.object(tab.index_manager, "build_index", wraps=tab.index_manager.build_index) as build_index_spy:
+        tab.refresh_data(immediate=True)
+        tab.refresh_data(immediate=True)
+        assert build_index_spy.call_count == 0
+
+
+def test_refresh_data_rebuilds_index_when_window_snapshot_changes(qapp):
+    _ = qapp
+    task_window = _DummyTaskWindow(uuid="tw-cache")
+    mw, _ = _make_main_window(task_windows=[task_window], note_windows=[])
+    tab = InfoTab(mw)
+
+    with patch.object(tab.index_manager, "build_index", wraps=tab.index_manager.build_index) as build_index_spy:
+        task_window.text = "updated task body"
+        tab.refresh_data(immediate=True)
+        assert build_index_spy.call_count == 1

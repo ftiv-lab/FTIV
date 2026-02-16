@@ -111,6 +111,12 @@ class InfoTab(QWidget):
         self._effective_layout_mode = "regular"
         self._operations_dialog: Optional[InfoOperationsDialog] = None
         self._operation_log_lines: list[str] = []
+        self._index_cache_signature: Optional[tuple[Any, ...]] = None
+        self._index_cache_task_items: list[TaskIndexItem] = []
+        self._index_cache_note_items: list[NoteIndexItem] = []
+        self._last_task_rows_signature: Optional[tuple[Any, ...]] = None
+        self._last_note_rows_signature: Optional[tuple[Any, ...]] = None
+        self._last_operation_logs_signature: Optional[tuple[Any, ...]] = None
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -931,6 +937,118 @@ class InfoTab(QWidget):
             return []
         return list(getattr(wm, "text_windows", []) or [])
 
+    @staticmethod
+    def _normalize_signature_tags(raw_tags: Any) -> tuple[str, ...]:
+        if not isinstance(raw_tags, list):
+            return ()
+        tags: list[str] = []
+        for raw in raw_tags:
+            tag = str(raw or "").strip().lower()
+            if tag:
+                tags.append(tag)
+        return tuple(tags)
+
+    @staticmethod
+    def _task_state_signature(raw_states: Any) -> tuple[int, int]:
+        if not isinstance(raw_states, list):
+            return (0, 0)
+        normalized = tuple(bool(v) for v in raw_states)
+        return (len(normalized), hash(normalized))
+
+    def _build_index_signature(self, windows: list[Any]) -> tuple[Any, ...]:
+        signatures: list[tuple[Any, ...]] = []
+        for window in windows:
+            if window is None:
+                continue
+            text = str(getattr(window, "text", "") or "")
+            signatures.append(
+                (
+                    str(getattr(window, "uuid", "") or ""),
+                    str(getattr(window, "updated_at", "") or ""),
+                    str(getattr(window, "content_mode", "note") or "note").strip().lower(),
+                    bool(getattr(window, "is_archived", False)),
+                    bool(getattr(window, "is_starred", False)),
+                    str(getattr(window, "title", "") or ""),
+                    self._normalize_signature_tags(getattr(window, "tags", [])),
+                    str(getattr(window, "due_at", "") or ""),
+                    str(getattr(window, "due_time", "") or ""),
+                    str(getattr(window, "due_timezone", "") or ""),
+                    str(getattr(window, "due_precision", "date") or "date").strip().lower(),
+                    len(text),
+                    hash(text),
+                    self._task_state_signature(getattr(window, "task_states", [])),
+                )
+            )
+        return tuple(signatures)
+
+    @staticmethod
+    def _make_task_rows_signature(items: list[TaskIndexItem]) -> tuple[Any, ...]:
+        return tuple(
+            (
+                item.item_key,
+                bool(item.done),
+                bool(item.is_archived),
+                bool(item.is_starred),
+                item.title,
+                item.text,
+                item.updated_at,
+                item.created_at,
+                item.due_at,
+                item.due_time,
+                item.due_timezone,
+                item.due_precision,
+            )
+            for item in items
+        )
+
+    @staticmethod
+    def _make_note_rows_signature(items: list[NoteIndexItem]) -> tuple[Any, ...]:
+        return tuple(
+            (
+                item.window_uuid,
+                bool(item.is_starred),
+                bool(item.is_archived),
+                item.title,
+                item.first_line,
+                item.content_mode,
+                item.updated_at,
+                item.created_at,
+                item.due_at,
+                item.due_time,
+                item.due_timezone,
+                item.due_precision,
+            )
+            for item in items
+        )
+
+    @staticmethod
+    def _make_operation_logs_signature(entries: list[dict[str, Any]]) -> tuple[Any, ...]:
+        return tuple(
+            (
+                str(entry.get("at", "") or ""),
+                str(entry.get("action", "") or ""),
+                int(entry.get("target_count", 0) or 0),
+                str(entry.get("detail", "") or ""),
+            )
+            for entry in entries
+        )
+
+    def _invalidate_refresh_signatures(self) -> None:
+        self._last_task_rows_signature = None
+        self._last_note_rows_signature = None
+        self._last_operation_logs_signature = None
+
+    def _get_index_items(self, windows: list[Any]) -> tuple[list[TaskIndexItem], list[NoteIndexItem]]:
+        signature = self._build_index_signature(windows)
+        if signature == self._index_cache_signature:
+            return self._index_cache_task_items, self._index_cache_note_items
+        task_items, note_items = self.index_manager.build_index(windows)
+        self._index_cache_signature = signature
+        self._index_cache_task_items = task_items
+        self._index_cache_note_items = note_items
+        self._invalidate_refresh_signatures()
+        return task_items, note_items
+
     def refresh_data(self, immediate: bool = False) -> None:
         if immediate:
             if self._refresh_timer.isActive():
@@ -945,14 +1063,23 @@ class InfoTab(QWidget):
 
         self._is_refreshing = True
         try:
-            task_items, note_items = self.index_manager.build_index(self._iter_text_windows())
+            windows = self._iter_text_windows()
+            task_items, note_items = self._get_index_items(windows)
             query = self._build_query()
             filtered_tasks = self.index_manager.query_tasks(task_items, query)
             filtered_notes = self.index_manager.query_notes(note_items, query)
             stats = self.index_manager.build_stats(filtered_tasks, filtered_notes)
 
-            self._populate_tasks(filtered_tasks)
-            self._populate_notes(filtered_notes)
+            task_sig = self._make_task_rows_signature(filtered_tasks)
+            if task_sig != self._last_task_rows_signature:
+                self._populate_tasks(filtered_tasks)
+                self._last_task_rows_signature = task_sig
+
+            note_sig = self._make_note_rows_signature(filtered_notes)
+            if note_sig != self._last_note_rows_signature:
+                self._populate_notes(filtered_notes)
+                self._last_note_rows_signature = note_sig
+
             self._update_empty_state_hint(len(task_items) + len(note_items), len(filtered_tasks) + len(filtered_notes))
             self._update_stats(stats)
             self._populate_operation_logs()
@@ -1003,6 +1130,8 @@ class InfoTab(QWidget):
         return None
 
     def _populate_tasks(self, items: list[TaskIndexItem]) -> None:
+        due_text_cache: dict[tuple[str, str, str, str], str] = {}
+        due_state_cache: dict[tuple[str, str, str, str], str] = {}
         self.tasks_list.blockSignals(True)
         try:
             self.tasks_list.clear()
@@ -1014,18 +1143,30 @@ class InfoTab(QWidget):
 
             for item in items:
                 text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
-                due_text = format_due_for_display(
-                    item.due_at,
-                    due_time=item.due_time,
-                    due_timezone=item.due_timezone,
-                    due_precision=item.due_precision,
+                due_key = (
+                    str(item.due_at or ""),
+                    str(item.due_time or ""),
+                    str(item.due_timezone or ""),
+                    str(item.due_precision or "date"),
                 )
-                due_state = classify_due(
-                    item.due_at,
-                    due_time=item.due_time,
-                    due_timezone=item.due_timezone,
-                    due_precision=item.due_precision,
-                )
+                due_text = due_text_cache.get(due_key)
+                if due_text is None:
+                    due_text = format_due_for_display(
+                        item.due_at,
+                        due_time=item.due_time,
+                        due_timezone=item.due_timezone,
+                        due_precision=item.due_precision,
+                    )
+                    due_text_cache[due_key] = due_text
+                due_state = due_state_cache.get(due_key)
+                if due_state is None:
+                    due_state = classify_due(
+                        item.due_at,
+                        due_time=item.due_time,
+                        due_timezone=item.due_timezone,
+                        due_precision=item.due_precision,
+                    )
+                    due_state_cache[due_key] = due_state
                 badges = self._build_due_badges(
                     due_state, is_archived=bool(item.is_archived), is_done_task=bool(item.done)
                 )
@@ -1052,6 +1193,8 @@ class InfoTab(QWidget):
             self.tasks_list.blockSignals(False)
 
     def _populate_notes(self, items: list[NoteIndexItem]) -> None:
+        due_text_cache: dict[tuple[str, str, str, str], str] = {}
+        due_state_cache: dict[tuple[str, str, str, str], str] = {}
         self.notes_list.blockSignals(True)
         try:
             self.notes_list.clear()
@@ -1070,18 +1213,30 @@ class InfoTab(QWidget):
                     mode=mode_text,
                     first_line=item.first_line,
                 )
-                due_text = format_due_for_display(
-                    item.due_at,
-                    due_time=item.due_time,
-                    due_timezone=item.due_timezone,
-                    due_precision=item.due_precision,
+                due_key = (
+                    str(item.due_at or ""),
+                    str(item.due_time or ""),
+                    str(item.due_timezone or ""),
+                    str(item.due_precision or "date"),
                 )
-                due_state = classify_due(
-                    item.due_at,
-                    due_time=item.due_time,
-                    due_timezone=item.due_timezone,
-                    due_precision=item.due_precision,
-                )
+                due_text = due_text_cache.get(due_key)
+                if due_text is None:
+                    due_text = format_due_for_display(
+                        item.due_at,
+                        due_time=item.due_time,
+                        due_timezone=item.due_timezone,
+                        due_precision=item.due_precision,
+                    )
+                    due_text_cache[due_key] = due_text
+                due_state = due_state_cache.get(due_key)
+                if due_state is None:
+                    due_state = classify_due(
+                        item.due_at,
+                        due_time=item.due_time,
+                        due_timezone=item.due_timezone,
+                        due_precision=item.due_precision,
+                    )
+                    due_state_cache[due_key] = due_state
                 badges = self._build_due_badges(due_state, is_archived=bool(item.is_archived))
                 if due_text:
                     line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"
@@ -1145,14 +1300,20 @@ class InfoTab(QWidget):
         main_controller = getattr(self.mw, "main_controller", None)
         actions = getattr(main_controller, "info_actions", None)
         logs = actions.get_operation_logs(limit=10) if actions is not None else []
-        if not logs:
+        entries = [dict(entry) for entry in list(logs or [])]
+        signature = self._make_operation_logs_signature(entries)
+        if signature == self._last_operation_logs_signature:
+            return
+        self._last_operation_logs_signature = signature
+
+        if not entries:
             summary = tr("info_operation_empty")
             self._operation_log_lines = []
             self.lbl_operation_summary.setText(summary)
             self.lbl_operation_summary.setToolTip(summary)
             return
 
-        lines = [self._format_operation_entry(dict(entry)) for entry in reversed(list(logs))]
+        lines = [self._format_operation_entry(entry) for entry in reversed(entries)]
         self._operation_log_lines = lines
         latest_line = lines[0] if lines else tr("info_operation_empty")
         summary = tr("info_operation_summary_fmt").format(text=latest_line)
@@ -1413,4 +1574,5 @@ class InfoTab(QWidget):
 
         self.subtabs.setTabText(0, tr("info_tasks_tab"))
         self.subtabs.setTabText(1, tr("info_notes_tab"))
+        self._invalidate_refresh_signatures()
         self.refresh_data(immediate=True)
