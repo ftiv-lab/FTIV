@@ -227,7 +227,7 @@ class TestInfoIndexManager:
         assert [n.window_uuid for n in dated] == ["n1"]
         assert [n.window_uuid for n in undated] == ["n2"]
 
-    def test_query_notes_mode_filter_task_and_note(self):
+    def test_query_notes_item_scope_tasks_and_notes(self):
         manager = InfoIndexManager()
         windows = [
             _make_window(uuid="n1", text="memo", content_mode="note"),
@@ -240,13 +240,13 @@ class TestInfoIndexManager:
         ]
         _, notes = manager.build_index(windows)
 
-        only_task = manager.query_notes(notes, InfoQuery(mode_filter="task"))
-        only_note = manager.query_notes(notes, InfoQuery(mode_filter="note"))
+        only_task = manager.query_notes(notes, InfoQuery(item_scope="tasks", content_mode_filter="task"))
+        only_note = manager.query_notes(notes, InfoQuery(item_scope="notes", content_mode_filter="note"))
 
         assert [item.window_uuid for item in only_task] == ["t1"]
         assert [item.window_uuid for item in only_note] == ["n1"]
 
-    def test_query_mode_filter_legacy_mapping_to_item_scope(self):
+    def test_query_tasks_and_notes_respect_item_scope(self):
         manager = InfoIndexManager()
         windows = [
             _make_window(uuid="n1", text="memo", content_mode="note"),
@@ -259,13 +259,13 @@ class TestInfoIndexManager:
         ]
         tasks, notes = manager.build_index(windows)
 
-        tasks_when_note = manager.query_tasks(tasks, InfoQuery(mode_filter="note"))
-        notes_when_task = manager.query_notes(notes, InfoQuery(mode_filter="task"))
+        tasks_when_note_scope = manager.query_tasks(tasks, InfoQuery(item_scope="notes", content_mode_filter="note"))
+        notes_when_task_scope = manager.query_notes(notes, InfoQuery(item_scope="tasks", content_mode_filter="task"))
 
-        assert tasks_when_note == []
-        assert [item.window_uuid for item in notes_when_task] == ["t1"]
+        assert tasks_when_note_scope == []
+        assert [item.window_uuid for item in notes_when_task_scope] == ["t1"]
 
-    def test_query_item_scope_contract_is_primary_over_mode_filter(self):
+    def test_query_item_scope_contract_is_primary(self):
         manager = InfoIndexManager()
         windows = [
             _make_window(uuid="n1", text="memo", content_mode="note"),
@@ -280,11 +280,11 @@ class TestInfoIndexManager:
 
         notes_with_tasks_scope = manager.query_notes(
             notes,
-            InfoQuery(item_scope="tasks", content_mode_filter="task", mode_filter="note"),
+            InfoQuery(item_scope="tasks", content_mode_filter="task"),
         )
         tasks_with_notes_scope = manager.query_tasks(
             tasks,
-            InfoQuery(item_scope="notes", content_mode_filter="note", mode_filter="task"),
+            InfoQuery(item_scope="notes", content_mode_filter="note"),
         )
 
         assert [item.window_uuid for item in notes_with_tasks_scope] == ["t1"]

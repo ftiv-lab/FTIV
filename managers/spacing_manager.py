@@ -236,17 +236,6 @@ class SpacingManager:
         }
 
     @staticmethod
-    def dialog_tuple_to_legacy_dict(
-        values: Tuple[float, float, float, float, float, float],
-    ) -> Dict[str, float]:
-        """
-        Deprecated compatibility alias.
-
-        Prefer `dialog_tuple_to_window_config_dict`.
-        """
-        return SpacingManager.dialog_tuple_to_window_config_dict(values)
-
-    @staticmethod
     def get_defaults_for_mode(is_vertical: bool) -> Tuple[float, float, float, float, float, float]:
         """
         Get default spacing values for a text mode.

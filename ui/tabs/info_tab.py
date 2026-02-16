@@ -382,7 +382,6 @@ class InfoTab(QWidget):
             "open_tasks_only": False,
             "archive_scope": "active",
             "due_filter": "all",
-            "mode_filter": "all",
             "item_scope": "all",
             "content_mode_filter": "all",
             "sort_by": "updated",
@@ -455,6 +454,7 @@ class InfoTab(QWidget):
         due_filter = str(raw.get("due_filter", defaults["due_filter"]) or "").strip().lower()
         out["due_filter"] = due_filter if due_filter in self._DUE_FILTER_VALUES else defaults["due_filter"]
 
+        # Migration path only: support old preset payloads that still had mode_filter.
         raw_mode_filter = str(raw.get("mode_filter", "") or "").strip().lower()
         if raw_mode_filter not in self._MODE_FILTER_VALUES:
             raw_mode_filter = ""
@@ -482,7 +482,6 @@ class InfoTab(QWidget):
             elif item_scope == "notes":
                 content_mode_filter = "note"
         out["content_mode_filter"] = content_mode_filter
-        out["mode_filter"] = self._derive_mode_from_scope(out["item_scope"], out["content_mode_filter"])
 
         sort_by = str(raw.get("sort_by", defaults["sort_by"]) or "").strip().lower()
         out["sort_by"] = sort_by if sort_by in self._SORT_BY_VALUES else defaults["sort_by"]
@@ -502,9 +501,7 @@ class InfoTab(QWidget):
         return ViewPreset(preset_id=preset_id, name=name, filters=filters, smart_view="custom")
 
     def _serialize_filters_for_preset(self, filters: dict[str, Any]) -> dict[str, Any]:
-        sanitized = dict(self._sanitize_filters(filters))
-        sanitized.pop("mode_filter", None)
-        return sanitized
+        return dict(self._sanitize_filters(filters))
 
     def _load_presets_from_settings(self) -> None:
         self._view_presets = self._build_builtin_presets()
@@ -800,6 +797,10 @@ class InfoTab(QWidget):
 
     def _apply_filters_to_controls(self, filters: dict[str, Any]) -> None:
         sanitized = self._sanitize_filters(filters)
+        mode_filter = self._derive_mode_from_scope(
+            str(sanitized.get("item_scope", "all")),
+            str(sanitized.get("content_mode_filter", "all")),
+        )
         self._block_filter_events = True
         try:
             self.edit_search.setText(str(sanitized["text"]))
@@ -808,7 +809,7 @@ class InfoTab(QWidget):
             self.chk_open_only.setChecked(bool(sanitized["open_tasks_only"]))
             self._set_combo_data(self.cmb_archive_scope, str(sanitized["archive_scope"]))
             self._set_combo_data(self.cmb_due_filter, str(sanitized["due_filter"]))
-            self._set_combo_data(self.cmb_mode_filter, str(sanitized["mode_filter"]))
+            self._set_combo_data(self.cmb_mode_filter, mode_filter)
             self._set_combo_data(self.cmb_sort_by, str(sanitized["sort_by"]))
             self.btn_sort_desc.setChecked(bool(sanitized["sort_desc"]))
         finally:

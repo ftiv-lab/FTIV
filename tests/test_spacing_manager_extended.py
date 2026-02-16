@@ -156,10 +156,10 @@ class TestValidateSettings:
         assert validated.vertical.char_spacing == 0.1
 
 
-class TestDialogTupleToLegacyDict:
+class TestDialogTupleToWindowConfigDict:
     def test_converts_correctly(self):
         values = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        result = SpacingManager.dialog_tuple_to_legacy_dict(values)
+        result = SpacingManager.dialog_tuple_to_window_config_dict(values)
         assert result["horizontal_margin_ratio"] == 1.0
         assert result["vertical_margin_ratio"] == 2.0
         assert result["margin_top_ratio"] == 3.0

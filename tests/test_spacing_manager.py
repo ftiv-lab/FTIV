@@ -56,26 +56,10 @@ class TestSpacingManagerDialogConversion:
         for key in expected_keys:
             assert key in result
 
-    def test_dialog_tuple_to_legacy_dict_structure(self) -> None:
-        """Test that dialog_tuple_to_legacy_dict returns correct dict keys."""
-        values = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
-        result = SpacingManager.dialog_tuple_to_legacy_dict(values)
-
-        assert isinstance(result, dict)
-        # Should have expected keys for TextWindow
-        expected_keys = [
-            "horizontal_margin_ratio",
-            "vertical_margin_ratio",
-            "margin_top_ratio",
-            "margin_bottom_ratio",
-        ]
-        for key in expected_keys:
-            assert key in result
-
     def test_dialog_tuple_preserves_values(self) -> None:
         """Test that values are correctly mapped."""
         values = (1.0, 2.0, 0.3, 0.4, 0.1, 0.1)
-        result = SpacingManager.dialog_tuple_to_legacy_dict(values)
+        result = SpacingManager.dialog_tuple_to_window_config_dict(values)
 
         # Check horizontal spacing values
         assert result["horizontal_margin_ratio"] == 1.0

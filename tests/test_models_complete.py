@@ -121,15 +121,15 @@ class TestSpacingSettingsGetActiveSpacing:
         assert active.char_spacing == 99.0
 
 
-class TestSpacingSettingsToLegacyDict:
-    """to_legacy_dict のフィールドマッピング検証。"""
+class TestSpacingSettingsToWindowConfigDict:
+    """to_window_config_dict のフィールドマッピング検証。"""
 
-    def test_legacy_dict_contains_all_keys(self) -> None:
+    def test_window_config_dict_contains_all_keys(self) -> None:
         settings = SpacingSettings(
             horizontal=HorizontalSpacing(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
             vertical=VerticalSpacing(10.0, 20.0, 30.0, 40.0, 50.0, 60.0),
         )
-        d = settings.to_legacy_dict()
+        d = settings.to_window_config_dict()
         assert d["horizontal_margin_ratio"] == 1.0
         assert d["vertical_margin_ratio"] == 2.0
         assert d["margin_top_ratio"] == 3.0
@@ -142,17 +142,17 @@ class TestSpacingSettingsToLegacyDict:
         assert d["v_margin_right_ratio"] == 60.0
 
 
-class TestSpacingSettingsFromLegacyConfig:
-    """from_legacy_config の各パスをカバー。"""
+class TestSpacingSettingsFromWindowConfigFields:
+    """from_window_config_fields の各パスをカバー。"""
 
-    def test_from_legacy_with_defaults(self) -> None:
-        settings = SpacingSettings.from_legacy_config()
+    def test_from_window_config_with_defaults(self) -> None:
+        settings = SpacingSettings.from_window_config_fields()
         assert settings.horizontal.char_spacing == DEFAULT_CHAR_SPACING
         assert settings.horizontal.line_spacing == DEFAULT_LINE_SPACING
         assert settings.vertical.margin_top == DEFAULT_V_MARGIN_TOP
 
-    def test_from_legacy_with_vertical_margins(self) -> None:
-        settings = SpacingSettings.from_legacy_config(
+    def test_from_window_config_with_vertical_margins(self) -> None:
+        settings = SpacingSettings.from_window_config_fields(
             horizontal_margin_ratio=1.0,
             vertical_margin_ratio=2.0,
             margin_top=3.0,
@@ -171,8 +171,8 @@ class TestSpacingSettingsFromLegacyConfig:
         assert settings.vertical.margin_left == 30.0
         assert settings.vertical.margin_right == 40.0
 
-    def test_from_legacy_without_vertical_uses_defaults(self) -> None:
-        settings = SpacingSettings.from_legacy_config(
+    def test_from_window_config_without_vertical_uses_defaults(self) -> None:
+        settings = SpacingSettings.from_window_config_fields(
             horizontal_margin_ratio=5.0,
             vertical_margin_ratio=6.0,
         )
