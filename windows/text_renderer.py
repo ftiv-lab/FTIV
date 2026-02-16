@@ -133,6 +133,7 @@ class TextRenderer:
         *,
         canvas_size: QSize,
         start_x: int,
+        divider_start_x: int | None = None,
         start_y: int,
         right_padding: int,
         layout: dict[str, Any],
@@ -170,7 +171,10 @@ class TextRenderer:
             divider_color = self._with_alpha(QColor(getattr(window, "font_color", "#ffffff")), 102)
             painter.setPen(QPen(divider_color, 1.0))
             line_right = float(canvas_size.width() - right_padding)
-            painter.drawLine(QPointF(float(start_x), divider_y), QPointF(line_right, divider_y))
+            line_left = float(start_x if divider_start_x is None else divider_start_x)
+            if line_left > line_right:
+                line_left = line_right
+            painter.drawLine(QPointF(line_left, divider_y), QPointF(line_right, divider_y))
         finally:
             painter.restore()
 
@@ -349,7 +353,7 @@ class TextRenderer:
         m_right = int(window.font_size * window.margin_right_ratio)
 
         lines, done_flags = self._build_render_lines(window)
-        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
+        task_rail_width, _marker_width, _marker_gap, side_padding = self._get_task_rail_metrics(window, fm)
         max_line_width = 0
         for line in lines:
             line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * (max(0, len(line) - 1))
@@ -393,6 +397,10 @@ class TextRenderer:
             painter.setFont(font)
             self._draw_background(painter, window, canvas_size, outline_width)
             text_start_x = int(m_left + outline_width + task_rail_width)
+            title_divider_start_x = int(text_start_x)
+            if self._is_task_mode(window):
+                # タスクモード時は区切り線をチェックボックス左端まで伸ばす
+                title_divider_start_x = int(text_start_x - task_rail_width + side_padding)
             right_padding = int(m_right_for_size + outline_width)
             top_base_y = int(m_top + outline_width)
             self._draw_meta_title(
@@ -400,6 +408,7 @@ class TextRenderer:
                 window,
                 canvas_size=canvas_size,
                 start_x=text_start_x,
+                divider_start_x=title_divider_start_x,
                 start_y=top_base_y,
                 right_padding=right_padding,
                 layout=meta_layout,
@@ -547,7 +556,7 @@ class TextRenderer:
         m_bottom += pad_bottom
 
         lines, done_flags = self._build_render_lines(window)
-        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
+        task_rail_width, _marker_width, _marker_gap, side_padding = self._get_task_rail_metrics(window, fm)
         max_line_width = 0
         for line in lines:
             line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * (max(0, len(line) - 1))
@@ -588,6 +597,10 @@ class TextRenderer:
             painter.setFont(font)
             self._draw_background(painter, window, canvas_size, outline_width)
             text_start_x = int(m_left + outline_width + task_rail_width)
+            title_divider_start_x = int(text_start_x)
+            if self._is_task_mode(window):
+                # タスクモード時は区切り線をチェックボックス左端まで伸ばす
+                title_divider_start_x = int(text_start_x - task_rail_width + side_padding)
             right_padding = int(m_right + outline_width)
             top_base_y = int(m_top + outline_width)
             self._draw_meta_title(
@@ -595,6 +608,7 @@ class TextRenderer:
                 window,
                 canvas_size=canvas_size,
                 start_x=text_start_x,
+                divider_start_x=title_divider_start_x,
                 start_y=top_base_y,
                 right_padding=right_padding,
                 layout=meta_layout,
