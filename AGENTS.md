@@ -12,6 +12,12 @@ At the start of every new session (especially after VS Code restart), read these
 
 Do not start implementation before reading all three.
 
+If `docs/internal/` is not available in the current environment (e.g. fresh clone / shared CI workspace), use this fallback entrypoint:
+
+1. `docs/RUNBOOK.md`
+
+In fallback mode, treat `docs/RUNBOOK.md` as the primary startup guide and execution contract.
+
 ## 2. VS Code Stability Rules (High Priority)
 
 - Run approval-needed operations one at a time.
