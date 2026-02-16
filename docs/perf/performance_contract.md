@@ -1,6 +1,6 @@
 # FTIV Performance Contract
 
-Updated: 2026-02-16
+Updated: 2026-02-17
 
 ## Goal
 1. Keep performance verification reproducible across environments and AI agents.
@@ -29,7 +29,7 @@ Updated: 2026-02-16
 - `uv run python scripts/ci_perf_lane.py --mode enforce`
 - `cmd /c verify_all.bat`
 
-## Migration Compatibility
-1. Current scripts prefer `config/perf/*`.
-2. Legacy files under `docs/internal/architecture/*` are supported temporarily when present.
-3. When legacy paths are used, scripts emit a warning and should be migrated.
+## Legacy Sunset Policy
+1. Performance contract legacy fallback under `docs/internal/architecture/*` is removed.
+2. Runtime contract paths are fixed to `config/perf/*` unless `FTIV_PERF_THRESHOLDS_PATH` is explicitly set.
+3. Historical plan documents remain available for reference and training material; only runtime fallback paths were removed.

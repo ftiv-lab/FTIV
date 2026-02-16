@@ -80,3 +80,11 @@ def test_load_default_scenarios_falls_back_when_contract_invalid(tmp_path: Path)
     contract.write_text('{"ci_default_scenarios": []}', encoding="utf-8")
     scenarios = ci_perf_lane._load_default_scenarios(tmp_path)
     assert scenarios == list(ci_perf_lane.DEFAULT_SCENARIOS)
+
+
+def test_load_default_scenarios_does_not_use_legacy_contract(tmp_path: Path) -> None:
+    legacy_contract = tmp_path / "docs" / "internal" / "architecture" / "phase9e_scenarios.json"
+    legacy_contract.parent.mkdir(parents=True, exist_ok=True)
+    legacy_contract.write_text('{"ci_default_scenarios": ["P9E-S99"]}', encoding="utf-8")
+    scenarios = ci_perf_lane._load_default_scenarios(tmp_path)
+    assert scenarios == list(ci_perf_lane.DEFAULT_SCENARIOS)

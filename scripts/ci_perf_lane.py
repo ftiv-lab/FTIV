@@ -23,7 +23,6 @@ from scripts import measure_phase9e
 
 DEFAULT_SCENARIOS = ("P9E-S06", "P9E-S05", "P9E-S02")
 DEFAULT_SCENARIOS_RELATIVE_PATH = Path("config/perf/phase9e_scenarios.json")
-LEGACY_SCENARIOS_RELATIVE_PATH = Path("docs/internal/architecture/phase9e_scenarios.json")
 
 
 def _parse_scenarios(raw: str) -> list[str]:
@@ -34,13 +33,8 @@ def _parse_scenarios(raw: str) -> list[str]:
 
 
 def _load_default_scenarios(base_dir: Path) -> list[str]:
-    candidates = (
-        ("current", base_dir / DEFAULT_SCENARIOS_RELATIVE_PATH),
-        ("legacy", base_dir / LEGACY_SCENARIOS_RELATIVE_PATH),
-    )
-    for source, path in candidates:
-        if not path.exists():
-            continue
+    path = base_dir / DEFAULT_SCENARIOS_RELATIVE_PATH
+    if path.exists():
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             raw = payload.get("ci_default_scenarios")
@@ -49,11 +43,6 @@ def _load_default_scenarios(base_dir: Path) -> list[str]:
             scenarios = [str(value).strip() for value in raw if str(value).strip()]
             if not scenarios:
                 raise ValueError("ci_default_scenarios is empty")
-            if source == "legacy":
-                print(
-                    "[CI-PERF] warning: using legacy scenario contract "
-                    f"({path}); migrate to {base_dir / DEFAULT_SCENARIOS_RELATIVE_PATH}.",
-                )
             return scenarios
         except Exception as exc:
             print(f"[CI-PERF] warning: invalid scenario contract at {path}: {exc}")
