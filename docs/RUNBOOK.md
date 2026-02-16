@@ -55,3 +55,15 @@ If you are new to the repository or switching environments, start here.
 - `uv run pytest tests/test_dialog_edit_flow.py -q -p no:cacheprovider`
 5. Final integrated verification:
 - `cmd /c verify_all.bat`
+
+## 8. Phase 10B Lane (UI Regression Contract Hardening)
+1. Boundary guard:
+- `uv run pytest tests/test_architecture_boundaries.py -q -p no:cacheprovider`
+2. Visual profile contract:
+- `uv run pytest tests/test_visual_profile_contract.py -q -p no:cacheprovider`
+3. Visual regression contract:
+- `uv run pytest tests/test_visual_regression_minimal.py tests/test_visual_regression_contract.py -q -p no:cacheprovider`
+4. Dialog-only guard:
+- `uv run pytest tests/test_dialog_edit_flow.py -q -p no:cacheprovider`
+5. Final integrated verification:
+- `cmd /c verify_all.bat`

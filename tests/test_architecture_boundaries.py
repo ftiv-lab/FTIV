@@ -384,12 +384,16 @@ def test_main_window_tab_wiring_is_delegated_to_helper() -> None:
     imported = _imported_symbols(module_ast, module_name="ui.main_window_wiring")
     assert ("build_main_tabs", None) in imported
     assert ("refresh_main_tab_titles", None) in imported
+    assert ("create_connections_subtab", None) in imported
 
     build_method = _find_method(module_ast, "MainWindow", "_build_main_tabs")
     assert _function_has_call(build_method, "build_main_tabs")
 
     refresh_method = _find_method(module_ast, "MainWindow", "_refresh_tab_titles")
     assert _function_has_call(refresh_method, "refresh_main_tab_titles")
+
+    connections_method = _find_method(module_ast, "MainWindow", "create_connections_tab")
+    assert _function_has_call(connections_method, "create_connections_subtab")
 
 
 def test_property_panel_text_ui_is_delegated_to_orchestrator() -> None:
@@ -418,3 +422,27 @@ def test_text_window_tooltip_sync_is_delegated_to_parts() -> None:
 
     refresh_method = _find_method(module_ast, "TextWindow", "_refresh_overlay_meta_tooltip")
     assert _function_has_call(refresh_method, "text_window_tooltip_ops.refresh_overlay_meta_tooltip")
+
+
+def test_main_window_keeps_tab_wiring_outside_ui_tabs_imports() -> None:
+    module_ast = _parse_module("ui/main_window.py")
+    imported_names = _imported_module_names(module_ast)
+    forbidden = sorted(name for name in imported_names if _contains_prefix(name, "ui.tabs"))
+    assert not forbidden, f"ui/main_window.py should not import ui.tabs.* directly (found: {forbidden})"
+
+
+def test_property_panel_does_not_import_sections_directly_after_orchestrator() -> None:
+    module_ast = _parse_module("ui/property_panel.py")
+    imported_names = _imported_module_names(module_ast)
+    forbidden = sorted(name for name in imported_names if _contains_prefix(name, "ui.property_panel_sections"))
+    assert not forbidden, (
+        f"ui/property_panel.py should not import ui.property_panel_sections directly (found: {forbidden})"
+    )
+
+
+def test_text_window_keeps_due_classification_inside_tooltip_parts() -> None:
+    module_ast = _parse_module("windows/text_window.py")
+    imported = _imported_symbols(module_ast, module_name="utils.due_date")
+    assert ("normalize_due_iso", None) in imported
+    forbidden_names = {"classify_due", "format_due_for_display"}
+    assert all(name not in forbidden_names for name, _ in imported)

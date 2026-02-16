@@ -44,7 +44,7 @@ from ui.controllers.connector_actions import ConnectorActions
 from ui.controllers.image_actions import ImageActions
 from ui.controllers.info_actions import InfoActions
 from ui.controllers.text_actions import TextActions
-from ui.main_window_wiring import build_main_tabs, refresh_main_tab_titles
+from ui.main_window_wiring import build_main_tabs, create_connections_subtab, refresh_main_tab_titles
 from ui.mixins.dnd_mixin import DnDMixin
 from ui.mixins.shortcut_mixin import ShortcutMixin
 from ui.property_panel import PropertyPanel
@@ -1482,12 +1482,9 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
     def create_connections_tab(self) -> QWidget:
         """
         Connections をメインタブとして表示する。
-        現状は ui/tabs/scene_tab.py の build_connections_subtab を再利用する（仕様合意済みの案C）。
+        実体生成は main_window_wiring 側へ委譲する。
         """
-        # ここは循環import回避のためローカルimportにしておく（安全策）
-        from ui.tabs.scene_tab import build_connections_subtab
-
-        return build_connections_subtab(self)
+        return create_connections_subtab(self)
 
     def apply_overlay_settings_to_all_windows(self) -> None:
         """現在の overlay_settings を、既存の全オーバーレイウィンドウへ反映する。"""

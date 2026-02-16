@@ -62,3 +62,8 @@ def refresh_main_tab_titles(tabs: QTabWidget) -> None:
     count = min(tabs.count(), len(title_keys))
     for index in range(count):
         tabs.setTabText(index, tr(title_keys[index]))
+
+
+def create_connections_subtab(main_window: Any) -> Any:
+    """Build connections widget via centralized tab wiring module."""
+    return ConnectionsTab(main_window)
