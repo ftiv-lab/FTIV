@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from models.enums import ArrowStyle
+from models.protocols import NoteMetadataEditableTarget, UndoableConfigurable
 from ui.dialogs import DatePickerDialog
 from ui.widgets import CollapsibleBox
 from utils.due_date import display_due_iso, is_valid_timezone, normalize_due_input_allow_empty, normalize_due_time
@@ -623,7 +624,7 @@ class PropertyPanel(QWidget):
         self._sync_due_detail_enabled_state()
 
     def _on_text_orientation_toggled(self, checked: bool, target: Any) -> None:
-        if not hasattr(target, "set_undoable_property"):
+        if not isinstance(target, UndoableConfigurable):
             return
         target.set_undoable_property("is_vertical", bool(checked), "update_text")
         self.update_property_values()
@@ -642,6 +643,13 @@ class PropertyPanel(QWidget):
         return tags
 
     def _apply_note_metadata_to_target(self, target: Any, trigger_source: str = "button") -> bool:
+        note_target = target if isinstance(target, NoteMetadataEditableTarget) else None
+        undo_target = target if isinstance(target, UndoableConfigurable) else None
+
+        if note_target is None and undo_target is None:
+            logger.warning("PropertyPanel: unsupported note metadata target type: %s", type(target).__name__)
+            return False
+
         trigger = self._resolve_note_meta_trigger_source(trigger_source, self.sender())
         title = self.edit_note_title.text().strip() if self.edit_note_title is not None else ""
         tags = self._parse_tags_csv(self.edit_note_tags.text() if self.edit_note_tags is not None else "")
@@ -684,37 +692,37 @@ class PropertyPanel(QWidget):
             normalized_due_time = ""
             due_timezone_raw = ""
 
-        if hasattr(target, "set_title_and_tags"):
-            target.set_title_and_tags(title, tags)
-        else:
-            target.set_undoable_property("title", title, "update_text")
-            target.set_undoable_property("tags", tags, "update_text")
+        if note_target is not None:
+            note_target.set_title_and_tags(title, tags)
+        elif undo_target is not None:
+            undo_target.set_undoable_property("title", title, "update_text")
+            undo_target.set_undoable_property("tags", tags, "update_text")
 
-        if hasattr(target, "set_starred"):
-            target.set_starred(starred)
-        else:
-            target.set_undoable_property("is_starred", bool(starred), "update_text")
+        if note_target is not None:
+            note_target.set_starred(starred)
+        elif undo_target is not None:
+            undo_target.set_undoable_property("is_starred", bool(starred), "update_text")
 
         if due_iso:
-            if hasattr(target, "set_due_at"):
-                target.set_due_at(due_iso)
-            else:
-                target.set_undoable_property("due_at", due_iso, "update_text")
+            if note_target is not None:
+                note_target.set_due_at(due_iso)
+            elif undo_target is not None:
+                undo_target.set_undoable_property("due_at", due_iso, "update_text")
         else:
-            if hasattr(target, "clear_due_at"):
-                target.clear_due_at()
-            else:
-                target.set_undoable_property("due_at", "", "update_text")
+            if note_target is not None:
+                note_target.clear_due_at()
+            elif undo_target is not None:
+                undo_target.set_undoable_property("due_at", "", "update_text")
 
-        if hasattr(target, "set_undoable_property"):
-            target.set_undoable_property("due_precision", due_precision, None)
-            target.set_undoable_property("due_time", str(normalized_due_time or ""), None)
-            target.set_undoable_property("due_timezone", str(due_timezone_raw or ""), None)
+        if undo_target is not None:
+            undo_target.set_undoable_property("due_precision", due_precision, None)
+            undo_target.set_undoable_property("due_time", str(normalized_due_time or ""), None)
+            undo_target.set_undoable_property("due_timezone", str(due_timezone_raw or ""), None)
 
-        if hasattr(target, "set_archived"):
-            target.set_archived(bool(archived))
-        else:
-            target.set_undoable_property("is_archived", bool(archived), "update_text")
+        if note_target is not None:
+            note_target.set_archived(bool(archived))
+        elif undo_target is not None:
+            undo_target.set_undoable_property("is_archived", bool(archived), "update_text")
 
         self.update_property_values()
         if self.mw and hasattr(self.mw, "info_tab"):

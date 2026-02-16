@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from managers.runtime_services import TextWindowRuntimeServices
 from models.constants import AppDefaults
 from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
@@ -55,7 +56,13 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
     テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
     """
 
-    def __init__(self, main_window: Any, text: str, pos: QPoint):
+    def __init__(
+        self,
+        main_window: Any,
+        text: str,
+        pos: QPoint,
+        runtime_services: Optional[TextWindowRuntimeServices] = None,
+    ):
         """TextWindowの初期化を行い、ログに記録します。
 
         Args:
@@ -66,6 +73,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
 
         try:
+            self.runtime_services = runtime_services or TextWindowRuntimeServices(main_window)
             self._init_text_renderer(main_window)
             self._suppress_task_state_sync = False
             self._task_press_pos: Optional[QPoint] = None
@@ -110,6 +118,14 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         except Exception as e:
             logger.error(f"Failed to initialize TextWindow: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(None, tr("msg_error"), f"Initialization error: {e}")
+
+    def _runtime_services(self) -> TextWindowRuntimeServices:
+        services = getattr(self, "runtime_services", None)
+        if isinstance(services, TextWindowRuntimeServices):
+            return services
+        services = TextWindowRuntimeServices(getattr(self, "main_window", None))
+        self.runtime_services = services
+        return services
 
     # --- Properties ---
 
@@ -675,6 +691,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             event (Any): QKeyEvent
         """
         try:
+            services = self._runtime_services()
             locked: bool = bool(getattr(self, "is_locked", False))
 
             # --- 管理系（ロック中でも許可）---
@@ -700,27 +717,18 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
             # --- 配置/ノード操作 ---
             if event.key() == Qt.Key_Tab:
-                if hasattr(self.main_window, "window_manager") and hasattr(
-                    self.main_window.window_manager, "create_related_node"
-                ):
-                    self.main_window.window_manager.create_related_node(self, "child")
+                services.create_related_node(self, "child")
                 event.accept()
                 return
 
             if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                if hasattr(self.main_window, "window_manager") and hasattr(
-                    self.main_window.window_manager, "create_related_node"
-                ):
-                    self.main_window.window_manager.create_related_node(self, "sibling")
+                services.create_related_node(self, "sibling")
                 event.accept()
                 return
 
             # --- ナビゲーション ---
             if event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
-                if hasattr(self.main_window, "window_manager") and hasattr(
-                    self.main_window.window_manager, "navigate_selection"
-                ):
-                    self.main_window.window_manager.navigate_selection(self, event.key())
+                services.navigate_selection(self, event.key())
                 event.accept()
                 return
 
@@ -883,13 +891,13 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         """フォント選択ダイアログを表示し、適用する。"""
         font = choose_font(self, QFont(self.font_family, int(self.font_size)))
         if font is not None:
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Change Font")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Change Font")
             self.set_undoable_property("font_family", font.family(), None)
             self.set_undoable_property("font_size", font.pointSize(), None)
 
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def change_font_color(self) -> None:
         color = QColorDialog.getColor(self.font_color, self)
@@ -917,15 +925,15 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
         """
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 QMessageBox.warning(self, tr("msg_warning"), "WindowManager is not available.")
                 return
 
             # 自分の近くに出す（少しずらす）
             new_pos: QPoint = self.pos() + QPoint(20, 20)
 
-            _w: Optional["TextWindow"] = mw.window_manager.add_text_window(
+            _w: Optional["TextWindow"] = services.add_text_window(
                 text=tr("new_text_default"),
                 pos=new_pos,
                 suppress_limit_message=False,
@@ -943,12 +951,12 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             - クローンの生成経路を WindowManager に一本化し、制限・選択同期・シグナル接続の整合性を保つ。
         """
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 QMessageBox.warning(self, tr("msg_warning"), "WindowManager is not available.")
                 return
 
-            mw.window_manager.clone_text_window(self)
+            services.clone_text_window(self)
 
         except Exception as e:
             logger.error("Failed to clone TextWindow via WindowManager: %s\n%s", e, traceback.format_exc())
@@ -980,11 +988,11 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
     def hide_all_other_windows(self) -> None:
         """自分以外のテキストを隠す（WindowManager に委譲）。"""
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 return
 
-            mw.window_manager.hide_all_other_text_windows(self)
+            services.hide_all_other_text_windows(self)
 
         except Exception as e:
             QMessageBox.critical(self, tr("msg_error"), f"Failed to hide other text windows: {e}")
@@ -993,11 +1001,11 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
     def close_all_other_windows(self) -> None:
         """自分以外のテキストを閉じる（WindowManager に委譲）。"""
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 return
 
-            mw.window_manager.close_all_other_text_windows(self)
+            services.close_all_other_text_windows(self)
 
         except Exception as e:
             QMessageBox.critical(self, tr("msg_error"), f"Failed to close other text windows: {e}")
@@ -1005,13 +1013,11 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
     def save_text_to_json(self) -> None:
         """設定をJSONファイルに保存します（FileManagerに委譲）。"""
-        if self.main_window and hasattr(self.main_window, "file_manager"):
-            self.main_window.file_manager.save_window_to_json(self)
+        self._runtime_services().save_window_to_json(self)
 
     def load_text_from_json(self) -> None:
         """JSONファイルから設定を読み込みます（FileManagerに委譲）。"""
-        if self.main_window and hasattr(self.main_window, "file_manager"):
-            self.main_window.file_manager.load_window_from_json(self)
+        self._runtime_services().load_window_from_json(self)
 
     def toggle_text_gradient(self) -> None:
         self.set_undoable_property("text_gradient_enabled", not self.text_gradient_enabled, "update_text")
@@ -1022,22 +1028,22 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
     def edit_text_gradient(self) -> None:
         dialog = GradientEditorDialog(self.text_gradient, self.text_gradient_angle, self)
         if dialog.exec() == QDialog.Accepted:
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Edit Text Gradient")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Edit Text Gradient")
             self.set_undoable_property("text_gradient", dialog.get_gradient(), None)
             self.set_undoable_property("text_gradient_angle", dialog.get_angle(), "update_text")
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def edit_background_gradient(self) -> None:
         dialog = GradientEditorDialog(self.background_gradient, self.background_gradient_angle, self)
         if dialog.exec() == QDialog.Accepted:
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Edit Background Gradient")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Edit Background Gradient")
             self.set_undoable_property("background_gradient", dialog.get_gradient(), None)
             self.set_undoable_property("background_gradient_angle", dialog.get_angle(), "update_text")
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def _open_slider_dialog(
         self,
@@ -1346,12 +1352,12 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         if dialog.exec() == QDialog.Accepted:
             new_x, new_y = dialog.get_offsets()
             if old_x != new_x or old_y != new_y:
-                if hasattr(self.main_window, "undo_stack"):
-                    self.main_window.undo_stack.beginMacro("Set Shadow Offsets")
+                services = self._runtime_services()
+                use_macro = services.begin_undo_macro("Set Shadow Offsets")
                 self.set_undoable_property("shadow_offset_x", new_x, None)
                 self.set_undoable_property("shadow_offset_y", new_y, "update_text")
-                if hasattr(self.main_window, "undo_stack"):
-                    self.main_window.undo_stack.endMacro()
+                if use_macro:
+                    services.end_undo_macro()
 
     def toggle_background_outline(self) -> None:
         self.set_undoable_property("background_outline_enabled", not self.background_outline_enabled, "update_text")
@@ -1393,8 +1399,11 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         defaults["v_margin_left"] = base_config.v_margin_left
         defaults["v_margin_right"] = base_config.v_margin_right
 
+        services = self._runtime_services()
+        json_dir = services.get_json_directory()
+
         # 2. レガシー：横書き余白
-        h_path = os.path.join(self.main_window.json_directory, "text_defaults.json")
+        h_path = os.path.join(json_dir, "text_defaults.json")
         if os.path.exists(h_path):
             try:
                 with open(h_path, "r") as f:
@@ -1403,7 +1412,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
                 logger.warning(f"Failed to load text defaults: {e}")
 
         # 3. レガシー：縦書き余白 (BUG FIX: これがロードされていなかった)
-        v_path = os.path.join(self.main_window.json_directory, "text_defaults_vertical.json")
+        v_path = os.path.join(json_dir, "text_defaults_vertical.json")
         if os.path.exists(v_path):
             try:
                 with open(v_path, "r") as f:
@@ -1412,12 +1421,11 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
                 logger.warning(f"Failed to load vertical text defaults: {e}")
 
         # 4. モダン：Archetype (すべてのスタイル)
-        if hasattr(self.main_window, "settings_manager"):
-            archetype = self.main_window.settings_manager.load_text_archetype()
-            if archetype:
-                # Archetype のキー名が config 準拠 (horizontal_margin_ratio 等) なのでマッピング
-                # load_text_defaults は従来辞書を返し、__init__ で直接属性に代入されている
-                defaults.update(archetype)
+        archetype = services.load_text_archetype()
+        if archetype:
+            # Archetype のキー名が config 準拠 (horizontal_margin_ratio 等) なのでマッピング
+            # load_text_defaults は従来辞書を返し、__init__ で直接属性に代入されている
+            defaults.update(archetype)
 
         return defaults
 
@@ -1450,8 +1458,8 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
         if dialog.exec() == QDialog.Accepted:
             values_dict = dialog.get_values_dict()
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Change Spacing")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Change Spacing")
 
             # 辞書の最後のキー以外は update_text を None に
             keys = list(values_dict.keys())
@@ -1461,8 +1469,8 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             if keys:
                 self.set_undoable_property(keys[-1], values_dict[keys[-1]], "update_text")
 
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def show_property_panel(self) -> None:
         self.sig_request_property_panel.emit(self)
@@ -1500,6 +1508,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             pos (QPoint): 表示位置。
         """
         try:
+            services = self._runtime_services()
             builder = ContextMenuBuilder(self, self.main_window)
 
             builder.add_connect_group_menu()
@@ -1507,18 +1516,18 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             builder.add_separator()
 
             # スタイルプリセット
-            if hasattr(self.main_window, "style_manager"):
+            if services.has_style_manager():
                 style_menu = builder.add_submenu("menu_style_presets")
                 builder.add_action("menu_open_style_gallery", self.open_style_gallery, parent_menu=style_menu)
                 builder.add_separator(parent_menu=style_menu)
                 builder.add_action(
                     "menu_save_style",
-                    lambda: self.main_window.style_manager.save_text_style(self),
+                    lambda: services.save_text_style(self),
                     parent_menu=style_menu,
                 )
                 builder.add_action(
                     "menu_load_style_file",
-                    lambda: self.main_window.style_manager.load_text_style(self),
+                    lambda: services.load_text_style(self),
                     parent_menu=style_menu,
                 )
 
@@ -1534,7 +1543,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             builder.add_action("menu_clone_text", self.clone_text)
             builder.add_action("menu_save_png", self.save_as_png)
             builder.add_action("menu_save_json", self.save_text_to_json)
-            builder.add_action("menu_load_json", self.main_window.file_manager.load_scene_from_json)
+            builder.add_action("menu_load_json", services.load_scene_from_json)
             builder.add_separator()
 
             # テキスト表示
@@ -1704,8 +1713,13 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
     def open_style_gallery(self) -> None:
         """スタイルギャラリーダイアログを表示し、選択されたスタイルを適用する。"""
-        dialog = StyleGalleryDialog(self.main_window.style_manager, self)
+        services = self._runtime_services()
+        style_manager = services.get_style_manager()
+        if style_manager is None:
+            QMessageBox.warning(self, tr("msg_warning"), "StyleManager is not available.")
+            return
+        dialog = StyleGalleryDialog(style_manager, self)
         if dialog.exec() == QDialog.Accepted:
             json_path = dialog.get_selected_style_path()
             if json_path:
-                self.main_window.style_manager.load_text_style(self, json_path)
+                services.load_text_style(self, json_path)

@@ -13,6 +13,7 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter
 from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
 
 from models.constants import AppDefaults
+from models.protocols import RendererInput
 from utils.translator import get_lang
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,45 @@ class _RenderProfile:
 
     def inc(self, name: str, n: int = 1) -> None:
         self.counts[name] = int(self.counts.get(name, 0)) + int(n)
+
+
+class _RendererInputAdapter:
+    """RendererInput を満たす入力を正規化する互換アダプタ。"""
+
+    _CORE_ATTRS: tuple[str, ...] = ("is_vertical", "font_family", "font_size", "text")
+
+    def __init__(self, source: RendererInput) -> None:
+        object.__setattr__(self, "_source", source)
+        self._validate_source()
+
+    def _validate_source(self) -> None:
+        source: RendererInput = object.__getattribute__(self, "_source")
+        missing: list[str] = [name for name in self._CORE_ATTRS if not hasattr(source, name)]
+        if missing:
+            raise AttributeError(f"RendererInput missing required attrs: {', '.join(missing)}")
+        if not callable(getattr(source, "pos", None)):
+            raise TypeError("RendererInput requires callable pos()")
+        if not callable(getattr(source, "setGeometry", None)):
+            raise TypeError("RendererInput requires callable setGeometry(...)")
+
+    def pos(self) -> Any:
+        source: RendererInput = object.__getattribute__(self, "_source")
+        return source.pos()
+
+    def setGeometry(self, rect: Any) -> None:
+        source: RendererInput = object.__getattribute__(self, "_source")
+        source.setGeometry(rect)
+
+    def __getattr__(self, name: str) -> Any:
+        source: RendererInput = object.__getattribute__(self, "_source")
+        return getattr(source, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_source":
+            object.__setattr__(self, name, value)
+            return
+        source: RendererInput = object.__getattribute__(self, "_source")
+        setattr(source, name, value)
 
 
 class TextRenderer:
@@ -235,24 +275,31 @@ class TextRenderer:
 
         return pad_left, pad_top, pad_right, pad_bottom
 
-    def render(self, window: Any) -> QPixmap:
+    @staticmethod
+    def _adapt_renderer_input(window: RendererInput) -> _RendererInputAdapter:
+        if isinstance(window, _RendererInputAdapter):
+            return window
+        return _RendererInputAdapter(window)
+
+    def render(self, window: RendererInput) -> QPixmap:
         """ウィンドウの状態を読み取り、描画結果を生成します（分解プロファイル対応）。"""
+        adapted = self._adapt_renderer_input(window)
         profiling: bool = bool(getattr(self, "_profile_enabled", False))
 
         if not profiling:
-            if window.is_vertical:
-                return self._render_vertical(window)
-            return self._render_horizontal(window)
+            if adapted.is_vertical:
+                return self._render_vertical(adapted)
+            return self._render_horizontal(adapted)
 
         self._active_profile = _RenderProfile()
         t0: float = time.perf_counter()
 
         try:
-            if window.is_vertical:
-                pix = self._render_vertical(window)
+            if adapted.is_vertical:
+                pix = self._render_vertical(adapted)
                 mode = "vertical"
             else:
-                pix = self._render_horizontal(window)
+                pix = self._render_horizontal(adapted)
                 mode = "horizontal"
         finally:
             total_ms: float = (time.perf_counter() - t0) * 1000.0
@@ -273,12 +320,12 @@ class TextRenderer:
             self._profile_last_log_ts = now
 
             try:
-                fs = int(getattr(window, "font_size", 0))
+                fs = int(getattr(adapted, "font_size", 0))
             except Exception:
                 fs = 0
 
             try:
-                txt = str(getattr(window, "text", "") or "").replace("\n", "\\n")
+                txt = str(getattr(adapted, "text", "") or "").replace("\n", "\\n")
                 if len(txt) > 30:
                     txt = txt[:30] + "..."
             except Exception:
@@ -307,7 +354,7 @@ class TextRenderer:
     def paint_direct(
         self,
         painter: QPainter,
-        window: Any,
+        window: RendererInput,
         target_rect: Optional[QRect] = None,
     ) -> QSize:
         """外部 QPainter に直接描画する（DPR対応）。
@@ -324,9 +371,10 @@ class TextRenderer:
         Returns:
             QSize: 描画に使用したキャンバスサイズ
         """
-        if window.is_vertical:
-            return self._paint_direct_vertical(painter, window, target_rect)
-        return self._paint_direct_horizontal(painter, window, target_rect)
+        adapted = self._adapt_renderer_input(window)
+        if adapted.is_vertical:
+            return self._paint_direct_vertical(painter, adapted, target_rect)
+        return self._paint_direct_horizontal(painter, adapted, target_rect)
 
     def _paint_direct_horizontal(
         self,
@@ -821,7 +869,7 @@ class TextRenderer:
         done_flags = self._normalize_task_states(getattr(window, "task_states", []), len(raw_lines))
         return raw_lines, done_flags
 
-    def get_task_line_rects(self, window: Any) -> List[QRect]:
+    def get_task_line_rects(self, window: RendererInput) -> List[QRect]:
         """タスクモード時に各行のチェックボックス領域を返す（ヒットテスト用）。
 
         Args:
@@ -830,19 +878,20 @@ class TextRenderer:
         Returns:
             各行のチェックボックス矩形のリスト。noteモード時は空リスト。
         """
-        if not self._is_task_mode(window):
+        adapted = self._adapt_renderer_input(window)
+        if not self._is_task_mode(adapted):
             return []
 
-        lines, _done_flags = self._build_render_lines(window)
+        lines, _done_flags = self._build_render_lines(adapted)
         if not lines:
             return []
-        if bool(getattr(window, "is_vertical", False)):
+        if bool(getattr(adapted, "is_vertical", False)):
             return []
 
-        font = QFont(window.font_family, int(window.font_size))
+        font = QFont(adapted.font_family, int(adapted.font_size))
         fm = QFontMetrics(font)
 
-        return self._get_task_line_rects_horizontal(window, lines, fm)
+        return self._get_task_line_rects_horizontal(adapted, lines, fm)
 
     def _get_task_line_rects_horizontal(self, window: Any, lines: List[str], fm: QFontMetrics) -> List[QRect]:
         """横書きタスクモード時のチェックボックス矩形リスト。"""

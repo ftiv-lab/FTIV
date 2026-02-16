@@ -137,6 +137,29 @@ class TestGetBlurRadiusPx:
         assert result == 20.0
 
 
+class TestRendererInputContract:
+    def test_render_rejects_missing_core_attrs(self):
+        r = TextRenderer()
+
+        class _BrokenInput:
+            is_vertical = False
+            text = "abc"
+            font_family = "Arial"
+            # font_size is intentionally missing
+
+            def pos(self):
+                return MagicMock()
+
+            def setGeometry(self, _rect):
+                return None
+
+        try:
+            r.render(_BrokenInput())  # type: ignore[arg-type]
+            raise AssertionError("render() should reject missing font_size")
+        except AttributeError as e:
+            assert "font_size" in str(e)
+
+
 # ============================================================
 # _calculate_shadow_padding
 # ============================================================
