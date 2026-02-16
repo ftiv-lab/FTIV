@@ -12,6 +12,7 @@ from PySide6.QtCore import QPoint
 
 from models.window_config import TextWindowConfig
 from utils.due_date import classify_due
+from utils.translator import tr
 
 
 # ------------------------------------------------------------------
@@ -459,7 +460,9 @@ class TestMetaTooltip:
         w.config.task_states = [True, False, True]
 
         lines = w._build_overlay_meta_tooltip_lines()
-        assert any("2/3" in line for line in lines)
+        assert w.get_task_progress() == (2, 3)
+        expected = str(tr("label_task_progress_fmt")).format(done=2, total=3)
+        assert expected in lines
 
     def test_refresh_overlay_meta_tooltip_appends_lines(self):
         w = _make_text_window()

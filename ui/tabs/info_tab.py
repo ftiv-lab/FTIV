@@ -530,7 +530,6 @@ class InfoTab(QWidget):
         if mode not in self._LAYOUT_MODE_VALUES:
             mode = "auto"
         advanced_expanded = bool(getattr(settings, "info_advanced_filters_expanded", False))
-        _ = bool(getattr(settings, "info_operations_expanded", False))  # deprecated key: load-only compatibility
         if mode in {"auto", "compact"}:
             advanced_expanded = False
 

@@ -21,7 +21,6 @@ _INFO_SORT_FIELDS = {"updated", "due", "created", "title"}
 _INFO_ARCHIVE_SCOPES = {"active", "archived", "all"}
 _INFO_LAYOUT_MODES = {"auto", "compact", "regular"}
 _MAIN_UI_DENSITY_MODES = {"auto", "comfortable", "compact"}
-_TEXT_EDITING_MODES = {"dialog", "inline"}
 _TAB_UI_OVERRIDE_KEYS = {"general", "text", "image", "scene", "connections", "info", "animation", "about"}
 _PROPERTY_PANEL_SECTION_KEYS = {"text_content", "text_style", "background", "shadow", "outline"}
 _ABOUT_SECTION_KEYS = {"edition", "system", "shortcuts", "performance"}
@@ -157,13 +156,6 @@ def _sanitize_main_ui_density_mode(value: Any) -> str:
     return mode
 
 
-def _sanitize_text_editing_mode(value: Any) -> str:
-    mode = str(value or "").strip().lower()
-    if mode not in _TEXT_EDITING_MODES:
-        return "dialog"
-    return mode
-
-
 def _sanitize_tab_ui_compact_overrides(raw: Any) -> dict[str, bool]:
     if not isinstance(raw, dict):
         return {}
@@ -219,13 +211,9 @@ class AppSettings:
     info_layout_mode: str = "auto"
     info_advanced_filters_expanded: bool = False
     main_ui_density_mode: str = "auto"
-    # Deprecated: load-only compatibility for pre-Dialog-only versions.
-    text_editing_mode: str = "dialog"
     tab_ui_compact_overrides: dict[str, bool] = field(default_factory=dict)
     property_panel_section_state: dict[str, bool] = field(default_factory=dict)
     about_section_state: dict[str, bool] = field(default_factory=dict)
-    # Deprecated: load-only for backward compatibility (Phase 5A -> 5B)
-    info_operations_expanded: bool = False
 
 
 def _get_settings_path(base_directory: str) -> str:
@@ -312,14 +300,11 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
         s.info_layout_mode = _sanitize_info_layout_mode(data.get("info_layout_mode", "auto"))
         s.info_advanced_filters_expanded = bool(data.get("info_advanced_filters_expanded", False))
         s.main_ui_density_mode = _sanitize_main_ui_density_mode(data.get("main_ui_density_mode", "auto"))
-        s.text_editing_mode = _sanitize_text_editing_mode(data.get("text_editing_mode", "dialog"))
         s.tab_ui_compact_overrides = _sanitize_tab_ui_compact_overrides(data.get("tab_ui_compact_overrides", {}))
         s.property_panel_section_state = _sanitize_property_panel_section_state(
             data.get("property_panel_section_state", {})
         )
         s.about_section_state = _sanitize_about_section_state(data.get("about_section_state", {}))
-        # Deprecated key: load-only compatibility.
-        s.info_operations_expanded = bool(data.get("info_operations_expanded", False))
 
         return s
 

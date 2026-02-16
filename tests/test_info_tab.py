@@ -207,7 +207,6 @@ def _make_main_window(task_windows=None, note_windows=None):
         info_operation_logs=[],
         info_layout_mode="auto",
         info_advanced_filters_expanded=False,
-        info_operations_expanded=False,
     )
     settings_manager = SimpleNamespace(save_app_settings=lambda: None)
     mw = SimpleNamespace(window_manager=wm, app_settings=app_settings, settings_manager=settings_manager)
@@ -567,7 +566,6 @@ def test_advanced_filter_forced_collapsed_on_auto_mode(qapp):
     mw, _ = _make_main_window()
     mw.app_settings.info_layout_mode = "auto"
     mw.app_settings.info_advanced_filters_expanded = True
-    mw.app_settings.info_operations_expanded = True
 
     tab = InfoTab(mw)
 

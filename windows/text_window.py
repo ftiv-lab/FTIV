@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 import traceback
 from dataclasses import dataclass
 from datetime import datetime
@@ -38,7 +37,6 @@ from .mixins.text_properties_mixin import TextPropertiesMixin
 
 # ロガーの取得
 logger = logging.getLogger(__name__)
-LEGACY_TASK_LINE_PATTERN = re.compile(r"^\s*\[(?P<state>[ xX])\]\s?(?P<body>.*)$")
 
 
 @dataclass(frozen=True)
@@ -84,7 +82,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             if self.config.is_vertical:
                 self.config.note_vertical_preference = True
             self._ensure_task_states_for_text(self.config.text)
-            self._ensure_task_mode_constraints(allow_legacy_migration=True)
+            self._ensure_task_mode_constraints()
             self.canvas_size: QSize = QSize(10, 10)
             self.setGeometry(QRect(pos, self.canvas_size))
 
@@ -371,52 +369,9 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         remapped = self._remap_task_states(old_lines, new_lines, old_states)
         self.task_states = self._normalize_task_states(remapped, len(new_lines))
 
-    def _extract_legacy_task_data(self, text: str) -> tuple[str, List[bool], bool]:
-        lines = self._split_lines(text)
-        migrated_lines: List[str] = []
-        migrated_states: List[bool] = []
-        migrated_any = False
-
-        for line in lines:
-            match = LEGACY_TASK_LINE_PATTERN.match(str(line or ""))
-            if match:
-                migrated_any = True
-                state = str(match.group("state") or " ").strip().lower() == "x"
-                body = str(match.group("body") or "")
-                migrated_lines.append(body)
-                migrated_states.append(state)
-            else:
-                migrated_lines.append(str(line or ""))
-                migrated_states.append(False)
-        return "\n".join(migrated_lines), migrated_states, migrated_any
-
-    def _migrate_legacy_task_prefixes(self) -> None:
-        text_now = str(self.text or "")
-        cleaned_text, migrated_states, migrated_any = self._extract_legacy_task_data(text_now)
-        if not migrated_any:
-            return
-
-        # task_states が既に実運用値を持っている場合は、本文だけ変換して状態は保持する。
-        existing_states = self._normalize_task_states(self.task_states, len(self._split_lines(text_now)))
-        has_non_default_state = any(existing_states)
-
-        self._suppress_task_state_sync = True
-        try:
-            self.config.text = cleaned_text
-        finally:
-            self._suppress_task_state_sync = False
-
-        if has_non_default_state:
-            self._ensure_task_states_for_text(cleaned_text)
-        else:
-            self.task_states = self._normalize_task_states(migrated_states, len(self._split_lines(cleaned_text)))
-
-    def _ensure_task_mode_constraints(self, allow_legacy_migration: bool = False) -> None:
+    def _ensure_task_mode_constraints(self) -> None:
         self._ensure_task_states_for_text(self.text)
         if self.is_task_mode():
-            if allow_legacy_migration:
-                self._migrate_legacy_task_prefixes()
-                self._ensure_task_states_for_text(self.text)
             if self.is_vertical:
                 self.config.is_vertical = False
         else:
@@ -479,7 +434,6 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
                 self.note_vertical_preference = bool(self.is_vertical)
                 if self.is_vertical:
                     self.set_undoable_property("is_vertical", False, None)
-                self._migrate_legacy_task_prefixes()
                 self._ensure_task_states_for_text(self.text)
             else:
                 restore_vertical = bool(self.note_vertical_preference)

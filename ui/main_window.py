@@ -380,44 +380,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         """Undoスタックにコマンドを追加。"""
         self.undo_stack.push(command)
 
-    def _legacy_connect_window_signals(self, window: Any) -> None:
-        """互換用：旧シグナル接続API（強制 no-op 版）。
-
-        方針:
-            - 現在の正規ルートは WindowManager.add_text_window / add_image_window 内で
-              _setup_window_connections を呼ぶ方式。
-            - この legacy API が呼ばれるのは設計崩れ（管理外window混入・二重接続の温床）なので、
-              何もせず return する。
-            - ただし販売後のトラブルシュートのため、スタックトレース付きで error ログを残す。
-
-        Args:
-            window (Any): 旧コードから渡されるウィンドウ（未使用）。
-        """
-        _ = window
-
-        try:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.error(
-                "DEPRECATED: connect_window_signals/_legacy_connect_window_signals was called. "
-                "This is a no-op. Please migrate all creation routes to WindowManager.add_*.",
-                exc_info=True,
-            )
-        except Exception:
-            pass
-
-        # ★絶対に接続しない（no-op）
-        return
-
-    def connect_window_signals(self, window: Any) -> None:
-        """互換エイリアス（強制 no-op）。
-
-        Args:
-            window (Any): 旧コードから渡されるウィンドウ（未使用）。
-        """
-        self._legacy_connect_window_signals(window)
-
     def on_properties_changed(self, window: Any) -> None:
         """プロパティ変更時にパネルを更新。"""
         if self.is_property_panel_active and self.last_selected_window == window:

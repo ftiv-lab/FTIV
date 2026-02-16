@@ -182,22 +182,8 @@ class TestMouseDoubleClickDialogOnly:
         event.button.return_value = Qt.MouseButton.LeftButton
         return event
 
-    def test_double_click_always_uses_dialog_even_when_setting_inline(self):
+    def test_double_click_always_uses_dialog(self):
         w = _make_text_window()
-        w.main_window.app_settings = MagicMock()
-        w.main_window.app_settings.text_editing_mode = "inline"
-        w.change_text = MagicMock()
-        event = self._make_event()
-
-        w.mouseDoubleClickEvent(event)
-
-        w.change_text.assert_called_once()
-        event.accept.assert_called_once()
-
-    def test_double_click_uses_dialog_when_mode_dialog(self):
-        w = _make_text_window()
-        w.main_window.app_settings = MagicMock()
-        w.main_window.app_settings.text_editing_mode = "dialog"
         w.change_text = MagicMock()
         event = self._make_event()
 

@@ -946,14 +946,10 @@ class FileManager:
             with open(self.main_window.scene_db_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # 旧形式の判別と自動変換
-            is_old = any(isinstance(v, dict) and ("windows" in v or "version" in v) for v in data.values())
-
-            if is_old:
-                self.main_window.scenes = {default_key: data}
-                self.save_scenes_db()
-            else:
+            if isinstance(data, dict):
                 self.main_window.scenes = _normalize_scene_categories(data)
+            else:
+                self.main_window.scenes = {default_key: {}}
 
             if not self.main_window.scenes:
                 self.main_window.scenes[default_key] = {}
@@ -991,37 +987,15 @@ class FileManager:
 
         return obj
 
-    def _remove_legacy_absolute_move_keys_in_scene_dict(self, scene_data: Any) -> Any:
-        """
-        scene_data（dict/list）内の start_position/end_position を再帰的に削除する。
-        ※ 既存の scenes DB は「dict化済み」なのでこちらを使う。
-        """
-        if isinstance(scene_data, dict):
-            # window configに居ることが多い
-            scene_data.pop("start_position", None)
-            scene_data.pop("end_position", None)
-
-            # ネストも再帰的に処理
-            for k, v in list(scene_data.items()):
-                scene_data[k] = self._remove_legacy_absolute_move_keys_in_scene_dict(v)
-            return scene_data
-
-        if isinstance(scene_data, list):
-            return [self._remove_legacy_absolute_move_keys_in_scene_dict(v) for v in scene_data]
-
-        return scene_data
-
     def _get_clean_scenes_for_export(self) -> Dict[str, Any]:
         """
         self.main_window.scenes を「保存用」にクリーンアップしたコピーを返す。
-        - start_position/end_position を除去
         - None を除去
         """
         try:
             # まず深いコピー（json経由が簡単で安全）
             scenes_copy = json.loads(json.dumps(self.main_window.scenes, ensure_ascii=False))
 
-            scenes_copy = self._remove_legacy_absolute_move_keys_in_scene_dict(scenes_copy)
             scenes_copy = self._prune_none(scenes_copy)
 
             return scenes_copy
