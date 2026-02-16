@@ -1068,10 +1068,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         # しかしコードを見ると open_align_dialog はロジックの塊なので、
         # 将来的にはこれも移動すべきですが、今回は安全策で
         # 「align_images_on_multiple_displays」のみを委譲します。
-        self._legacy_open_align_dialog()
+        self._open_align_dialog_impl()
 
-    def _legacy_open_align_dialog(self):
-        """(Legacy) 画像整列ダイアログを表示する。内部で LayoutActions を利用。"""
+    def _open_align_dialog_impl(self) -> None:
+        """画像整列ダイアログを表示する。内部で LayoutActions を利用。"""
         if not self.image_windows:
             QMessageBox.information(self, tr("msg_info"), tr("msg_no_image_windows"))
             return

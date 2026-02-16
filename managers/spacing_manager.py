@@ -62,7 +62,7 @@ class SpacingManager:
         if cfg is None:
             return SpacingSettings()
 
-        return SpacingSettings.from_legacy_config(
+        return SpacingSettings.from_window_config_fields(
             horizontal_margin_ratio=getattr(cfg, "horizontal_margin_ratio", DEFAULT_CHAR_SPACING),
             vertical_margin_ratio=getattr(cfg, "vertical_margin_ratio", DEFAULT_LINE_SPACING),
             margin_top=getattr(cfg, "margin_top", DEFAULT_MARGIN_TOP),
@@ -90,9 +90,9 @@ class SpacingManager:
             settings: The SpacingSettings to apply
             use_undo: Whether to use undo stack (default True)
         """
-        legacy = settings.to_legacy_dict()
+        bridge_values = settings.to_window_config_dict()
 
-        for prop_name, value in legacy.items():
+        for prop_name, value in bridge_values.items():
             try:
                 # FAIL FAST: We assume window confirms to UndoableConfigurable
                 if use_undo:
@@ -209,14 +209,14 @@ class SpacingManager:
         )
 
     @staticmethod
-    def dialog_tuple_to_legacy_dict(
+    def dialog_tuple_to_window_config_dict(
         values: Tuple[float, float, float, float, float, float],
     ) -> Dict[str, float]:
         """
-        Convert dialog tuple to legacy property names for TextWindow.
+        Convert dialog tuple to TextWindowConfig property names.
 
-        This is the preferred method for bulk_manager and other callers
-        that need to apply spacing from dialog results.
+        This is the preferred method for callers that need to apply spacing
+        from dialog results.
 
         Args:
             values: Tuple from TextSpacingDialog.get_values()
@@ -234,6 +234,17 @@ class SpacingManager:
             "margin_left_ratio": left,
             "margin_right_ratio": right,
         }
+
+    @staticmethod
+    def dialog_tuple_to_legacy_dict(
+        values: Tuple[float, float, float, float, float, float],
+    ) -> Dict[str, float]:
+        """
+        Deprecated compatibility alias.
+
+        Prefer `dialog_tuple_to_window_config_dict`.
+        """
+        return SpacingManager.dialog_tuple_to_window_config_dict(values)
 
     @staticmethod
     def get_defaults_for_mode(is_vertical: bool) -> Tuple[float, float, float, float, float, float]:

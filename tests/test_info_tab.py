@@ -397,11 +397,13 @@ def test_view_preset_save_update_delete_syncs_settings(qapp):
     assert len(mw.app_settings.info_view_presets) == 1
     preset_id = mw.app_settings.info_view_presets[0]["id"]
     assert preset_id.startswith("user:")
+    assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
     assert save_calls["count"] >= 1
 
     tab.edit_search.setText("updated")
     tab._update_current_view_preset()
     assert mw.app_settings.info_view_presets[0]["filters"]["text"] == "updated"
+    assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
 
     tab._delete_current_view_preset()
     assert mw.app_settings.info_view_presets == []
@@ -599,6 +601,25 @@ def test_preset_action_menu_save_creates_user_preset(qapp):
 
     assert len(mw.app_settings.info_view_presets) == 1
     assert str(mw.app_settings.info_view_presets[0]["id"]).startswith("user:")
+    assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
+
+
+def test_legacy_mode_filter_preset_is_migrated_to_new_contract(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    mw.app_settings.info_view_presets = [
+        {"id": "user:1", "name": "Legacy", "filters": {"mode_filter": "task", "due_filter": "today"}}
+    ]
+    mw.app_settings.info_last_view_preset_id = "user:1"
+
+    tab = InfoTab(mw)
+
+    assert str(tab.cmb_mode_filter.currentData() or "") == "task"
+    assert len(mw.app_settings.info_view_presets) == 1
+    filters = mw.app_settings.info_view_presets[0]["filters"]
+    assert filters["item_scope"] == "tasks"
+    assert filters["content_mode_filter"] == "task"
+    assert "mode_filter" not in filters
 
 
 def test_operation_summary_and_dialog(qapp):

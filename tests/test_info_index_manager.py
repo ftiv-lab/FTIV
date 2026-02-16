@@ -265,6 +265,31 @@ class TestInfoIndexManager:
         assert tasks_when_note == []
         assert [item.window_uuid for item in notes_when_task] == ["t1"]
 
+    def test_query_item_scope_contract_is_primary_over_mode_filter(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="memo", content_mode="note"),
+            _make_window(
+                uuid="t1",
+                text="task line",
+                content_mode="task",
+                task_refs=[_make_task_ref(0, "task line", False)],
+            ),
+        ]
+        tasks, notes = manager.build_index(windows)
+
+        notes_with_tasks_scope = manager.query_notes(
+            notes,
+            InfoQuery(item_scope="tasks", content_mode_filter="task", mode_filter="note"),
+        )
+        tasks_with_notes_scope = manager.query_tasks(
+            tasks,
+            InfoQuery(item_scope="notes", content_mode_filter="note", mode_filter="task"),
+        )
+
+        assert [item.window_uuid for item in notes_with_tasks_scope] == ["t1"]
+        assert tasks_with_notes_scope == []
+
     def test_query_tasks_due_filter_uses_datetime_when_due_precision_datetime(self):
         manager = InfoIndexManager()
         windows = [

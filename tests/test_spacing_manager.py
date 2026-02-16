@@ -41,6 +41,21 @@ class TestSpacingManagerValidation:
 class TestSpacingManagerDialogConversion:
     """Test dialog tuple conversion methods."""
 
+    def test_dialog_tuple_to_window_config_dict_structure(self) -> None:
+        """Test that new API returns correct dict keys."""
+        values = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        result = SpacingManager.dialog_tuple_to_window_config_dict(values)
+
+        assert isinstance(result, dict)
+        expected_keys = [
+            "horizontal_margin_ratio",
+            "vertical_margin_ratio",
+            "margin_top_ratio",
+            "margin_bottom_ratio",
+        ]
+        for key in expected_keys:
+            assert key in result
+
     def test_dialog_tuple_to_legacy_dict_structure(self) -> None:
         """Test that dialog_tuple_to_legacy_dict returns correct dict keys."""
         values = (1.0, 2.0, 3.0, 4.0, 5.0, 6.0)

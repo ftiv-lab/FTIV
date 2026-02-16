@@ -359,6 +359,9 @@ class TestAppSettings:
         assert len(loaded.info_view_presets) == 1
         assert loaded.info_view_presets[0]["id"] == "user:1"
         assert loaded.info_view_presets[0]["filters"]["archive_scope"] == "all"
+        assert loaded.info_view_presets[0]["filters"]["item_scope"] == "tasks"
+        assert loaded.info_view_presets[0]["filters"]["content_mode_filter"] == "task"
+        assert "mode_filter" not in loaded.info_view_presets[0]["filters"]
         assert len(loaded.info_operation_logs) == 1
         assert loaded.info_operation_logs[0]["action"] == "bulk_archive"
         assert loaded.info_layout_mode == "compact"
@@ -373,6 +376,7 @@ class TestAppSettings:
             saved_data = json.load(f)
         assert "text_editing_mode" not in saved_data
         assert "info_operations_expanded" not in saved_data
+        assert "mode_filter" not in saved_data["info_view_presets"][0]["filters"]
 
     def test_load_nonexistent_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings

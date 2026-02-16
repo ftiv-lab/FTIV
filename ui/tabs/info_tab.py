@@ -362,6 +362,18 @@ class InfoTab(QWidget):
         return "all"
 
     @staticmethod
+    def _derive_mode_from_scope(item_scope: str, content_mode_filter: str = "all") -> str:
+        scope = str(item_scope or "").strip().lower()
+        if scope == "tasks":
+            return "task"
+        if scope == "notes":
+            return "note"
+        mode = str(content_mode_filter or "").strip().lower()
+        if mode in {"task", "note"}:
+            return mode
+        return "all"
+
+    @staticmethod
     def _default_filters() -> dict[str, Any]:
         return {
             "text": "",
@@ -443,20 +455,34 @@ class InfoTab(QWidget):
         due_filter = str(raw.get("due_filter", defaults["due_filter"]) or "").strip().lower()
         out["due_filter"] = due_filter if due_filter in self._DUE_FILTER_VALUES else defaults["due_filter"]
 
-        mode_filter = str(raw.get("mode_filter", defaults["mode_filter"]) or "").strip().lower()
-        out["mode_filter"] = mode_filter if mode_filter in self._MODE_FILTER_VALUES else defaults["mode_filter"]
+        raw_mode_filter = str(raw.get("mode_filter", "") or "").strip().lower()
+        if raw_mode_filter not in self._MODE_FILTER_VALUES:
+            raw_mode_filter = ""
 
         item_scope = str(raw.get("item_scope", defaults["item_scope"]) or "").strip().lower()
         if item_scope not in self._ITEM_SCOPE_VALUES:
-            item_scope = self._derive_item_scope_from_mode(out["mode_filter"])
-        elif item_scope == "all" and out["mode_filter"] in {"task", "note"}:
-            item_scope = self._derive_item_scope_from_mode(out["mode_filter"])
+            item_scope = self._derive_item_scope_from_mode(raw_mode_filter)
+        elif item_scope == "all" and raw_mode_filter in {"task", "note"}:
+            item_scope = self._derive_item_scope_from_mode(raw_mode_filter)
         out["item_scope"] = item_scope
 
         content_mode_filter = str(raw.get("content_mode_filter", defaults["content_mode_filter"]) or "").strip().lower()
-        out["content_mode_filter"] = (
-            content_mode_filter if content_mode_filter in self._MODE_FILTER_VALUES else out["mode_filter"]
-        )
+        if content_mode_filter not in self._MODE_FILTER_VALUES:
+            if raw_mode_filter in {"task", "note"}:
+                content_mode_filter = raw_mode_filter
+            elif item_scope == "tasks":
+                content_mode_filter = "task"
+            elif item_scope == "notes":
+                content_mode_filter = "note"
+            else:
+                content_mode_filter = "all"
+        elif content_mode_filter == "all":
+            if item_scope == "tasks":
+                content_mode_filter = "task"
+            elif item_scope == "notes":
+                content_mode_filter = "note"
+        out["content_mode_filter"] = content_mode_filter
+        out["mode_filter"] = self._derive_mode_from_scope(out["item_scope"], out["content_mode_filter"])
 
         sort_by = str(raw.get("sort_by", defaults["sort_by"]) or "").strip().lower()
         out["sort_by"] = sort_by if sort_by in self._SORT_BY_VALUES else defaults["sort_by"]
@@ -475,6 +501,11 @@ class InfoTab(QWidget):
         filters = self._sanitize_filters(raw.get("filters", {}))
         return ViewPreset(preset_id=preset_id, name=name, filters=filters, smart_view="custom")
 
+    def _serialize_filters_for_preset(self, filters: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(self._sanitize_filters(filters))
+        sanitized.pop("mode_filter", None)
+        return sanitized
+
     def _load_presets_from_settings(self) -> None:
         self._view_presets = self._build_builtin_presets()
         self._user_preset_ids.clear()
@@ -490,7 +521,13 @@ class InfoTab(QWidget):
                 continue
             self._view_presets[preset.preset_id] = preset
             self._user_preset_ids.append(preset.preset_id)
-            sanitized_for_save.append({"id": preset.preset_id, "name": preset.name, "filters": dict(preset.filters)})
+            sanitized_for_save.append(
+                {
+                    "id": preset.preset_id,
+                    "name": preset.name,
+                    "filters": self._serialize_filters_for_preset(preset.filters),
+                }
+            )
             suffix = preset.preset_id.replace("user:", "", 1)
             if suffix.isdigit():
                 max_numeric = max(max_numeric, int(suffix))
@@ -510,7 +547,13 @@ class InfoTab(QWidget):
             preset = self._view_presets.get(preset_id)
             if preset is None:
                 continue
-            serialized_user.append({"id": preset.preset_id, "name": preset.name, "filters": dict(preset.filters)})
+            serialized_user.append(
+                {
+                    "id": preset.preset_id,
+                    "name": preset.name,
+                    "filters": self._serialize_filters_for_preset(preset.filters),
+                }
+            )
 
         settings.info_view_presets = serialized_user
         settings.info_last_view_preset_id = self._current_preset_id or "builtin:all"
@@ -795,6 +838,8 @@ class InfoTab(QWidget):
 
     def _collect_filter_state(self) -> dict[str, Any]:
         mode_filter = str(self.cmb_mode_filter.currentData() or "all")
+        item_scope = self._derive_item_scope_from_mode(mode_filter)
+        content_mode_filter = mode_filter if mode_filter in {"task", "note"} else "all"
         return self._sanitize_filters(
             {
                 "text": self.edit_search.text().strip(),
@@ -803,9 +848,8 @@ class InfoTab(QWidget):
                 "open_tasks_only": self.chk_open_only.isChecked(),
                 "archive_scope": str(self.cmb_archive_scope.currentData() or "active"),
                 "due_filter": str(self.cmb_due_filter.currentData() or "all"),
-                "mode_filter": mode_filter,
-                "item_scope": self._derive_item_scope_from_mode(mode_filter),
-                "content_mode_filter": mode_filter,
+                "item_scope": item_scope,
+                "content_mode_filter": content_mode_filter,
                 "sort_by": str(self.cmb_sort_by.currentData() or "updated"),
                 "sort_desc": self.btn_sort_desc.isChecked(),
             }
@@ -871,8 +915,9 @@ class InfoTab(QWidget):
         self._apply_preset_by_id("builtin:all", refresh=True, persist_last=True)
 
     def _build_query(self) -> InfoQuery:
-        mode_filter = str(self.cmb_mode_filter.currentData() or "all")
-        item_scope = self._derive_item_scope_from_mode(mode_filter)
+        selected_mode = str(self.cmb_mode_filter.currentData() or "all")
+        item_scope = self._derive_item_scope_from_mode(selected_mode)
+        content_mode_filter = selected_mode if selected_mode in {"task", "note"} else "all"
         return InfoQuery(
             text=self.edit_search.text().strip(),
             tag=self.edit_tag_filter.text().strip(),
@@ -881,9 +926,8 @@ class InfoTab(QWidget):
             include_archived=False,
             archive_scope=str(self.cmb_archive_scope.currentData() or "active"),
             due_filter=str(self.cmb_due_filter.currentData() or "all"),
-            mode_filter=mode_filter,
             item_scope=item_scope,
-            content_mode_filter=mode_filter,
+            content_mode_filter=content_mode_filter,
             sort_by=str(self.cmb_sort_by.currentData() or "updated"),
             sort_desc=self.btn_sort_desc.isChecked(),
         )

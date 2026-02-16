@@ -52,7 +52,7 @@ class InfoQuery:
     include_archived: bool = False
     archive_scope: Literal["active", "archived", "all"] = "active"
     due_filter: Literal["all", "today", "overdue", "upcoming", "dated", "undated"] = "all"
-    mode_filter: Literal["all", "task", "note"] = "all"
+    mode_filter: Literal["all", "task", "note"] = "all"  # Deprecated input (load compatibility only)
     item_scope: Literal["all", "tasks", "notes"] = "all"
     content_mode_filter: str = "all"
     sort_by: Literal["updated", "due", "created", "title"] = "updated"
@@ -123,6 +123,7 @@ class InfoIndexManager:
 
     @staticmethod
     def _normalize_query_filters(query: InfoQuery) -> tuple[str, str]:
+        # Legacy compatibility: mode_filter is accepted as a fallback input only.
         legacy_mode = str(getattr(query, "mode_filter", "all") or "all").strip().lower()
         item_scope = str(getattr(query, "item_scope", "all") or "all").strip().lower()
         content_mode_filter = str(getattr(query, "content_mode_filter", "all") or "all").strip().lower()
@@ -135,11 +136,15 @@ class InfoIndexManager:
             elif legacy_mode == "note":
                 item_scope = "notes"
 
-        if content_mode_filter in {"", "all"}:
+        if content_mode_filter not in {"all", "task", "note"}:
+            content_mode_filter = "all"
+        if content_mode_filter == "all":
             if item_scope == "tasks":
                 content_mode_filter = "task"
             elif item_scope == "notes":
                 content_mode_filter = "note"
+            elif legacy_mode in {"task", "note"}:
+                content_mode_filter = legacy_mode
             else:
                 content_mode_filter = "all"
         return item_scope, content_mode_filter

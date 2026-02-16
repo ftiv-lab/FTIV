@@ -46,22 +46,29 @@ def _sanitize_main_window_position(value: Any) -> int | None:
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
-    mode_filter = str(raw.get("mode_filter", "all")).strip().lower()
-    if mode_filter not in _INFO_MODE_FILTERS:
-        mode_filter = "all"
+    legacy_mode_filter = str(raw.get("mode_filter", "")).strip().lower()
+    if legacy_mode_filter not in _INFO_MODE_FILTERS:
+        legacy_mode_filter = ""
 
     item_scope = str(raw.get("item_scope", "all")).strip().lower()
     if item_scope not in _INFO_ITEM_SCOPE_FILTERS:
         item_scope = "all"
     if item_scope == "all":
-        if mode_filter == "task":
+        if legacy_mode_filter == "task":
             item_scope = "tasks"
-        elif mode_filter == "note":
+        elif legacy_mode_filter == "note":
             item_scope = "notes"
 
-    content_mode_filter = str(raw.get("content_mode_filter", "all")).strip().lower()
+    content_mode_filter = str(raw.get("content_mode_filter", "")).strip().lower()
     if content_mode_filter not in _INFO_MODE_FILTERS:
-        content_mode_filter = mode_filter
+        if legacy_mode_filter in {"task", "note"}:
+            content_mode_filter = legacy_mode_filter
+        elif item_scope == "tasks":
+            content_mode_filter = "task"
+        elif item_scope == "notes":
+            content_mode_filter = "note"
+        else:
+            content_mode_filter = "all"
 
     return {
         "text": str(raw.get("text", "") or "").strip(),
@@ -78,7 +85,6 @@ def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
             if str(raw.get("due_filter", "all")).strip().lower() in _INFO_DUE_FILTERS
             else "all"
         ),
-        "mode_filter": mode_filter,
         "item_scope": item_scope,
         "content_mode_filter": content_mode_filter,
         "sort_by": (

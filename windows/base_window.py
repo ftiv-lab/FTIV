@@ -642,7 +642,7 @@ class BaseOverlayWindow(QLabel):
         """
         # 相対モードの場合
         if getattr(self.config, "move_use_relative", False):
-            self._clear_legacy_absolute_move_fields()
+            self._clear_absolute_move_fields()
             # 既存の絶対アニメが動いていれば止める
             if self.move_animation:
                 try:
@@ -697,7 +697,7 @@ class BaseOverlayWindow(QLabel):
         """
         # 相対モード
         if getattr(self.config, "move_use_relative", False):
-            self._clear_legacy_absolute_move_fields()
+            self._clear_absolute_move_fields()
             if self.move_animation:
                 try:
                     self.move_animation.stop()
@@ -1330,9 +1330,9 @@ class BaseOverlayWindow(QLabel):
         self._rel_move_anim = None
         self._rel_last_pos = None
 
-    def _clear_legacy_absolute_move_fields(self) -> None:
+    def _clear_absolute_move_fields(self) -> None:
         """
-        旧: start_position / end_position を使わない方針のため、値を無効化する。
+        start_position / end_position を使わない方針のため、値を無効化する。
         ※ 保存処理が exclude_none=True でないと JSON からは消えず null には残る。
         """
         try:

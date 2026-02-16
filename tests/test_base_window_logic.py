@@ -416,14 +416,14 @@ class TestShiftRelativeMoveBase:
 
 
 # ============================================================
-# _clear_legacy_absolute_move_fields
+# _clear_absolute_move_fields
 # ============================================================
-class TestClearLegacyAbsoluteMoveFields:
+class TestClearAbsoluteMoveFields:
     def test_clears_positions(self):
         w = _make_base_window()
         w.config.start_position = {"x": 1, "y": 2}
         w.config.end_position = {"x": 3, "y": 4}
-        w._clear_legacy_absolute_move_fields()
+        w._clear_absolute_move_fields()
         assert w.config.start_position is None
         assert w.config.end_position is None
 

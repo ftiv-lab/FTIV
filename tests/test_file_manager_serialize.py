@@ -50,13 +50,13 @@ class TestDumpConfigJson:
         assert result["font_color"] == "#FFFFFF"
 
 
-class TestClearLegacyFields:
+class TestClearAbsoluteMoveFields:
     def test_clears_when_relative_mode(self, fm):
         config = MagicMock()
         config.move_use_relative = True
         config.start_position = {"x": 0, "y": 0}
         config.end_position = {"x": 100, "y": 100}
-        fm._clear_legacy_absolute_move_fields(config)
+        fm._clear_absolute_move_fields_if_relative(config)
         assert config.start_position is None
         assert config.end_position is None
 
@@ -65,12 +65,12 @@ class TestClearLegacyFields:
         config.move_use_relative = False
         original_start = {"x": 0, "y": 0}
         config.start_position = original_start
-        fm._clear_legacy_absolute_move_fields(config)
+        fm._clear_absolute_move_fields_if_relative(config)
         assert config.start_position == original_start
 
     def test_handles_missing_attributes(self, fm):
         config = MagicMock(spec=[])  # 属性なし
-        fm._clear_legacy_absolute_move_fields(config)  # クラッシュしない
+        fm._clear_absolute_move_fields_if_relative(config)  # クラッシュしない
 
 
 class TestSerializePenStyle:

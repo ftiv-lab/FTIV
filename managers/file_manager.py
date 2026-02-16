@@ -50,7 +50,7 @@ class FileManager:
     # Data Serialization (Save/Load Logic)
     # ==========================================
 
-    def _clear_legacy_absolute_move_fields(self, config: Any) -> None:
+    def _clear_absolute_move_fields_if_relative(self, config: Any) -> None:
         """
         保存前のデータクリーンアップ。
         相対移動モード(move_use_relative=True)の場合は、不要な絶対座標(start/end)を消去する。
@@ -69,10 +69,10 @@ class FileManager:
     def _dump_config_json(self, config: Any) -> Dict[str, Any]:
         """
         Pydantic config を JSON化する共通関数。
-        - 旧 absolute move の残骸を消す
+        - 相対移動モード時の absolute move 残骸を消す
         - exclude_none=True で JSON をクリーンにする
         """
-        self._clear_legacy_absolute_move_fields(config)
+        self._clear_absolute_move_fields_if_relative(config)
         return config.model_dump(mode="json", exclude_none=True)
 
     def _serialize_pen_style(self, pen_style: Any) -> int:
