@@ -59,5 +59,24 @@ def test_run_lane_enforce_sets_env(monkeypatch, tmp_path: Path) -> None:
 
 def test_main_invalid_scenarios_returns_2(monkeypatch) -> None:
     monkeypatch.setattr(ci_perf_lane, "_parse_scenarios", lambda _raw: (_ for _ in ()).throw(ValueError("boom")))
-    result = ci_perf_lane.main(["--mode", "monitor"])
+    result = ci_perf_lane.main(["--mode", "monitor", "--scenarios", "P9E-S06"])
     assert result == 2
+
+
+def test_load_default_scenarios_from_contract(tmp_path: Path) -> None:
+    contract = tmp_path / "config" / "perf" / "phase9e_scenarios.json"
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_text(
+        '{"ci_default_scenarios": ["P9E-S06", "P9E-S05"]}',
+        encoding="utf-8",
+    )
+    scenarios = ci_perf_lane._load_default_scenarios(tmp_path)
+    assert scenarios == ["P9E-S06", "P9E-S05"]
+
+
+def test_load_default_scenarios_falls_back_when_contract_invalid(tmp_path: Path) -> None:
+    contract = tmp_path / "config" / "perf" / "phase9e_scenarios.json"
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_text('{"ci_default_scenarios": []}', encoding="utf-8")
+    scenarios = ci_perf_lane._load_default_scenarios(tmp_path)
+    assert scenarios == list(ci_perf_lane.DEFAULT_SCENARIOS)

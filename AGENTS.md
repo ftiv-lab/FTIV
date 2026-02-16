@@ -6,10 +6,11 @@ This file defines mandatory startup and execution rules for Codex/Claude-style c
 
 At the start of every new session (especially after VS Code restart), read these files first:
 
-1. `docs/internal/guides/AGENT_READING_LIST.md`
-2. `docs/internal/guides/codex_vscode_stability_notes.md`
+1. `docs/internal/CURRENT_STATUS_DASHBOARD.md`
+2. `docs/internal/guides/AGENT_READING_LIST.md`
+3. `docs/internal/guides/codex_vscode_stability_notes.md`
 
-Do not start implementation before reading both.
+Do not start implementation before reading all three.
 
 ## 2. VS Code Stability Rules (High Priority)
 

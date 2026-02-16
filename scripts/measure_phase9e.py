@@ -51,6 +51,8 @@ ScenarioFn = Callable[[], Counters]
 
 ENV_PERF_ENFORCE = "FTIV_PERF_ENFORCE"
 ENV_PERF_THRESHOLDS_PATH = "FTIV_PERF_THRESHOLDS_PATH"
+DEFAULT_THRESHOLDS_RELATIVE_PATH = Path("config/perf/phase9e_performance_thresholds.json")
+LEGACY_THRESHOLDS_RELATIVE_PATH = Path("docs/internal/architecture/phase9e_performance_thresholds.json")
 
 
 @dataclass(frozen=True)
@@ -829,7 +831,19 @@ def _resolve_thresholds_path(base_dir: Path) -> Path:
     configured = str(os.getenv(ENV_PERF_THRESHOLDS_PATH, "")).strip()
     if configured:
         return Path(configured).expanduser().resolve()
-    return base_dir / "docs" / "internal" / "architecture" / "phase9e_performance_thresholds.json"
+
+    primary = base_dir / DEFAULT_THRESHOLDS_RELATIVE_PATH
+    if primary.exists():
+        return primary
+
+    legacy = base_dir / LEGACY_THRESHOLDS_RELATIVE_PATH
+    if legacy.exists():
+        print(
+            f"[Phase9E] warning: using legacy thresholds path ({legacy}); migrate to {primary}.",
+        )
+        return legacy
+
+    return primary
 
 
 def _load_threshold_rules(path: Path) -> dict[str, dict[str, float]]:

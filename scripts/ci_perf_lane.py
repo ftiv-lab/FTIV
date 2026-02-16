@@ -10,6 +10,7 @@ Modes:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,8 @@ if str(BASE_DIR) not in sys.path:
 from scripts import measure_phase9e
 
 DEFAULT_SCENARIOS = ("P9E-S06", "P9E-S05", "P9E-S02")
+DEFAULT_SCENARIOS_RELATIVE_PATH = Path("config/perf/phase9e_scenarios.json")
+LEGACY_SCENARIOS_RELATIVE_PATH = Path("docs/internal/architecture/phase9e_scenarios.json")
 
 
 def _parse_scenarios(raw: str) -> list[str]:
@@ -28,6 +31,33 @@ def _parse_scenarios(raw: str) -> list[str]:
     if not values:
         raise ValueError("at least one scenario ID is required")
     return values
+
+
+def _load_default_scenarios(base_dir: Path) -> list[str]:
+    candidates = (
+        ("current", base_dir / DEFAULT_SCENARIOS_RELATIVE_PATH),
+        ("legacy", base_dir / LEGACY_SCENARIOS_RELATIVE_PATH),
+    )
+    for source, path in candidates:
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            raw = payload.get("ci_default_scenarios")
+            if not isinstance(raw, list) or not raw:
+                raise ValueError("missing ci_default_scenarios")
+            scenarios = [str(value).strip() for value in raw if str(value).strip()]
+            if not scenarios:
+                raise ValueError("ci_default_scenarios is empty")
+            if source == "legacy":
+                print(
+                    "[CI-PERF] warning: using legacy scenario contract "
+                    f"({path}); migrate to {base_dir / DEFAULT_SCENARIOS_RELATIVE_PATH}.",
+                )
+            return scenarios
+        except Exception as exc:
+            print(f"[CI-PERF] warning: invalid scenario contract at {path}: {exc}")
+    return list(DEFAULT_SCENARIOS)
 
 
 def _build_measure_args(
@@ -107,8 +137,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--scenarios",
-        default=",".join(DEFAULT_SCENARIOS),
-        help="Comma separated scenario IDs (default: P9E-S06,P9E-S05,P9E-S02).",
+        default=None,
+        help=("Comma separated scenario IDs. If omitted, read from config/perf/phase9e_scenarios.json."),
     )
     parser.add_argument("--warmup", type=int, default=1, help="Warmup runs per scenario.")
     parser.add_argument("--samples", type=int, default=3, help="Measured runs per scenario for CI lane.")
@@ -117,8 +147,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+    base_dir = args.base_dir.resolve()
     try:
-        scenarios = _parse_scenarios(args.scenarios)
+        if args.scenarios:
+            scenarios = _parse_scenarios(args.scenarios)
+        else:
+            scenarios = _load_default_scenarios(base_dir)
     except ValueError as exc:
         print(f"[CI-PERF] invalid scenarios: {exc}")
         return 2
@@ -126,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[CI-PERF] mode={args.mode} scenarios={','.join(scenarios)}")
     result = run_lane(
         mode=args.mode,
-        base_dir=args.base_dir.resolve(),
+        base_dir=base_dir,
         output_dir=args.output_dir.resolve() if args.output_dir is not None else None,
         scenarios=scenarios,
         warmup=args.warmup,
