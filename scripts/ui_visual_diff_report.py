@@ -15,6 +15,8 @@ DEFAULT_RUNS_DIR = Path("docs/internal/architecture/ui_visual_runs")
 class VisualCaseStatus:
     status: str
     message: str
+    test_name: str
+    rerun_command: str
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,14 @@ def _load_report(path: Path) -> VisualRunReport:
             continue
         status = str(entry.get("status") or "unknown")
         message = str(entry.get("message") or "")
-        cases[case_id] = VisualCaseStatus(status=status, message=message)
+        test_name = str(entry.get("test_name") or "")
+        rerun_command = str(entry.get("rerun_command") or "")
+        cases[case_id] = VisualCaseStatus(
+            status=status,
+            message=message,
+            test_name=test_name,
+            rerun_command=rerun_command,
+        )
 
     if not cases:
         raise ValueError(f"no case results found: {path}")
@@ -83,24 +92,46 @@ def _build_markdown(base: VisualRunReport, target: VisualRunReport) -> str:
     improvements: list[str] = []
     message_changes: list[str] = []
     for case_id in case_ids:
-        b = base.cases.get(case_id, VisualCaseStatus(status="missing", message=""))
-        t = target.cases.get(case_id, VisualCaseStatus(status="missing", message=""))
+        b = base.cases.get(case_id, VisualCaseStatus(status="missing", message="", test_name="", rerun_command=""))
+        t = target.cases.get(case_id, VisualCaseStatus(status="missing", message="", test_name="", rerun_command=""))
         changed = b.status != t.status
         lines.append(f"| {case_id} | {b.status} | {t.status} | {'yes' if changed else 'no'} |")
 
-        if b.status == "passed" and t.status != "passed":
+        if b.status != "failed" and t.status == "failed":
             regressions.append(case_id)
         if b.status != "passed" and t.status == "passed":
             improvements.append(case_id)
         if (b.message or t.message) and b.message != t.message:
             message_changes.append(case_id)
 
+    new_failures = [
+        case_id
+        for case_id in case_ids
+        if base.cases.get(case_id, VisualCaseStatus("missing", "", "", "")).status == "passed"
+        and target.cases.get(case_id, VisualCaseStatus("missing", "", "", "")).status == "failed"
+    ]
+
     lines.append("")
-    lines.append("## Regressions")
+    lines.append("## Top Regressions")
     lines.append("")
     if regressions:
         for case_id in regressions:
+            target_case = target.cases.get(case_id, VisualCaseStatus("missing", "", "", ""))
+            lines.append(f"- `{case_id}` ({target_case.status})")
+            if target_case.rerun_command:
+                lines.append(f"  - rerun: `{target_case.rerun_command}`")
+    else:
+        lines.append("- none")
+
+    lines.append("")
+    lines.append("## New Failures")
+    lines.append("")
+    if new_failures:
+        for case_id in new_failures:
+            target_case = target.cases.get(case_id, VisualCaseStatus("missing", "", "", ""))
             lines.append(f"- `{case_id}`")
+            if target_case.rerun_command:
+                lines.append(f"  - rerun: `{target_case.rerun_command}`")
     else:
         lines.append("- none")
 
@@ -118,8 +149,10 @@ def _build_markdown(base: VisualRunReport, target: VisualRunReport) -> str:
     lines.append("")
     if message_changes:
         for case_id in message_changes:
-            b = base.cases.get(case_id, VisualCaseStatus(status="missing", message=""))
-            t = target.cases.get(case_id, VisualCaseStatus(status="missing", message=""))
+            b = base.cases.get(case_id, VisualCaseStatus(status="missing", message="", test_name="", rerun_command=""))
+            t = target.cases.get(
+                case_id, VisualCaseStatus(status="missing", message="", test_name="", rerun_command="")
+            )
             lines.append(f"- `{case_id}`")
             lines.append(f"  - base: `{b.message[:120]}`")
             lines.append(f"  - target: `{t.message[:120]}`")

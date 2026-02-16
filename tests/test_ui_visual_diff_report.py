@@ -23,6 +23,7 @@ def _write_visual_run(path: Path, measurement_id: str, case_status: str, message
                 "test_name": "test_visual_contract_task_title_divider_horizontal",
                 "status": case_status,
                 "message": message,
+                "rerun_command": "uv run pytest tests/test_visual_regression_contract.py::test_visual_contract_task_title_divider_horizontal -q -p no:cacheprovider",
                 "profile": {"window_size": [320, 180]},
             }
         ],
@@ -51,7 +52,9 @@ def test_ui_visual_diff_report_with_explicit_inputs(tmp_path: Path) -> None:
     assert output.exists()
     text = output.read_text(encoding="utf-8")
     assert "task_title_divider_horizontal" in text
-    assert "Regressions" in text
+    assert "Top Regressions" in text
+    assert "New Failures" in text
+    assert "rerun:" in text
 
 
 def test_ui_visual_diff_report_uses_latest_two_when_unspecified(tmp_path: Path) -> None:

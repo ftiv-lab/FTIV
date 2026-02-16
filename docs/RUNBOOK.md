@@ -81,3 +81,25 @@ If you are new to the repository or switching environments, start here.
 - `uv run python scripts/ui_visual_diff_report.py`
 6. Final integrated verification:
 - `cmd /c verify_all.bat`
+
+## 10. Phase 10D Lane (UI Regression Enforce Governance)
+1. Policy contract:
+- `config/ui/phase10d_visual_gate_policy.json`
+2. Policy + lane tests:
+- `uv run pytest tests/test_ui_visual_gate_policy_contract.py tests/test_ci_ui_visual_lane.py tests/test_ui_visual_diff_report.py -q -p no:cacheprovider`
+3. Visual contract suite:
+- `uv run pytest tests/test_visual_profile_contract.py tests/test_visual_regression_minimal.py tests/test_visual_regression_contract.py -q -p no:cacheprovider`
+4. Normal operation (PR/monitor):
+- `uv run python scripts/ci_ui_visual_lane.py --mode monitor`
+5. Normal operation (main/enforce):
+- `uv run python scripts/ci_ui_visual_lane.py --mode enforce`
+6. Failure triage diff:
+- `uv run python scripts/ui_visual_diff_report.py`
+7. Emergency temporary exception rule:
+- `temporary_exceptions` entry requires `case_id / reason / expires_at`
+- `expires_at` past date is treated as hard failure in enforce mode
+- exception window must not exceed `governance.max_exception_days`
+8. Governance:
+- See `docs/internal/architecture/phase10d_visual_gate_governance.md`
+9. Final integrated verification:
+- `cmd /c verify_all.bat`
