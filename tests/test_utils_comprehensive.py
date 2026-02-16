@@ -280,6 +280,7 @@ class TestAppSettings:
         from utils.app_settings import AppSettings
 
         s = AppSettings()
+        assert s.app_settings_schema_version == 2
         assert s.main_window_frontmost is True
         assert s.main_window_width == 0
         assert s.main_window_height == 0
@@ -347,6 +348,7 @@ class TestAppSettings:
         assert result is True
 
         loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.app_settings_schema_version == 2
         assert loaded.main_window_frontmost is False
         assert loaded.main_window_width == 480
         assert loaded.main_window_height == 720
@@ -374,6 +376,7 @@ class TestAppSettings:
         settings_path = os.path.join(str(tmp_path), "json", "app_settings.json")
         with open(settings_path, "r", encoding="utf-8") as f:
             saved_data = json.load(f)
+        assert saved_data["app_settings_schema_version"] == 2
         assert "text_editing_mode" not in saved_data
         assert "info_operations_expanded" not in saved_data
         assert "mode_filter" not in saved_data["info_view_presets"][0]["filters"]
@@ -463,6 +466,7 @@ class TestAppSettings:
             json.dump(data, f)
 
         loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.app_settings_schema_version == 1
         assert hasattr(loaded, "info_layout_mode")
         assert not hasattr(loaded, "info_operations_expanded")
         assert not hasattr(loaded, "text_editing_mode")

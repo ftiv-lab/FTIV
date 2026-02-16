@@ -454,23 +454,15 @@ class InfoTab(QWidget):
         due_filter = str(raw.get("due_filter", defaults["due_filter"]) or "").strip().lower()
         out["due_filter"] = due_filter if due_filter in self._DUE_FILTER_VALUES else defaults["due_filter"]
 
-        # Migration path only: support old preset payloads that still had mode_filter.
-        raw_mode_filter = str(raw.get("mode_filter", "") or "").strip().lower()
-        if raw_mode_filter not in self._MODE_FILTER_VALUES:
-            raw_mode_filter = ""
-
         item_scope = str(raw.get("item_scope", defaults["item_scope"]) or "").strip().lower()
         if item_scope not in self._ITEM_SCOPE_VALUES:
-            item_scope = self._derive_item_scope_from_mode(raw_mode_filter)
-        elif item_scope == "all" and raw_mode_filter in {"task", "note"}:
-            item_scope = self._derive_item_scope_from_mode(raw_mode_filter)
+            item_scope = defaults["item_scope"]
         out["item_scope"] = item_scope
 
         content_mode_filter = str(raw.get("content_mode_filter", defaults["content_mode_filter"]) or "").strip().lower()
         if content_mode_filter not in self._MODE_FILTER_VALUES:
-            if raw_mode_filter in {"task", "note"}:
-                content_mode_filter = raw_mode_filter
-            elif item_scope == "tasks":
+            # Migration boundary is in AppSettings sanitize-load.
+            if item_scope == "tasks":
                 content_mode_filter = "task"
             elif item_scope == "notes":
                 content_mode_filter = "note"

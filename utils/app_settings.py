@@ -24,6 +24,7 @@ _MAIN_UI_DENSITY_MODES = {"auto", "comfortable", "compact"}
 _TAB_UI_OVERRIDE_KEYS = {"general", "text", "image", "scene", "connections", "info", "animation", "about"}
 _PROPERTY_PANEL_SECTION_KEYS = {"text_content", "text_style", "background", "shadow", "outline"}
 _ABOUT_SECTION_KEYS = {"edition", "system", "shortcuts", "performance"}
+APP_SETTINGS_SCHEMA_VERSION = 2
 
 
 def _sanitize_main_window_dimension(value: Any) -> int:
@@ -43,10 +44,20 @@ def _sanitize_main_window_position(value: Any) -> int | None:
         return None
 
 
+def _sanitize_app_settings_schema_version(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        return 1
+    return parsed if parsed >= 1 else 1
+
+
 def _sanitize_info_filters(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
-    # Migration path only: read legacy mode_filter from old preset payloads.
+    # Migration path only (Phase 8D): legacy `mode_filter` is accepted only here.
+    # Do not duplicate this migration in UI-level sanitizers.
+    # Removal target: Phase 8E+ after migration window closes.
     migrated_mode_filter = str(raw.get("mode_filter", "")).strip().lower()
     if migrated_mode_filter not in _INFO_MODE_FILTERS:
         migrated_mode_filter = ""
@@ -203,6 +214,7 @@ def _sanitize_about_section_state(raw: Any) -> dict[str, bool]:
 class AppSettings:
     """アプリ全体の設定。"""
 
+    app_settings_schema_version: int = APP_SETTINGS_SCHEMA_VERSION
     main_window_frontmost: bool = True
     main_window_width: int = 0
     main_window_height: int = 0
@@ -239,6 +251,7 @@ def save_app_settings(parent: Any, base_directory: str, settings: AppSettings) -
     path: str = _get_settings_path(base_directory)
     try:
         data: dict[str, Any] = {
+            "app_settings_schema_version": APP_SETTINGS_SCHEMA_VERSION,
             "main_window_frontmost": bool(settings.main_window_frontmost),
             "main_window_width": _sanitize_main_window_dimension(getattr(settings, "main_window_width", 0)),
             "main_window_height": _sanitize_main_window_dimension(getattr(settings, "main_window_height", 0)),
@@ -284,6 +297,9 @@ def load_app_settings(parent: Any, base_directory: str) -> AppSettings:
             data: dict[str, Any] = json.load(f)
 
         s = AppSettings()
+        s.app_settings_schema_version = _sanitize_app_settings_schema_version(
+            data.get("app_settings_schema_version", 1)
+        )
         if isinstance(data.get("main_window_frontmost"), bool):
             s.main_window_frontmost = bool(data["main_window_frontmost"])
         s.main_window_width = _sanitize_main_window_dimension(data.get("main_window_width", 0))

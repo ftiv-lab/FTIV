@@ -36,3 +36,16 @@ Do not start implementation before reading both.
 - Keep progress updates short and frequent.
 - Avoid asking multiple yes/no decisions in one message.
 - If a blocker occurs, report concrete cause and propose one next action.
+
+## 6. PowerShell UTF-8 / Mojibake Prevention (High Priority)
+
+- Treat `????` output as a stop signal. Do not continue editing until encoding is re-verified.
+- Before UTF-8 text reads in PowerShell, set UTF-8 console output explicitly:
+  - `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+  - Use `Get-Content -Encoding UTF8`
+- For non-ASCII/Japanese document edits, prefer `apply_patch` over shell heredoc/python inline scripts.
+- If a file appears garbled in terminal output, verify file bytes via Python read (`encoding='utf-8'`) before any write.
+- Keep encoding-related operations single-step (read -> verify -> write) to avoid compounding corruption.
+- Recommended one-time local setup: configure `$PROFILE` to force UTF-8 defaults for each PowerShell session.
+  - `$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
+  - `[Console]::InputEncoding = [System.Text.Encoding]::UTF8`

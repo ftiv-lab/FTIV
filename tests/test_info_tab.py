@@ -604,11 +604,15 @@ def test_preset_action_menu_save_creates_user_preset(qapp):
     assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
 
 
-def test_legacy_mode_filter_preset_is_migrated_to_new_contract(qapp):
+def test_canonical_scope_preset_is_applied_without_legacy_mode_filter(qapp):
     _ = qapp
     mw, _ = _make_main_window()
     mw.app_settings.info_view_presets = [
-        {"id": "user:1", "name": "Legacy", "filters": {"mode_filter": "task", "due_filter": "today"}}
+        {
+            "id": "user:1",
+            "name": "Canonical",
+            "filters": {"item_scope": "tasks", "content_mode_filter": "task", "due_filter": "today"},
+        }
     ]
     mw.app_settings.info_last_view_preset_id = "user:1"
 
