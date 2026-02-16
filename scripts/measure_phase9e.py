@@ -49,6 +49,9 @@ Numeric = int | float
 Counters = dict[str, Numeric]
 ScenarioFn = Callable[[], Counters]
 
+ENV_PERF_ENFORCE = "FTIV_PERF_ENFORCE"
+ENV_PERF_THRESHOLDS_PATH = "FTIV_PERF_THRESHOLDS_PATH"
+
 
 @dataclass(frozen=True)
 class ScenarioSpec:
@@ -773,6 +776,113 @@ def _write_markdown(path: Path, payload: dict[str, object], results: list[Scenar
             f.write("\n")
 
 
+def _validate_measurement_payload(payload: dict[str, object]) -> None:
+    if not isinstance(payload, dict):
+        raise ValueError("measurement payload must be a dict")
+
+    meta = payload.get("meta")
+    if not isinstance(meta, dict):
+        raise ValueError("measurement payload meta must be a dict")
+
+    required_meta_keys = (
+        "measurement_id",
+        "timestamp",
+        "git_commit",
+        "python",
+        "os",
+        "window_size",
+        "warmup",
+        "samples",
+        "scenarios",
+    )
+    missing_meta = [key for key in required_meta_keys if key not in meta]
+    if missing_meta:
+        raise ValueError(f"measurement payload missing meta keys: {', '.join(missing_meta)}")
+
+    scenarios = payload.get("scenarios")
+    if not isinstance(scenarios, list):
+        raise ValueError("measurement payload scenarios must be a list")
+    if not scenarios:
+        raise ValueError("measurement payload scenarios must not be empty")
+
+    required_scenario_keys = ("id", "name", "status", "warmup", "samples", "elapsed_ms", "counters", "error")
+    for index, scenario in enumerate(scenarios):
+        if not isinstance(scenario, dict):
+            raise ValueError(f"scenario[{index}] must be a dict")
+        missing_keys = [key for key in required_scenario_keys if key not in scenario]
+        if missing_keys:
+            raise ValueError(f"scenario[{index}] missing keys: {', '.join(missing_keys)}")
+        elapsed_ms = scenario.get("elapsed_ms")
+        if not isinstance(elapsed_ms, dict):
+            raise ValueError(f"scenario[{index}].elapsed_ms must be a dict")
+        missing_elapsed = [k for k in ("median", "p95", "max", "min") if k not in elapsed_ms]
+        if missing_elapsed:
+            raise ValueError(f"scenario[{index}].elapsed_ms missing: {', '.join(missing_elapsed)}")
+
+
+def _is_perf_enforce_enabled() -> bool:
+    value = str(os.getenv(ENV_PERF_ENFORCE, "")).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _resolve_thresholds_path(base_dir: Path) -> Path:
+    configured = str(os.getenv(ENV_PERF_THRESHOLDS_PATH, "")).strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return base_dir / "docs" / "internal" / "architecture" / "phase9e_performance_thresholds.json"
+
+
+def _load_threshold_rules(path: Path) -> dict[str, dict[str, float]]:
+    if not path.exists():
+        raise FileNotFoundError(f"threshold file not found: {path}")
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("threshold file root must be a JSON object")
+
+    scenarios = payload.get("scenarios")
+    if not isinstance(scenarios, dict):
+        raise ValueError("threshold file must contain object key 'scenarios'")
+
+    out: dict[str, dict[str, float]] = {}
+    for scenario_id, rule in scenarios.items():
+        if not isinstance(rule, dict):
+            raise ValueError(f"threshold rule for {scenario_id} must be an object")
+        if "median_ms" not in rule or "p95_ms" not in rule:
+            raise ValueError(f"threshold rule for {scenario_id} must include median_ms and p95_ms")
+        median_ms = float(rule["median_ms"])
+        p95_ms = float(rule["p95_ms"])
+        samples = float(rule.get("samples", 0))
+        if median_ms <= 0 or p95_ms <= 0:
+            raise ValueError(f"threshold rule for {scenario_id} must be positive")
+        out[str(scenario_id)] = {"median_ms": median_ms, "p95_ms": p95_ms, "samples": samples}
+    return out
+
+
+def _collect_threshold_violations(
+    results: list[ScenarioResult], threshold_rules: dict[str, dict[str, float]]
+) -> tuple[list[str], set[str]]:
+    violations: list[str] = []
+    matched_ids: set[str] = set()
+
+    for result in results:
+        rule = threshold_rules.get(result.scenario_id)
+        if rule is None:
+            continue
+        matched_ids.add(result.scenario_id)
+        actual_median = float(result.elapsed_ms.get("median", 0.0))
+        actual_p95 = float(result.elapsed_ms.get("p95", 0.0))
+        limit_median = float(rule["median_ms"])
+        limit_p95 = float(rule["p95_ms"])
+
+        if actual_median > limit_median:
+            violations.append(f"{result.scenario_id}: median {actual_median:.4f}ms > threshold {limit_median:.4f}ms")
+        if actual_p95 > limit_p95:
+            violations.append(f"{result.scenario_id}: p95 {actual_p95:.4f}ms > threshold {limit_p95:.4f}ms")
+
+    return violations, matched_ids
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Phase 9E lightweight performance baseline scenarios.")
     parser.add_argument(
@@ -827,8 +937,9 @@ def main(argv: list[str] | None = None) -> int:
         else (base_dir / "docs" / "internal" / "architecture" / "performance_runs")
     )
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = output_dir / f"phase9e_measurement_{stamp}.json"
-    md_path = output_dir / f"phase9e_measurement_{stamp}.md"
+    measurement_id = f"phase9e_measurement_{stamp}"
+    json_path = output_dir / f"{measurement_id}.json"
+    md_path = output_dir / f"{measurement_id}.md"
 
     results: list[ScenarioResult] = []
     for spec in run_specs:
@@ -841,6 +952,7 @@ def main(argv: list[str] | None = None) -> int:
 
     payload: dict[str, object] = {
         "meta": {
+            "measurement_id": measurement_id,
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "git_commit": _git_commit(base_dir),
             "python": sys.version.split()[0],
@@ -865,6 +977,7 @@ def main(argv: list[str] | None = None) -> int:
         ],
     }
 
+    _validate_measurement_payload(payload)
     _write_json(json_path, payload)
     _write_markdown(md_path, payload, results)
 
@@ -875,6 +988,26 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         print(f"[Phase9E] completed with {len(failed)} failed scenario(s). Partial results were saved.")
         return 1
+
+    if _is_perf_enforce_enabled():
+        try:
+            threshold_path = _resolve_thresholds_path(base_dir)
+            threshold_rules = _load_threshold_rules(threshold_path)
+        except Exception as exc:
+            print(f"[Phase9E] threshold enforcement setup error: {exc}")
+            return 2
+
+        violations, matched_ids = _collect_threshold_violations(results, threshold_rules)
+        if not matched_ids:
+            print("[Phase9E] threshold enforcement error: no threshold-target scenarios were executed.")
+            return 2
+        if violations:
+            print("[Phase9E] threshold enforcement failed:")
+            for message in violations:
+                print(f"  - {message}")
+            return 3
+        print("[Phase9E] threshold enforcement passed.")
+
     print("[Phase9E] completed successfully.")
     return 0
 
