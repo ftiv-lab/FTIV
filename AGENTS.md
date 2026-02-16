@@ -9,8 +9,9 @@ At the start of every new session (especially after VS Code restart), read these
 1. `docs/internal/CURRENT_STATUS_DASHBOARD.md`
 2. `docs/internal/guides/AGENT_READING_LIST.md`
 3. `docs/internal/guides/codex_vscode_stability_notes.md`
+4. `docs/internal/guides/planning_governance_rules.md` **(計画提案ルール — 必読)**
 
-Do not start implementation before reading all three.
+Do not start implementation before reading all four.
 
 If `docs/internal/` is not available in the current environment (e.g. fresh clone / shared CI workspace), use this fallback entrypoint:
 
@@ -44,7 +45,17 @@ In fallback mode, treat `docs/RUNBOOK.md` as the primary startup guide and execu
 - Avoid asking multiple yes/no decisions in one message.
 - If a blocker occurs, report concrete cause and propose one next action.
 
-## 6. PowerShell UTF-8 / Mojibake Prevention (High Priority)
+## 6. Planning Governance (計画提案ルール — High Priority)
+
+- **計画を提案する前に `docs/internal/guides/planning_governance_rules.md` を必ず読むこと。**
+- 同じテーマの連続フェーズは **最大3つまで** （4つ目は人間の承認が必要）。
+- インフラ系フェーズが3つ連続したら、次は **必ず機能系に戻る** 。
+- すべての計画に「ユーザーへの効果」「このフェーズで終わる理由」を書くこと。
+- 1日に提案できる計画書は **最大3個まで** 。
+- 計画の内容を開発者（初心者）が理解できない場合、それは **計画が複雑すぎる** 。
+- 詳細: `docs/internal/guides/planning_governance_rules.md`
+
+## 7. PowerShell UTF-8 / Mojibake Prevention (High Priority)
 
 - Treat `????` output as a stop signal. Do not continue editing until encoding is re-verified.
 - Before UTF-8 text reads in PowerShell, set UTF-8 console output explicitly:
