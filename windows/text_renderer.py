@@ -15,6 +15,12 @@ from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphic
 from models.constants import AppDefaults
 from models.protocols import RendererInput
 from utils.translator import get_lang
+from windows.text_rendering import (
+    RendererInputAdapter,
+    adapt_renderer_input,
+    calculate_shadow_padding,
+    get_blur_radius_px,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,45 +37,6 @@ class _RenderProfile:
 
     def inc(self, name: str, n: int = 1) -> None:
         self.counts[name] = int(self.counts.get(name, 0)) + int(n)
-
-
-class _RendererInputAdapter:
-    """RendererInput を満たす入力を正規化する互換アダプタ。"""
-
-    _CORE_ATTRS: tuple[str, ...] = ("is_vertical", "font_family", "font_size", "text")
-
-    def __init__(self, source: RendererInput) -> None:
-        object.__setattr__(self, "_source", source)
-        self._validate_source()
-
-    def _validate_source(self) -> None:
-        source: RendererInput = object.__getattribute__(self, "_source")
-        missing: list[str] = [name for name in self._CORE_ATTRS if not hasattr(source, name)]
-        if missing:
-            raise AttributeError(f"RendererInput missing required attrs: {', '.join(missing)}")
-        if not callable(getattr(source, "pos", None)):
-            raise TypeError("RendererInput requires callable pos()")
-        if not callable(getattr(source, "setGeometry", None)):
-            raise TypeError("RendererInput requires callable setGeometry(...)")
-
-    def pos(self) -> Any:
-        source: RendererInput = object.__getattribute__(self, "_source")
-        return source.pos()
-
-    def setGeometry(self, rect: Any) -> None:
-        source: RendererInput = object.__getattribute__(self, "_source")
-        source.setGeometry(rect)
-
-    def __getattr__(self, name: str) -> Any:
-        source: RendererInput = object.__getattribute__(self, "_source")
-        return getattr(source, name)
-
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name == "_source":
-            object.__setattr__(self, name, value)
-            return
-        source: RendererInput = object.__getattribute__(self, "_source")
-        setattr(source, name, value)
 
 
 class TextRenderer:
@@ -253,33 +220,24 @@ class TextRenderer:
 
     def _get_blur_radius_px(self, window: Any) -> float:
         """ぼかし半径（ピクセル）を計算します。Same logic as _apply_blur_to_pixmap"""
-        if not window.shadow_enabled:
-            return 0.0
-        return float(window.shadow_blur) * 20.0 / 100.0
+        return get_blur_radius_px(
+            shadow_enabled=bool(getattr(window, "shadow_enabled", False)),
+            shadow_blur=float(getattr(window, "shadow_blur", 0.0)),
+        )
 
     def _calculate_shadow_padding(self, window: Any) -> Tuple[int, int, int, int]:
         """影とぼかしによる追加パディングを計算します (left, top, right, bottom)。"""
-        if not window.shadow_enabled:
-            return 0, 0, 0, 0
-
-        font_size = window.font_size
-        sx = font_size * window.shadow_offset_x
-        sy = font_size * window.shadow_offset_y
-        blur_px = self._get_blur_radius_px(window)
-
-        # ぼかしの影響範囲
-        pad_left = int(max(0, -(sx - blur_px)))
-        pad_top = int(max(0, -(sy - blur_px)))
-        pad_right = int(max(0, (sx + blur_px)))
-        pad_bottom = int(max(0, (sy + blur_px)))
-
-        return pad_left, pad_top, pad_right, pad_bottom
+        return calculate_shadow_padding(
+            font_size=float(getattr(window, "font_size", 0.0)),
+            shadow_enabled=bool(getattr(window, "shadow_enabled", False)),
+            shadow_offset_x=float(getattr(window, "shadow_offset_x", 0.0)),
+            shadow_offset_y=float(getattr(window, "shadow_offset_y", 0.0)),
+            shadow_blur=float(getattr(window, "shadow_blur", 0.0)),
+        )
 
     @staticmethod
-    def _adapt_renderer_input(window: RendererInput) -> _RendererInputAdapter:
-        if isinstance(window, _RendererInputAdapter):
-            return window
-        return _RendererInputAdapter(window)
+    def _adapt_renderer_input(window: RendererInput) -> RendererInputAdapter:
+        return adapt_renderer_input(window)
 
     def render(self, window: RendererInput) -> QPixmap:
         """ウィンドウの状態を読み取り、描画結果を生成します（分解プロファイル対応）。"""

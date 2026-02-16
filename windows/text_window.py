@@ -29,12 +29,15 @@ from ui.dialogs import (
 )
 from utils.due_date import classify_due, format_due_for_display, normalize_due_iso
 from utils.font_dialog import choose_font
-from utils.tag_ops import normalize_tags
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
 from .mixins.edit_dialog_mixin import EditDialogMixin
 from .mixins.text_properties_mixin import TextPropertiesMixin
+from .text_window_parts import metadata_ops as text_window_metadata_ops
+from .text_window_parts import selection_ops as text_window_selection_ops
+from .text_window_parts import task_ops as text_window_task_ops
+from .text_window_parts.runtime_bridge import ensure_runtime_services
 
 # ロガーの取得
 logger = logging.getLogger(__name__)
@@ -120,12 +123,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             QMessageBox.critical(None, tr("msg_error"), f"Initialization error: {e}")
 
     def _runtime_services(self) -> TextWindowRuntimeServices:
-        services = getattr(self, "runtime_services", None)
-        if isinstance(services, TextWindowRuntimeServices):
-            return services
-        services = TextWindowRuntimeServices(getattr(self, "main_window", None))
-        self.runtime_services = services
-        return services
+        return ensure_runtime_services(self)
 
     # --- Properties ---
 
@@ -151,8 +149,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         """選択状態更新に加えて、必要時に再レンダリングを実行する。"""
         prev = bool(getattr(self, "is_selected", False))
         super().set_selected(selected)
-        if prev != bool(selected):
-            self.update_text()
+        text_window_selection_ops.after_set_selected(self, previous=prev, current=bool(selected))
 
     # update_text, update_text_debounced, _update_text_immediate, _restore_render_debounce_ms_after_wheel
     # Moved to TextPropertiesMixin. _update_text_immediate handles rendering.
@@ -180,12 +177,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             return ""
 
     def _task_progress_counts(self) -> tuple[int, int]:
-        lines = self._split_lines(str(getattr(self, "text", "") or ""))
-        total = len(lines)
-        raw_states = getattr(self, "task_states", [])
-        normalized = self._normalize_task_states(list(raw_states) if isinstance(raw_states, list) else [], total)
-        done = sum(1 for state in normalized if state)
-        return done, total
+        return text_window_task_ops.task_progress_counts(self)
 
     def _build_overlay_meta_tooltip_lines(self) -> List[str]:
         lines: List[str] = []
@@ -465,207 +457,61 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
     def _toggle_task_line_by_index(self, idx: int) -> None:
         """指定行の完了状態をトグルする。"""
-        self.toggle_task_line_state(idx)
+        text_window_task_ops.toggle_task_line_by_index(self, idx)
 
     def get_task_progress(self) -> tuple[int, int]:
         """タスクの進捗を返す（完了数, 総数）。"""
-        if not self.is_task_mode():
-            return 0, 0
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        done = sum(1 for state in states if state)
-        return done, total
+        return text_window_task_ops.get_task_progress(self)
 
     def iter_task_items(self) -> List[TaskLineRef]:
         """タスク行の参照一覧を返す（taskモード時のみ）。"""
-        if not self.is_task_mode():
-            return []
-
-        lines = self._split_lines(self.text)
-        states = self._normalize_task_states(self.task_states, len(lines))
-        window_uuid = str(getattr(self, "uuid", ""))
-        return [
-            TaskLineRef(
-                window_uuid=window_uuid,
-                line_index=i,
-                text=str(line or ""),
-                done=bool(states[i]),
-            )
-            for i, line in enumerate(lines)
-        ]
+        return text_window_task_ops.iter_task_items(self)
 
     def get_task_line_state(self, index: int) -> bool:
         """指定行のタスク状態を返す。"""
-        if not self.is_task_mode():
-            return False
-        lines = self._split_lines(self.text)
-        if index < 0 or index >= len(lines):
-            return False
-        states = self._normalize_task_states(self.task_states, len(lines))
-        return bool(states[index])
+        return text_window_task_ops.get_task_line_state(self, index)
 
     def set_task_line_state(self, index: int, done: bool) -> None:
         """指定行のタスク状態を設定する。"""
-        if not self.is_task_mode():
-            return
-        lines = self._split_lines(self.text)
-        if index < 0 or index >= len(lines):
-            return
-
-        states = self._normalize_task_states(self.task_states, len(lines))
-        target = bool(done)
-        if bool(states[index]) == target:
-            return
-
-        new_states = list(states)
-        new_states[index] = target
-        self.set_undoable_property("task_states", new_states, "update_text")
-        self._touch_updated_at()
+        text_window_task_ops.set_task_line_state(self, index, done)
 
     def toggle_task_line_state(self, index: int) -> None:
         """指定行のタスク状態をトグルする。"""
-        if not self.is_task_mode():
-            return
-        self.set_task_line_state(index, not self.get_task_line_state(index))
+        text_window_task_ops.toggle_task_line_state(self, index)
 
     def set_title_and_tags(self, title: str, tags: List[str]) -> None:
-        """ノートメタ（title/tags）をまとめて更新する。"""
-        normalized_title = str(title or "").strip()
-        normalized_tags = normalize_tags(tags or [])
-
-        title_changed = self.title != normalized_title
-        tags_changed = self.tags != normalized_tags
-        if not title_changed and not tags_changed:
-            return
-
-        stack = getattr(self.main_window, "undo_stack", None)
-        use_macro = bool(
-            title_changed
-            and tags_changed
-            and stack is not None
-            and hasattr(stack, "beginMacro")
-            and hasattr(stack, "endMacro")
-        )
-        if use_macro:
-            stack.beginMacro("Update Note Metadata")
-        try:
-            if title_changed:
-                self.set_undoable_property("title", normalized_title, "update_text")
-            if tags_changed:
-                self.set_undoable_property("tags", normalized_tags, "update_text")
-            self._touch_updated_at()
-        finally:
-            if use_macro:
-                stack.endMacro()
+        text_window_metadata_ops.set_title_and_tags(self, title, tags)
 
     def set_tags(self, tags: List[str]) -> None:
-        """タグのみを正規化して更新する。"""
-        normalized_tags = normalize_tags(tags or [])
-        if list(getattr(self, "tags", []) or []) == normalized_tags:
-            return
-        self.set_undoable_property("tags", normalized_tags, "update_text")
-        self._touch_updated_at()
+        text_window_metadata_ops.set_tags(self, tags)
 
     def set_starred(self, value: bool) -> None:
-        """スター状態を更新する。"""
-        new_value = bool(value)
-        if bool(self.is_starred) == new_value:
-            return
-        self.set_undoable_property("is_starred", new_value, "update_text")
-        self._touch_updated_at()
+        text_window_metadata_ops.set_starred(self, value)
 
     def set_archived(self, value: bool) -> None:
-        """アーカイブ状態を更新する。"""
-        new_value = bool(value)
-        if bool(getattr(self, "is_archived", False)) == new_value:
-            return
-        self.set_undoable_property("is_archived", new_value, "update_text")
-        self._touch_updated_at()
+        text_window_metadata_ops.set_archived(self, value)
 
     @staticmethod
     def _normalize_due_iso(value: str) -> str | None:
         return normalize_due_iso(value)
 
     def set_due_at(self, value: str) -> None:
-        """期限を設定する（内部保存は YYYY-MM-DDT00:00:00）。"""
-        normalized = self._normalize_due_iso(value)
-        if normalized is None:
-            return
-        current_due = str(getattr(self, "due_at", "") or "")
-        current_precision = str(getattr(self, "due_precision", "date") or "date").strip().lower()
-        current_time = str(getattr(self, "due_time", "") or "")
-        current_timezone = str(getattr(self, "due_timezone", "") or "")
-        if current_due == normalized and current_precision == "date" and not current_time and not current_timezone:
-            return
-        if current_due != normalized:
-            self.set_undoable_property("due_at", normalized, "update_text")
-        if current_precision != "date":
-            self.set_undoable_property("due_precision", "date", None)
-        if current_time:
-            self.set_undoable_property("due_time", "", None)
-        if current_timezone:
-            self.set_undoable_property("due_timezone", "", None)
-        self._touch_updated_at()
+        text_window_metadata_ops.set_due_at(self, value)
 
     def clear_due_at(self) -> None:
-        """期限を解除する。"""
-        has_due = bool(str(getattr(self, "due_at", "") or ""))
-        has_time = bool(str(getattr(self, "due_time", "") or ""))
-        has_timezone = bool(str(getattr(self, "due_timezone", "") or ""))
-        precision = str(getattr(self, "due_precision", "date") or "date").strip().lower()
-        if not has_due and not has_time and not has_timezone and precision == "date":
-            return
-        if has_due:
-            self.set_undoable_property("due_at", "", "update_text")
-        if has_time:
-            self.set_undoable_property("due_time", "", None)
-        if has_timezone:
-            self.set_undoable_property("due_timezone", "", None)
-        if precision != "date":
-            self.set_undoable_property("due_precision", "date", None)
-        self._touch_updated_at()
+        text_window_metadata_ops.clear_due_at(self)
 
     def bulk_set_task_done(self, indices: List[int], value: bool) -> None:
         """指定行群のタスク状態を一括設定する。"""
-        if not self.is_task_mode():
-            return
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        new_states = list(states)
-        target = bool(value)
-        changed = False
-        for idx in sorted(set(indices or [])):
-            if idx < 0 or idx >= total:
-                continue
-            if bool(new_states[idx]) == target:
-                continue
-            new_states[idx] = target
-            changed = True
-        if changed:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        text_window_task_ops.bulk_set_task_done(self, indices, value)
 
     def complete_all_tasks(self) -> None:
         """全タスク行を完了状態にする。"""
-        if not self.is_task_mode():
-            return
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        new_states = [True for _ in states]
-        if new_states != states:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        text_window_task_ops.complete_all_tasks(self)
 
     def uncomplete_all_tasks(self) -> None:
         """全タスク行を未完了状態にする。"""
-        if not self.is_task_mode():
-            return
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        new_states = [False for _ in states]
-        if new_states != states:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        text_window_task_ops.uncomplete_all_tasks(self)
 
     def set_horizontal_margin_ratio(self) -> None:
         dialog = MarginRatioDialog(
@@ -762,34 +608,19 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
 
     def mousePressEvent(self, event: Any) -> None:
         """マウスプレスイベント。タスクモードのクリック検出用に位置を記録。"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._task_press_pos = event.position().toPoint()
+        text_window_selection_ops.mouse_press(self, event)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: Any) -> None:
         """マウスリリースイベント。タスクモードでチェックボックスクリックを処理。"""
-        if event.button() == Qt.MouseButton.LeftButton and self.is_task_mode():
-            release_pos = event.position().toPoint()
-            press_pos = getattr(self, "_task_press_pos", None)
-            if press_pos is not None:
-                dist = (release_pos - press_pos).manhattanLength()
-                if dist < 10:
-                    idx = self._hit_test_task_checkbox(release_pos)
-                    if idx >= 0:
-                        self._toggle_task_line_by_index(idx)
-                        super().mouseReleaseEvent(event)
-                        return
+        if text_window_selection_ops.mouse_release_should_toggle(self, event):
+            super().mouseReleaseEvent(event)
+            return
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: Any) -> None:
         """マウスムーブイベント。タスクモード時にチェックボックス上でカーソル変更。"""
-        if self.is_task_mode() and not self.is_dragging:
-            pos = event.position().toPoint()
-            idx = self._hit_test_task_checkbox(pos)
-            if idx >= 0:
-                self.setCursor(Qt.CursorShape.PointingHandCursor)
-            else:
-                self.unsetCursor()
+        text_window_selection_ops.mouse_move(self, event)
         super().mouseMoveEvent(event)
 
     def _hit_test_task_checkbox(self, pos: QPoint) -> int:
@@ -801,18 +632,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         Returns:
             ヒットした行インデックス。ヒットなしの場合は -1。
         """
-        if not self.is_task_mode() or self.is_vertical:
-            return -1
-
-        renderer = getattr(self, "renderer", None)
-        if renderer is None:
-            return -1
-
-        rects = renderer.get_task_line_rects(self)
-        for i, rect in enumerate(rects):
-            if rect.contains(pos):
-                return i
-        return -1
+        return text_window_selection_ops.hit_test_task_checkbox(self, pos)
 
     def wheelEvent(self, event: Any) -> None:
         """マウスホイールによるフォントサイズ変更。
