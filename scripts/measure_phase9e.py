@@ -368,6 +368,14 @@ def _make_info_tab() -> InfoTab:
 
 
 def _count_task_rows(tab: InfoTab) -> int:
+    if hasattr(tab, "tasks_tree"):
+        count = 0
+        for item in _iter_tree_items(tab.tasks_tree):
+            key = _item_user_key(item)
+            if ":" in key:
+                count += 1
+        return count
+
     count = 0
     for i in range(tab.tasks_list.count()):
         item = tab.tasks_list.item(i)
@@ -380,6 +388,14 @@ def _count_task_rows(tab: InfoTab) -> int:
 
 
 def _count_note_rows(tab: InfoTab) -> int:
+    if hasattr(tab, "notes_tree"):
+        count = 0
+        for item in _iter_tree_items(tab.notes_tree):
+            key = _item_user_key(item)
+            if key:
+                count += 1
+        return count
+
     count = 0
     for i in range(tab.notes_list.count()):
         item = tab.notes_list.item(i)
@@ -389,6 +405,39 @@ def _count_note_rows(tab: InfoTab) -> int:
         if key:
             count += 1
     return count
+
+
+def _iter_tree_items(tree: object) -> list[object]:
+    result: list[object] = []
+    top_level_count = getattr(tree, "topLevelItemCount", None)
+    top_level_item = getattr(tree, "topLevelItem", None)
+    if not callable(top_level_count) or not callable(top_level_item):
+        return result
+    for i in range(int(top_level_count())):
+        top = top_level_item(i)
+        if top is None:
+            continue
+        result.append(top)
+        child_count = getattr(top, "childCount", None)
+        child = getattr(top, "child", None)
+        if not callable(child_count) or not callable(child):
+            continue
+        for j in range(int(child_count())):
+            c = child(j)
+            if c is not None:
+                result.append(c)
+    return result
+
+
+def _item_user_key(item: object) -> str:
+    data_fn = getattr(item, "data", None)
+    if not callable(data_fn):
+        return ""
+    # QTreeWidgetItem: data(column, role), QListWidgetItem: data(role)
+    try:
+        return str(data_fn(0, Qt.ItemDataRole.UserRole) or "")
+    except TypeError:
+        return str(data_fn(Qt.ItemDataRole.UserRole) or "")
 
 
 class _PropertyTarget:

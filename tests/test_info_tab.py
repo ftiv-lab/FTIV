@@ -213,25 +213,42 @@ def _make_main_window(task_windows=None, note_windows=None):
     return mw, text_windows
 
 
-def _find_note_item(tab: InfoTab, window_uuid: str):
-    for i in range(tab.notes_list.count()):
-        candidate = tab.notes_list.item(i)
-        if candidate is None:
+def _iter_all_tree_items(tree):
+    """QTreeWidget の全アイテム（トップレベル + 子）をフラットに列挙する。"""
+    result = []
+    for i in range(tree.topLevelItemCount()):
+        top = tree.topLevelItem(i)
+        if top is None:
             continue
-        if str(candidate.data(Qt.ItemDataRole.UserRole) or "") == window_uuid:
-            return candidate
+        result.append(top)
+        for j in range(top.childCount()):
+            child = top.child(j)
+            if child is not None:
+                result.append(child)
+    return result
+
+
+def _find_note_item(tab: InfoTab, window_uuid: str):
+    for item in _iter_all_tree_items(tab.notes_tree):
+        if str(item.data(0, Qt.ItemDataRole.UserRole) or "") == window_uuid:
+            return item
     return None
 
 
 def _count_task_items(tab: InfoTab) -> int:
     count = 0
-    for i in range(tab.tasks_list.count()):
-        item = tab.tasks_list.item(i)
-        if item is None:
-            continue
-        if ":" in str(item.data(Qt.ItemDataRole.UserRole) or ""):
+    for item in _iter_all_tree_items(tab.tasks_tree):
+        if ":" in str(item.data(0, Qt.ItemDataRole.UserRole) or ""):
             count += 1
     return count
+
+
+def _find_first_task_item(tab: InfoTab):
+    """最初の実タスクアイテム（グループヘッダーを除く）を返す。"""
+    for item in _iter_all_tree_items(tab.tasks_tree):
+        if ":" in str(item.data(0, Qt.ItemDataRole.UserRole) or ""):
+            return item
+    return None
 
 
 def test_task_item_changed_safe_when_action_refreshes(qapp):
@@ -240,11 +257,13 @@ def test_task_item_changed_safe_when_action_refreshes(qapp):
     tab = InfoTab(mw)
     mw.main_controller = SimpleNamespace(info_actions=_DummyInfoActions(tab, text_windows))
 
-    item = tab.tasks_list.item(0)
+    item = _find_first_task_item(tab)
     assert item is not None
 
-    # Must not raise RuntimeError even if action refreshes list immediately.
-    item.setCheckState(Qt.CheckState.Checked)
+    # Must not crash even if action refreshes list immediately.
+    # Action is deferred via QTimer.singleShot(0), so processEvents is needed.
+    item.setCheckState(0, Qt.CheckState.Checked)
+    qapp.processEvents()
     task_window = text_windows[0]
     assert isinstance(task_window, _DummyTaskWindow)
     assert task_window._states[0] is True
@@ -260,8 +279,10 @@ def test_note_item_changed_safe_when_action_refreshes(qapp):
     item = _find_note_item(tab, note_window.uuid)
     assert item is not None
 
-    # Must not raise RuntimeError even if action refreshes list immediately.
-    item.setCheckState(Qt.CheckState.Checked)
+    # Must not crash even if action refreshes list immediately.
+    # Action is deferred via QTimer.singleShot(0), so processEvents is needed.
+    item.setCheckState(0, Qt.CheckState.Checked)
+    qapp.processEvents()
     assert note_window.is_starred is True
 
 
@@ -276,9 +297,9 @@ def test_smart_view_overdue_filters_tasks(qapp):
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-overdue:")
+    assert str(first.data(0, Qt.ItemDataRole.UserRole)).startswith("t-overdue:")
 
 
 def test_bulk_archive_selected_updates_windows(qapp):
@@ -307,11 +328,8 @@ def test_bulk_complete_selected_updates_task_states(qapp):
     actions = _DummyInfoActions(tab, text_windows)
     mw.main_controller = SimpleNamespace(info_actions=actions)
 
-    for i in range(tab.tasks_list.count()):
-        item = tab.tasks_list.item(i)
-        if item is None:
-            continue
-        if ":" in str(item.data(Qt.ItemDataRole.UserRole) or ""):
+    for item in _iter_all_tree_items(tab.tasks_tree):
+        if ":" in str(item.data(0, Qt.ItemDataRole.UserRole) or ""):
             item.setSelected(True)
 
     tab._apply_bulk_task_done(True)
@@ -330,11 +348,8 @@ def test_mode_filter_task_limits_note_list(qapp):
     tab.refresh_data(immediate=True)
 
     note_rows = []
-    for i in range(tab.notes_list.count()):
-        item = tab.notes_list.item(i)
-        if item is None:
-            continue
-        uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+    for item in _iter_all_tree_items(tab.notes_tree):
+        uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
         if uuid:
             note_rows.append(uuid)
     assert note_rows == ["t-1"]
@@ -351,9 +366,9 @@ def test_due_filter_upcoming_limits_tasks(qapp):
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-future:")
+    assert str(first.data(0, Qt.ItemDataRole.UserRole)).startswith("t-future:")
 
 
 def test_smart_view_today_applies_due_sort_controls(qapp):
@@ -417,9 +432,9 @@ def test_overdue_badge_rendered_on_task_item(qapp):
     tab = InfoTab(mw)
     tab.refresh_data(immediate=True)
 
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert f"[{tr('info_badge_overdue')}]" in first.text()
+    assert f"[{tr('info_badge_overdue')}]" in first.text(0)
 
 
 def test_archive_scope_archived_filters_task_rows(qapp):
@@ -433,9 +448,9 @@ def test_archive_scope_archived_filters_task_rows(qapp):
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-archived:")
+    assert str(first.data(0, Qt.ItemDataRole.UserRole)).startswith("t-archived:")
 
 
 def test_builtin_archived_preset_sets_archive_scope(qapp):
@@ -514,7 +529,7 @@ def test_archived_badge_rendered_on_note_item(qapp):
 
     note_item = _find_note_item(tab, "n-1")
     assert note_item is not None
-    assert f"[{tr('info_badge_archived')}]" in note_item.text()
+    assert f"[{tr('info_badge_archived')}]" in note_item.text(0)
 
 
 def test_operation_log_panel_renders_and_clears(qapp):

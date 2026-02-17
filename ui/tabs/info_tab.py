@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QTabWidget,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -267,28 +269,36 @@ class InfoTab(QWidget):
 
         self.tasks_tab = QWidget()
         tasks_layout = QVBoxLayout(self.tasks_tab)
-        self.tasks_list = QListWidget()
-        self.tasks_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.tasks_list.itemChanged.connect(self._on_task_item_changed)
-        self.tasks_list.itemDoubleClicked.connect(self._on_task_item_activated)
-        self.tasks_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.tasks_list.customContextMenuRequested.connect(
-            lambda pos: self._show_bulk_context_menu(self.tasks_list, pos)
+        self.tasks_tree = QTreeWidget()
+        self.tasks_tree.setHeaderHidden(True)
+        self.tasks_tree.setColumnCount(1)
+        self.tasks_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tasks_tree.setRootIsDecorated(False)
+        self.tasks_tree.setIndentation(16)
+        self.tasks_tree.itemChanged.connect(self._on_task_item_changed)
+        self.tasks_tree.itemDoubleClicked.connect(self._on_task_item_activated)
+        self.tasks_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tasks_tree.customContextMenuRequested.connect(
+            lambda pos: self._show_bulk_context_menu(self.tasks_tree, pos)
         )
-        tasks_layout.addWidget(self.tasks_list)
+        tasks_layout.addWidget(self.tasks_tree)
         self.subtabs.addTab(self.tasks_tab, tr("info_tasks_tab"))
 
         self.notes_tab = QWidget()
         notes_layout = QVBoxLayout(self.notes_tab)
-        self.notes_list = QListWidget()
-        self.notes_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.notes_list.itemChanged.connect(self._on_note_item_changed)
-        self.notes_list.itemDoubleClicked.connect(self._on_note_item_activated)
-        self.notes_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.notes_list.customContextMenuRequested.connect(
-            lambda pos: self._show_bulk_context_menu(self.notes_list, pos)
+        self.notes_tree = QTreeWidget()
+        self.notes_tree.setHeaderHidden(True)
+        self.notes_tree.setColumnCount(1)
+        self.notes_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.notes_tree.setRootIsDecorated(False)
+        self.notes_tree.setIndentation(16)
+        self.notes_tree.itemChanged.connect(self._on_note_item_changed)
+        self.notes_tree.itemDoubleClicked.connect(self._on_note_item_activated)
+        self.notes_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.notes_tree.customContextMenuRequested.connect(
+            lambda pos: self._show_bulk_context_menu(self.notes_tree, pos)
         )
-        notes_layout.addWidget(self.notes_list)
+        notes_layout.addWidget(self.notes_tree)
 
         notes_btn_row = QHBoxLayout()
         self.btn_toggle_star = QPushButton(tr("info_toggle_star"))
@@ -1072,12 +1082,14 @@ class InfoTab(QWidget):
 
             task_sig = self._make_task_rows_signature(filtered_tasks)
             if task_sig != self._last_task_rows_signature:
-                self._populate_tasks(filtered_tasks)
+                task_groups = self.index_manager.group_tasks_smart(filtered_tasks)
+                self._populate_tasks_grouped(task_groups, filtered_tasks)
                 self._last_task_rows_signature = task_sig
 
             note_sig = self._make_note_rows_signature(filtered_notes)
             if note_sig != self._last_note_rows_signature:
-                self._populate_notes(filtered_notes)
+                note_groups = self.index_manager.group_notes_smart(filtered_notes)
+                self._populate_notes_grouped(note_groups, filtered_notes)
                 self._last_note_rows_signature = note_sig
 
             self._update_empty_state_hint(len(task_items) + len(note_items), len(filtered_tasks) + len(filtered_notes))
@@ -1129,138 +1141,247 @@ class InfoTab(QWidget):
             return QColor("#ff9a9a")
         return None
 
-    def _populate_tasks(self, items: list[TaskIndexItem]) -> None:
+    @staticmethod
+    def _format_tags_badge(tags: tuple[str, ...]) -> str:
+        if not tags:
+            return ""
+        return " ".join(f"[{tag}]" for tag in tags)
+
+    def _build_task_item_text(
+        self,
+        item: TaskIndexItem,
+        due_text_cache: dict[tuple[str, str, str, str], str],
+        due_state_cache: dict[tuple[str, str, str, str], str],
+    ) -> tuple[str, str]:
+        """タスクアイテムの表示テキストと期限状態を返す。"""
+        text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
+        tag_badge = self._format_tags_badge(item.tags)
+        if tag_badge:
+            text = f"{text}  {tag_badge}"
+        due_key = (
+            str(item.due_at or ""),
+            str(item.due_time or ""),
+            str(item.due_timezone or ""),
+            str(item.due_precision or "date"),
+        )
+        due_text = due_text_cache.get(due_key)
+        if due_text is None:
+            due_text = format_due_for_display(
+                item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            )
+            due_text_cache[due_key] = due_text
+        due_state = due_state_cache.get(due_key)
+        if due_state is None:
+            due_state = classify_due(
+                item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            )
+            due_state_cache[due_key] = due_state
+        badges = self._build_due_badges(due_state, is_archived=bool(item.is_archived), is_done_task=bool(item.done))
+        if due_text:
+            text = f"{text}  ({tr('info_due_short_fmt').format(date=due_text)})"
+        if badges:
+            text = f"{text} {' '.join(badges)}"
+        return text, due_state
+
+    def _populate_tasks_grouped(
+        self,
+        groups: list[Any],
+        all_items: list[TaskIndexItem],
+    ) -> None:
+        from managers.info_index_manager import GroupedTasks
+
         due_text_cache: dict[tuple[str, str, str, str], str] = {}
         due_state_cache: dict[tuple[str, str, str, str], str] = {}
-        self.tasks_list.blockSignals(True)
+        self.tasks_tree.blockSignals(True)
         try:
-            self.tasks_list.clear()
-            if not items:
-                empty = QListWidgetItem(tr("info_list_empty"))
+            self.tasks_tree.clear()
+            if not all_items:
+                empty = QTreeWidgetItem(self.tasks_tree)
+                empty.setText(0, tr("info_list_empty"))
                 empty.setFlags(Qt.ItemFlag.NoItemFlags)
-                self.tasks_list.addItem(empty)
                 return
 
-            for item in items:
-                text = tr("info_task_item_fmt").format(title=item.title, text=item.text)
-                due_key = (
-                    str(item.due_at or ""),
-                    str(item.due_time or ""),
-                    str(item.due_timezone or ""),
-                    str(item.due_precision or "date"),
-                )
-                due_text = due_text_cache.get(due_key)
-                if due_text is None:
-                    due_text = format_due_for_display(
-                        item.due_at,
-                        due_time=item.due_time,
-                        due_timezone=item.due_timezone,
-                        due_precision=item.due_precision,
+            has_multiple_groups = len(groups) > 1 or (len(groups) == 1 and groups[0].group_key != "other")
+            if not has_multiple_groups:
+                # グループが1つだけ（other のみ）の場合はフラット表示
+                items = groups[0].items if groups else all_items
+                for item in items:
+                    text, due_state = self._build_task_item_text(item, due_text_cache, due_state_cache)
+                    tw_item = QTreeWidgetItem(self.tasks_tree)
+                    tw_item.setText(0, text)
+                    tw_item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
                     )
-                    due_text_cache[due_key] = due_text
-                due_state = due_state_cache.get(due_key)
-                if due_state is None:
-                    due_state = classify_due(
-                        item.due_at,
-                        due_time=item.due_time,
-                        due_timezone=item.due_timezone,
-                        due_precision=item.due_precision,
+                    tw_item.setCheckState(0, Qt.CheckState.Checked if item.done else Qt.CheckState.Unchecked)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole, item.item_key)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole + 1, bool(item.done))
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole + 2, item.window_uuid)
+                    color = self._item_color(due_state, bool(item.is_archived))
+                    if color is not None:
+                        tw_item.setForeground(0, QBrush(color))
+                return
+
+            for group in groups:
+                if not isinstance(group, GroupedTasks) or not group.items:
+                    continue
+                header = QTreeWidgetItem(self.tasks_tree)
+                header.setText(0, f"──── {group.label} ────")
+                header.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                header.setData(0, Qt.ItemDataRole.UserRole, "")
+                font = header.font(0)
+                font.setBold(True)
+                header.setFont(0, font)
+                _GROUP_HEADER_COLORS = {
+                    "overdue": QColor("#ff9a9a"),
+                    "today": QColor("#f5c16c"),
+                    "starred": QColor("#ffd700"),
+                }
+                group_color = _GROUP_HEADER_COLORS.get(group.group_key)
+                if group_color is not None:
+                    header.setForeground(0, QBrush(group_color))
+
+                for item in group.items:
+                    text, due_state = self._build_task_item_text(item, due_text_cache, due_state_cache)
+                    tw_item = QTreeWidgetItem(header)
+                    tw_item.setText(0, text)
+                    tw_item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
                     )
-                    due_state_cache[due_key] = due_state
-                badges = self._build_due_badges(
-                    due_state, is_archived=bool(item.is_archived), is_done_task=bool(item.done)
-                )
-                if due_text:
-                    text = f"{text}  ({tr('info_due_short_fmt').format(date=due_text)})"
-                if badges:
-                    text = f"{text} {' '.join(badges)}"
+                    tw_item.setCheckState(0, Qt.CheckState.Checked if item.done else Qt.CheckState.Unchecked)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole, item.item_key)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole + 1, bool(item.done))
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole + 2, item.window_uuid)
+                    color = self._item_color(due_state, bool(item.is_archived))
+                    if color is not None:
+                        tw_item.setForeground(0, QBrush(color))
 
-                lw_item = QListWidgetItem(text)
-                lw_item.setFlags(
-                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
-                )
-                lw_item.setCheckState(Qt.CheckState.Checked if item.done else Qt.CheckState.Unchecked)
-                lw_item.setData(Qt.ItemDataRole.UserRole, item.item_key)
-                lw_item.setData(Qt.ItemDataRole.UserRole + 1, bool(item.done))
-                lw_item.setData(Qt.ItemDataRole.UserRole + 2, item.window_uuid)
-
-                color = self._item_color(due_state, bool(item.is_archived))
-                if color is not None:
-                    lw_item.setForeground(QBrush(color))
-
-                self.tasks_list.addItem(lw_item)
+                header.setExpanded(True)
         finally:
-            self.tasks_list.blockSignals(False)
+            self.tasks_tree.blockSignals(False)
 
-    def _populate_notes(self, items: list[NoteIndexItem]) -> None:
+    def _build_note_item_text(
+        self,
+        item: NoteIndexItem,
+        due_text_cache: dict[tuple[str, str, str, str], str],
+        due_state_cache: dict[tuple[str, str, str, str], str],
+    ) -> tuple[str, str]:
+        """ノートアイテムの表示テキストと期限状態を返す。"""
+        mode_text = tr("label_content_mode_task") if item.content_mode == "task" else tr("label_content_mode_note")
+        line = tr("info_note_item_fmt").format(
+            title=item.title,
+            mode=mode_text,
+            first_line=item.first_line,
+        )
+        tag_badge = self._format_tags_badge(item.tags)
+        if tag_badge:
+            line = f"{line}  {tag_badge}"
+        due_key = (
+            str(item.due_at or ""),
+            str(item.due_time or ""),
+            str(item.due_timezone or ""),
+            str(item.due_precision or "date"),
+        )
+        due_text = due_text_cache.get(due_key)
+        if due_text is None:
+            due_text = format_due_for_display(
+                item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            )
+            due_text_cache[due_key] = due_text
+        due_state = due_state_cache.get(due_key)
+        if due_state is None:
+            due_state = classify_due(
+                item.due_at,
+                due_time=item.due_time,
+                due_timezone=item.due_timezone,
+                due_precision=item.due_precision,
+            )
+            due_state_cache[due_key] = due_state
+        badges = self._build_due_badges(due_state, is_archived=bool(item.is_archived))
+        if due_text:
+            line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"
+        if badges:
+            line = f"{line} {' '.join(badges)}"
+        return line, due_state
+
+    def _populate_notes_grouped(
+        self,
+        groups: list[Any],
+        all_items: list[NoteIndexItem],
+    ) -> None:
+        from managers.info_index_manager import GroupedNotes
+
         due_text_cache: dict[tuple[str, str, str, str], str] = {}
         due_state_cache: dict[tuple[str, str, str, str], str] = {}
-        self.notes_list.blockSignals(True)
+        self.notes_tree.blockSignals(True)
         try:
-            self.notes_list.clear()
-            if not items:
-                empty = QListWidgetItem(tr("info_list_empty"))
+            self.notes_tree.clear()
+            if not all_items:
+                empty = QTreeWidgetItem(self.notes_tree)
+                empty.setText(0, tr("info_list_empty"))
                 empty.setFlags(Qt.ItemFlag.NoItemFlags)
-                self.notes_list.addItem(empty)
                 return
 
-            for item in items:
-                mode_text = (
-                    tr("label_content_mode_task") if item.content_mode == "task" else tr("label_content_mode_note")
-                )
-                line = tr("info_note_item_fmt").format(
-                    title=item.title,
-                    mode=mode_text,
-                    first_line=item.first_line,
-                )
-                due_key = (
-                    str(item.due_at or ""),
-                    str(item.due_time or ""),
-                    str(item.due_timezone or ""),
-                    str(item.due_precision or "date"),
-                )
-                due_text = due_text_cache.get(due_key)
-                if due_text is None:
-                    due_text = format_due_for_display(
-                        item.due_at,
-                        due_time=item.due_time,
-                        due_timezone=item.due_timezone,
-                        due_precision=item.due_precision,
+            has_multiple_groups = len(groups) > 1 or (len(groups) == 1 and groups[0].group_key != "other")
+            if not has_multiple_groups:
+                items = groups[0].items if groups else all_items
+                for item in items:
+                    line, due_state = self._build_note_item_text(item, due_text_cache, due_state_cache)
+                    tw_item = QTreeWidgetItem(self.notes_tree)
+                    tw_item.setText(0, line)
+                    tw_item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
                     )
-                    due_text_cache[due_key] = due_text
-                due_state = due_state_cache.get(due_key)
-                if due_state is None:
-                    due_state = classify_due(
-                        item.due_at,
-                        due_time=item.due_time,
-                        due_timezone=item.due_timezone,
-                        due_precision=item.due_precision,
+                    tw_item.setCheckState(0, Qt.CheckState.Checked if item.is_starred else Qt.CheckState.Unchecked)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole, item.window_uuid)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole + 1, bool(item.is_starred))
+                    color = self._item_color(due_state, bool(item.is_archived))
+                    if color is not None:
+                        tw_item.setForeground(0, QBrush(color))
+                    if item.window_uuid and item.window_uuid == self._current_selected_uuid:
+                        tw_item.setSelected(True)
+                return
+
+            for group in groups:
+                if not isinstance(group, GroupedNotes) or not group.items:
+                    continue
+                header = QTreeWidgetItem(self.notes_tree)
+                header.setText(0, f"──── {group.label} ────")
+                header.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                header.setData(0, Qt.ItemDataRole.UserRole, "")
+                font = header.font(0)
+                font.setBold(True)
+                header.setFont(0, font)
+                if group.group_key == "starred":
+                    header.setForeground(0, QBrush(QColor("#ffd700")))
+
+                for item in group.items:
+                    line, due_state = self._build_note_item_text(item, due_text_cache, due_state_cache)
+                    tw_item = QTreeWidgetItem(header)
+                    tw_item.setText(0, line)
+                    tw_item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
                     )
-                    due_state_cache[due_key] = due_state
-                badges = self._build_due_badges(due_state, is_archived=bool(item.is_archived))
-                if due_text:
-                    line = f"{line}  ({tr('info_due_short_fmt').format(date=due_text)})"
-                if badges:
-                    line = f"{line} {' '.join(badges)}"
+                    tw_item.setCheckState(0, Qt.CheckState.Checked if item.is_starred else Qt.CheckState.Unchecked)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole, item.window_uuid)
+                    tw_item.setData(0, Qt.ItemDataRole.UserRole + 1, bool(item.is_starred))
+                    color = self._item_color(due_state, bool(item.is_archived))
+                    if color is not None:
+                        tw_item.setForeground(0, QBrush(color))
+                    if item.window_uuid and item.window_uuid == self._current_selected_uuid:
+                        tw_item.setSelected(True)
 
-                lw_item = QListWidgetItem(line)
-                lw_item.setFlags(
-                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
-                )
-                lw_item.setCheckState(Qt.CheckState.Checked if item.is_starred else Qt.CheckState.Unchecked)
-                lw_item.setData(Qt.ItemDataRole.UserRole, item.window_uuid)
-                lw_item.setData(Qt.ItemDataRole.UserRole + 1, bool(item.is_starred))
-
-                color = self._item_color(due_state, bool(item.is_archived))
-                if color is not None:
-                    lw_item.setForeground(QBrush(color))
-
-                self.notes_list.addItem(lw_item)
-
-                if item.window_uuid and item.window_uuid == self._current_selected_uuid:
-                    lw_item.setSelected(True)
+                header.setExpanded(True)
         finally:
-            self.notes_list.blockSignals(False)
+            self.notes_tree.blockSignals(False)
 
     def _update_stats(self, stats: InfoStats) -> None:
         self.lbl_stats.setText(
@@ -1320,7 +1441,7 @@ class InfoTab(QWidget):
         self.lbl_operation_summary.setText(summary)
         self.lbl_operation_summary.setToolTip(latest_line)
 
-    def _show_bulk_context_menu(self, source: QListWidget, pos: Any) -> None:
+    def _show_bulk_context_menu(self, source: QTreeWidget, pos: Any) -> None:
         global_pos = source.viewport().mapToGlobal(pos)
         self.menu_bulk_actions.exec(global_pos)
 
@@ -1332,30 +1453,31 @@ class InfoTab(QWidget):
         self._operations_dialog.refresh_ui()
         self._operations_dialog.exec()
 
-    def _on_task_item_changed(self, item: QListWidgetItem) -> None:
+    def _on_task_item_changed(self, item: QTreeWidgetItem, column: int = 0) -> None:
         if self._is_refreshing:
             return
-        item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
         if ":" not in item_key:
             return
 
-        prev_done = bool(item.data(Qt.ItemDataRole.UserRole + 1))
-        next_done = item.checkState() == Qt.CheckState.Checked
+        prev_done = bool(item.data(0, Qt.ItemDataRole.UserRole + 1))
+        next_done = item.checkState(0) == Qt.CheckState.Checked
         if prev_done == next_done:
             return
 
+        # Defer action to next event loop tick so that setCheckState() finishes
+        # before the tree is cleared/repopulated (prevents C++ access violation).
         actions = getattr(self.mw.main_controller, "info_actions", None)
         if actions is not None:
-            actions.toggle_task(item_key)
+            QTimer.singleShot(0, lambda _k=item_key: actions.toggle_task(_k))
             return
 
-        # Fallback: no action handler
-        self.refresh_data(immediate=True)
+        QTimer.singleShot(0, lambda: self.refresh_data(immediate=True))
 
-    def _on_task_item_activated(self, item: QListWidgetItem) -> None:
-        window_uuid = str(item.data(Qt.ItemDataRole.UserRole + 2) or "")
+    def _on_task_item_activated(self, item: QTreeWidgetItem, column: int = 0) -> None:
+        window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole + 2) or "")
         if not window_uuid:
-            item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+            item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
             if ":" in item_key:
                 window_uuid = item_key.rsplit(":", 1)[0]
         if not window_uuid:
@@ -1365,27 +1487,28 @@ class InfoTab(QWidget):
         if actions is not None:
             actions.focus_window(window_uuid)
 
-    def _on_note_item_changed(self, item: QListWidgetItem) -> None:
+    def _on_note_item_changed(self, item: QTreeWidgetItem, column: int = 0) -> None:
         if self._is_refreshing:
             return
-        window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
         if not window_uuid:
             return
-        prev_star = bool(item.data(Qt.ItemDataRole.UserRole + 1))
-        next_star = item.checkState() == Qt.CheckState.Checked
+        prev_star = bool(item.data(0, Qt.ItemDataRole.UserRole + 1))
+        next_star = item.checkState(0) == Qt.CheckState.Checked
         if prev_star == next_star:
             return
 
+        # Defer action to next event loop tick so that setCheckState() finishes
+        # before the tree is cleared/repopulated (prevents C++ access violation).
         actions = getattr(self.mw.main_controller, "info_actions", None)
         if actions is not None:
-            actions.set_star(window_uuid, next_star)
+            QTimer.singleShot(0, lambda _u=window_uuid, _s=next_star: actions.set_star(_u, _s))
             return
 
-        # Fallback: no action handler
-        self.refresh_data(immediate=True)
+        QTimer.singleShot(0, lambda: self.refresh_data(immediate=True))
 
-    def _on_note_item_activated(self, item: QListWidgetItem) -> None:
-        window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+    def _on_note_item_activated(self, item: QTreeWidgetItem, column: int = 0) -> None:
+        window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
         if not window_uuid:
             return
         actions = getattr(self.mw.main_controller, "info_actions", None)
@@ -1393,13 +1516,13 @@ class InfoTab(QWidget):
             actions.focus_window(window_uuid)
 
     def _toggle_selected_note_star(self) -> None:
-        item = self.notes_list.currentItem()
+        item = self.notes_tree.currentItem()
         if item is None:
             return
-        window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
         if not window_uuid:
             return
-        current = item.checkState() == Qt.CheckState.Checked
+        current = item.checkState(0) == Qt.CheckState.Checked
 
         actions = getattr(self.mw.main_controller, "info_actions", None)
         if actions is not None:
@@ -1408,23 +1531,23 @@ class InfoTab(QWidget):
 
     def _selected_task_item_keys(self) -> list[str]:
         keys: list[str] = []
-        for item in self.tasks_list.selectedItems():
-            item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        for item in self.tasks_tree.selectedItems():
+            item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
             if ":" in item_key:
                 keys.append(item_key)
         return keys
 
     def _selected_window_uuids(self) -> list[str]:
         uuids: set[str] = set()
-        for item in self.notes_list.selectedItems():
-            window_uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+        for item in self.notes_tree.selectedItems():
+            window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
             if window_uuid:
                 uuids.add(window_uuid)
 
-        for item in self.tasks_list.selectedItems():
-            window_uuid = str(item.data(Qt.ItemDataRole.UserRole + 2) or "")
+        for item in self.tasks_tree.selectedItems():
+            window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole + 2) or "")
             if not window_uuid:
-                item_key = str(item.data(Qt.ItemDataRole.UserRole) or "")
+                item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
                 if ":" in item_key:
                     window_uuid = item_key.rsplit(":", 1)[0]
             if window_uuid:
@@ -1503,14 +1626,32 @@ class InfoTab(QWidget):
         self._current_selected_uuid = str(getattr(window, "uuid", "") or "") if window is not None else ""
         if not self._current_selected_uuid:
             return
-        for i in range(self.notes_list.count()):
-            item = self.notes_list.item(i)
-            if not item:
+        self._select_note_by_uuid(self._current_selected_uuid)
+
+    def _select_note_by_uuid(self, target_uuid: str) -> None:
+        """ノートツリー内の指定UUIDのアイテムを選択してスクロールする。"""
+        iterator = self._iter_tree_items(self.notes_tree)
+        for item in iterator:
+            uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+            is_match = uuid == target_uuid
+            item.setSelected(is_match)
+            if is_match:
+                self.notes_tree.scrollToItem(item)
+
+    @staticmethod
+    def _iter_tree_items(tree: QTreeWidget) -> list[QTreeWidgetItem]:
+        """QTreeWidget内の全アイテム（ヘッダー含む）をフラットに列挙する。"""
+        result: list[QTreeWidgetItem] = []
+        for i in range(tree.topLevelItemCount()):
+            top = tree.topLevelItem(i)
+            if top is None:
                 continue
-            selected = str(item.data(Qt.ItemDataRole.UserRole) or "") == self._current_selected_uuid
-            item.setSelected(selected)
-            if selected:
-                self.notes_list.scrollToItem(item)
+            result.append(top)
+            for j in range(top.childCount()):
+                child = top.child(j)
+                if child is not None:
+                    result.append(child)
+        return result
 
     def refresh_ui(self) -> None:
         self.lbl_layout_mode.setText(tr("info_layout_mode_label"))

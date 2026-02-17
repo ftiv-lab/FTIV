@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable, List, Literal, Sequence, Tuple
 
@@ -64,6 +64,20 @@ class InfoStats:
     done_tasks: int = 0
     overdue_tasks: int = 0
     starred_notes: int = 0
+
+
+@dataclass(frozen=True)
+class GroupedTasks:
+    label: str
+    group_key: str
+    items: List[TaskIndexItem] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class GroupedNotes:
+    label: str
+    group_key: str
+    items: List[NoteIndexItem] = field(default_factory=list)
 
 
 class InfoIndexManager:
@@ -519,3 +533,88 @@ class InfoIndexManager:
             overdue_tasks=overdue_tasks,
             starred_notes=starred_notes,
         )
+
+    def _classify_due_state(
+        self,
+        due_at: str,
+        due_time: str = "",
+        due_timezone: str = "",
+        due_precision: str = "date",
+    ) -> str:
+        """期限の状態を返す: 'overdue' / 'today' / 'upcoming' / 'none'."""
+        due_dt = compose_due_datetime(
+            due_at=due_at,
+            due_time=due_time,
+            due_timezone=due_timezone,
+            due_precision=due_precision,
+        )
+        if due_dt is None:
+            return "none"
+        now = datetime.now()
+        today = now.date()
+        due_day = due_dt.date()
+        precision = str(due_precision or "date").strip().lower()
+        if precision == "datetime":
+            if due_dt < now:
+                return "overdue"
+        else:
+            if due_day < today:
+                return "overdue"
+        if due_day == today:
+            return "today"
+        return "upcoming"
+
+    def group_tasks_smart(self, items: List[TaskIndexItem]) -> List[GroupedTasks]:
+        """タスクを 期限切れ→今日→スター付き→その他 にグループ分けする。"""
+        overdue: List[TaskIndexItem] = []
+        today: List[TaskIndexItem] = []
+        starred: List[TaskIndexItem] = []
+        other: List[TaskIndexItem] = []
+
+        for item in list(items or []):
+            if not item.done:
+                due_state = self._classify_due_state(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
+                if due_state == "overdue":
+                    overdue.append(item)
+                    continue
+                if due_state == "today":
+                    today.append(item)
+                    continue
+            if item.is_starred:
+                starred.append(item)
+                continue
+            other.append(item)
+
+        groups: List[GroupedTasks] = []
+        if overdue:
+            groups.append(GroupedTasks(label=f"\U0001f534 {len(overdue)}", group_key="overdue", items=overdue))
+        if today:
+            groups.append(GroupedTasks(label=f"\U0001f4c5 {len(today)}", group_key="today", items=today))
+        if starred:
+            groups.append(GroupedTasks(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
+        if other:
+            groups.append(GroupedTasks(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
+
+    def group_notes_smart(self, items: List[NoteIndexItem]) -> List[GroupedNotes]:
+        """ノートを スター付き→その他 にグループ分けする。"""
+        starred: List[NoteIndexItem] = []
+        other: List[NoteIndexItem] = []
+
+        for item in list(items or []):
+            if item.is_starred:
+                starred.append(item)
+            else:
+                other.append(item)
+
+        groups: List[GroupedNotes] = []
+        if starred:
+            groups.append(GroupedNotes(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
+        if other:
+            groups.append(GroupedNotes(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
