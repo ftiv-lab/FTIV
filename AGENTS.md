@@ -13,6 +13,10 @@ At the start of every new session (especially after VS Code restart), read these
 
 Do not start implementation before reading all four.
 
+For architecture-impact tasks (file moves, contract changes, large refactors, new phase planning), additionally read:
+
+5. `docs/internal/PROJECT_STRUCTURE.md`
+
 If `docs/internal/` is not available in the current environment (e.g. fresh clone / shared CI workspace), use this fallback entrypoint:
 
 1. `docs/RUNBOOK.md`
