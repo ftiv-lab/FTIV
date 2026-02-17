@@ -42,6 +42,18 @@ In fallback mode, treat `docs/RUNBOOK.md` as the primary startup guide and execu
 
 - Treat `docs/internal/guides/MEMORY.md` as the source of latest recorded test/coverage snapshot.
 - If behavior or workflow changes, update relevant docs in `docs/internal/guides/` and `docs/internal/`.
+- Legacy planning/log archives are stored outside FTIV; do not reintroduce old archive-style folders into this repo.
+
+### 4.1 Single Source of Truth (SoT)
+
+| Topic | Canonical Source |
+|------|-------------------|
+| Current status (Done / Doing / Next) | `docs/internal/CURRENT_STATUS_DASHBOARD.md` |
+| Planning governance rules | `docs/internal/guides/planning_governance_rules.md` |
+| Coding / architecture rules | `docs/internal/RULES_AND_STANDARDS.md` |
+| Latest test/coverage snapshot | `docs/internal/guides/MEMORY.md` |
+| Tracked dev run entry | `docs/RUNBOOK.md` |
+| VS Code stability operations | `docs/internal/guides/codex_vscode_stability_notes.md` |
 
 ## 5. Communication Style
 
