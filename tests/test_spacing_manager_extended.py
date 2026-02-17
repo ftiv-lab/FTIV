@@ -52,6 +52,13 @@ class TestExtractFromWindow:
         assert result.vertical.margin_top == 0.5
         assert result.vertical.margin_bottom == 0.6
 
+    def test_extract_uses_explicit_vertical_spacing_fields(self, mock_window):
+        mock_window.config.char_spacing_v = 1.25
+        mock_window.config.line_spacing_v = 2.75
+        result = SpacingManager.extract_from_window(mock_window)
+        assert result.vertical.char_spacing == 1.25
+        assert result.vertical.line_spacing == 2.75
+
 
 class TestApplyToWindow:
     def test_apply_calls_set_undoable_property(self):

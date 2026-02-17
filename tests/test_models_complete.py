@@ -170,6 +170,8 @@ class TestSpacingSettingsFromWindowConfigFields:
         assert settings.vertical.margin_bottom == 20.0
         assert settings.vertical.margin_left == 30.0
         assert settings.vertical.margin_right == 40.0
+        assert settings.vertical.char_spacing == DEFAULT_V_CHAR_SPACING
+        assert settings.vertical.line_spacing == 2.0
 
     def test_from_window_config_without_vertical_uses_defaults(self) -> None:
         settings = SpacingSettings.from_window_config_fields(
@@ -181,3 +183,12 @@ class TestSpacingSettingsFromWindowConfigFields:
         assert settings.vertical.margin_bottom == DEFAULT_V_MARGIN_BOTTOM
         assert settings.vertical.margin_left == DEFAULT_V_MARGIN_LEFT
         assert settings.vertical.margin_right == DEFAULT_V_MARGIN_RIGHT
+
+    def test_from_window_config_prefers_explicit_vertical_spacing_fields(self) -> None:
+        settings = SpacingSettings.from_window_config_fields(
+            vertical_margin_ratio=1.5,
+            char_spacing_v=2.5,
+            line_spacing_v=3.5,
+        )
+        assert settings.vertical.char_spacing == 2.5
+        assert settings.vertical.line_spacing == 3.5

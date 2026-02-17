@@ -130,6 +130,8 @@ class SpacingSettings:
         cls,
         horizontal_margin_ratio: float = DEFAULT_CHAR_SPACING,
         vertical_margin_ratio: float = DEFAULT_LINE_SPACING,
+        char_spacing_v: Optional[float] = None,
+        line_spacing_v: Optional[float] = None,
         margin_top: float = DEFAULT_MARGIN_TOP,
         margin_bottom: float = DEFAULT_MARGIN_BOTTOM,
         margin_left: float = DEFAULT_MARGIN_LEFT,
@@ -149,6 +151,8 @@ class SpacingSettings:
         Args:
             horizontal_margin_ratio: Old name for horizontal char spacing
             vertical_margin_ratio: Old name for vertical line spacing (confusing!)
+            char_spacing_v: Vertical char spacing (new explicit field)
+            line_spacing_v: Vertical line/column spacing (new explicit field)
             margin_top/bottom/left/right: Horizontal mode margins
             v_margin_*: Vertical mode specific margins (new fields)
         """
@@ -162,8 +166,9 @@ class SpacingSettings:
                 margin_right=margin_right,
             ),
             vertical=VerticalSpacing(
-                char_spacing=v_margin_top if v_margin_top is not None else DEFAULT_V_CHAR_SPACING,
-                line_spacing=vertical_margin_ratio,
+                # Vertical spacing must not alias to vertical margins.
+                char_spacing=char_spacing_v if char_spacing_v is not None else DEFAULT_V_CHAR_SPACING,
+                line_spacing=line_spacing_v if line_spacing_v is not None else vertical_margin_ratio,
                 margin_top=v_margin_top if v_margin_top is not None else DEFAULT_V_MARGIN_TOP,
                 margin_bottom=v_margin_bottom if v_margin_bottom is not None else DEFAULT_V_MARGIN_BOTTOM,
                 margin_left=v_margin_left if v_margin_left is not None else DEFAULT_V_MARGIN_LEFT,

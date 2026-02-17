@@ -1413,15 +1413,22 @@ class TextSpacingDialog(QDialog):
 
         defaults = TextWindowConfig()
 
-        # Horizontal
-        self.h_spin.setValue(defaults.char_spacing_h)
-        self.v_spin.setValue(defaults.line_spacing_h)
-
-        # Padding
-        self.top_spin.setValue(defaults.margin_top)
-        self.bottom_spin.setValue(defaults.margin_bottom)
-        self.left_spin.setValue(defaults.margin_left)
-        self.right_spin.setValue(defaults.margin_right)
+        if self._is_vertical:
+            # Vertical mode defaults
+            self.h_spin.setValue(defaults.char_spacing_v)
+            self.v_spin.setValue(defaults.line_spacing_v)
+            self.top_spin.setValue(float(defaults.v_margin_top or 0.0))
+            self.bottom_spin.setValue(float(defaults.v_margin_bottom or 0.0))
+            self.left_spin.setValue(float(defaults.v_margin_left or 0.0))
+            self.right_spin.setValue(float(defaults.v_margin_right or 0.0))
+        else:
+            # Horizontal mode defaults
+            self.h_spin.setValue(defaults.char_spacing_h)
+            self.v_spin.setValue(defaults.line_spacing_h)
+            self.top_spin.setValue(defaults.margin_top)
+            self.bottom_spin.setValue(defaults.margin_bottom)
+            self.left_spin.setValue(defaults.margin_left)
+            self.right_spin.setValue(defaults.margin_right)
 
     def get_values(self) -> Tuple[float, float, float, float, float, float]:
         """設定されたすべての数値を返す（後方互換性のため維持）。"""

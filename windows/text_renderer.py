@@ -986,7 +986,10 @@ class TextRenderer:
         if canvas_size is None:
             return []
 
-        curr_x = canvas_size.width() - cw - char_spacing - m_right - outline_width
+        # NOTE:
+        # char_spacing_v は「列内の文字間隔（Y方向）」専用。
+        # X基準位置に混入させると、文字間隔調整で列全体が横にずれてしまう。
+        curr_x = canvas_size.width() - cw - m_right - outline_width
         y_start = int(m_top + outline_width)
 
         rects: List[QRect] = []
@@ -1089,7 +1092,8 @@ class TextRenderer:
         pen = QPen(color, max(1.0, float(window.font_size) * 0.04))
 
         cw = float(col_width) if col_width is not None else float(window.font_size)
-        start_x = canvas_size.width() - cw - margin - right_margin - outline_width
+        # Vertical char spacing (margin) must not affect column X anchor.
+        start_x = canvas_size.width() - cw - right_margin - outline_width
         marker_y = float(top_margin + outline_width + marker_fm.ascent())
 
         painter.save()
@@ -1669,7 +1673,8 @@ class TextRenderer:
             # Fix: Vertical Positioning (Double Compensation)
             # Removed '- shadow_x' because shadow padding is already added to 'right_margin'
             # and 'canvas_size'. Subtracting it again here causes the text to shift out of view.
-            curr_x = canvas_size.width() - cw - margin - right_margin - outline_width
+            # Vertical char spacing (margin) controls Y advance only.
+            curr_x = canvas_size.width() - cw - right_margin - outline_width
             y_start = top_margin + outline_width
 
             # Fix: First Character Cutoff (Vertical Centering)

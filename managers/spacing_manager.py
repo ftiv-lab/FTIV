@@ -65,6 +65,8 @@ class SpacingManager:
         return SpacingSettings.from_window_config_fields(
             horizontal_margin_ratio=getattr(cfg, "horizontal_margin_ratio", DEFAULT_CHAR_SPACING),
             vertical_margin_ratio=getattr(cfg, "vertical_margin_ratio", DEFAULT_LINE_SPACING),
+            char_spacing_v=getattr(cfg, "char_spacing_v", None),
+            line_spacing_v=getattr(cfg, "line_spacing_v", None),
             margin_top=getattr(cfg, "margin_top", DEFAULT_MARGIN_TOP),
             margin_bottom=getattr(cfg, "margin_bottom", DEFAULT_MARGIN_BOTTOM),
             margin_left=getattr(cfg, "margin_left", DEFAULT_MARGIN_LEFT),
