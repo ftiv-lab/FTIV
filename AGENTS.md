@@ -67,3 +67,17 @@ In fallback mode, treat `docs/RUNBOOK.md` as the primary startup guide and execu
 - Recommended one-time local setup: configure `$PROFILE` to force UTF-8 defaults for each PowerShell session.
   - `$OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
   - `[Console]::InputEncoding = [System.Text.Encoding]::UTF8`
+
+## 8. Cross-AI Contract Sync Rules (High Priority)
+
+- UI/データ契約を変更した場合（例: widget名変更、QListWidget -> QTreeWidget 変更）は、**実装完了前に必ず参照追跡**を行う。
+  - 推奨: `rg -n "<old_symbol>|<new_symbol>" scripts tests ui managers windows`
+- 「対象機能のテストが通る」だけで完了判定しない。
+  - 契約変更時は、影響しうる周辺レーン（計測/CI補助/回帰テスト）を最低1本追加で実行する。
+  - 例: InfoTab変更時に `tests/test_performance_smoke.py` も確認する。
+- 既存失敗と判断する前に、**失敗ログの一次原因**（AttributeError / KeyError / contract mismatch）を確認する。
+  - 例: JSONレポートや traceback の `error` フィールドを確認する。
+- 互換破壊を伴う変更は、handoff または plan に **旧名 -> 新名マッピング**を1行で残す。
+  - 例: `tasks_list -> tasks_tree`, `notes_list -> notes_tree`
+- 「他AIが同じ誤解をしない」状態を完了条件に含める。
+  - 最低条件: `AGENTS.md` または関連ガイドに再発防止ルールを追記する。
