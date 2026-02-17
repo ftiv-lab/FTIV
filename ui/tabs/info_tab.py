@@ -89,6 +89,7 @@ class InfoTab(QWidget):
     _ARCHIVE_SCOPE_VALUES = ("active", "archived", "all")
     _SORT_BY_VALUES = ("updated", "due", "created", "title")
     _SMART_VIEW_KEYS = ("all", "open", "today", "overdue", "starred", "archived")
+    _GROUP_BY_VALUES = ("smart", "tag", "window", "flat")
     _LAYOUT_MODE_VALUES = ("auto", "compact", "regular")
 
     def __init__(self, main_window: Any):
@@ -99,6 +100,7 @@ class InfoTab(QWidget):
         self._current_selected_uuid: str = ""
         self._is_refreshing = False
         self._smart_view = "all"
+        self._group_by = "smart"
         self._smart_view_buttons: dict[str, QPushButton] = {}
         self._view_presets: dict[str, ViewPreset] = {}
         self._user_preset_ids: list[str] = []
@@ -106,7 +108,6 @@ class InfoTab(QWidget):
         self._next_user_preset_number = 1
         self._block_filter_events = False
         self._block_preset_events = False
-        self._block_smart_view_events = False
         self._block_layout_mode_events = False
         self._suspend_ui_state_persist = False
         self._layout_mode = "auto"
@@ -118,6 +119,7 @@ class InfoTab(QWidget):
         self._index_cache_note_items: list[NoteIndexItem] = []
         self._last_task_rows_signature: Optional[tuple[Any, ...]] = None
         self._last_note_rows_signature: Optional[tuple[Any, ...]] = None
+        self._last_all_rows_signature: Optional[tuple[Any, ...]] = None
         self._last_operation_logs_signature: Optional[tuple[Any, ...]] = None
 
         self._refresh_timer = QTimer(self)
@@ -186,14 +188,6 @@ class InfoTab(QWidget):
         self.btn_preset_actions.setMenu(self.menu_preset_actions)
         quick_view_layout.addWidget(self.btn_preset_actions)
 
-        self.lbl_smart_view = QLabel(tr("info_smart_view_label"))
-        self.lbl_smart_view.setVisible(False)
-        self.cmb_smart_view = QComboBox()
-        self.cmb_smart_view.setToolTip(tr("info_smart_view_label"))
-        self._reload_smart_view_combo_items()
-        self.cmb_smart_view.currentIndexChanged.connect(self._on_smart_view_combo_changed)
-        quick_view_layout.addWidget(self.cmb_smart_view, 1)
-
         self.lbl_archive_scope = QLabel(tr("info_archive_scope_label"))
         self.lbl_archive_scope.setVisible(False)
         self.cmb_archive_scope = QComboBox()
@@ -203,6 +197,21 @@ class InfoTab(QWidget):
         quick_view_layout.addWidget(self.cmb_archive_scope, 1)
 
         filter_layout.addWidget(quick_view_row)
+
+        smart_view_row = QWidget()
+        smart_view_layout = QHBoxLayout(smart_view_row)
+        smart_view_layout.setContentsMargins(0, 0, 0, 0)
+        smart_view_layout.setSpacing(4)
+        self._setup_smart_view_buttons(smart_view_layout)
+        smart_view_layout.addStretch(1)
+        self.lbl_group_by = QLabel(tr("info_group_by_label"))
+        smart_view_layout.addWidget(self.lbl_group_by)
+        self.cmb_group_by = QComboBox()
+        self.cmb_group_by.setToolTip(tr("info_group_by_label"))
+        self._reload_group_by_combo_items()
+        self.cmb_group_by.currentIndexChanged.connect(self._on_group_by_changed)
+        smart_view_layout.addWidget(self.cmb_group_by)
+        filter_layout.addWidget(smart_view_row)
 
         self.advanced_filters_box = CollapsibleBox(tr("info_advanced_filters"))
         self.advanced_filters_box.toggle_button.toggled.connect(self._on_advanced_filters_toggled)
@@ -266,6 +275,21 @@ class InfoTab(QWidget):
         layout.addWidget(self.filter_group)
 
         self.subtabs = QTabWidget()
+
+        self.all_tab = QWidget()
+        all_layout = QVBoxLayout(self.all_tab)
+        self.all_tree = QTreeWidget()
+        self.all_tree.setHeaderHidden(True)
+        self.all_tree.setColumnCount(1)
+        self.all_tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.all_tree.setRootIsDecorated(False)
+        self.all_tree.setIndentation(16)
+        self.all_tree.itemChanged.connect(self._on_all_item_changed)
+        self.all_tree.itemDoubleClicked.connect(self._on_all_item_activated)
+        self.all_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.all_tree.customContextMenuRequested.connect(lambda pos: self._show_bulk_context_menu(self.all_tree, pos))
+        all_layout.addWidget(self.all_tree)
+        self.subtabs.addTab(self.all_tab, tr("info_all_tab"))
 
         self.tasks_tab = QWidget()
         tasks_layout = QVBoxLayout(self.tasks_tab)
@@ -368,6 +392,29 @@ class InfoTab(QWidget):
         summary_layout.addWidget(self.btn_open_operations)
         layout.addWidget(self.operation_summary_row)
 
+    def _setup_smart_view_buttons(self, parent_layout: QHBoxLayout) -> None:
+        """スマートビューのトグルボタン列を生成する。"""
+        _BUTTON_DEFS: list[tuple[str, str, str]] = [
+            ("all", "info_view_all", "info_view_tip_all"),
+            ("open", "info_view_open", "info_view_tip_open"),
+            ("today", "info_view_today", "info_view_tip_today"),
+            ("overdue", "info_view_overdue", "info_view_tip_overdue"),
+            ("starred", "info_view_starred", "info_view_tip_starred"),
+            ("archived", "info_view_archived", "info_view_tip_archived"),
+        ]
+        for key, text_key, tip_key in _BUTTON_DEFS:
+            btn = QPushButton(tr(text_key))
+            btn.setCheckable(True)
+            btn.setToolTip(tr(tip_key))
+            btn.setProperty("class", "smartViewBtn")
+            btn.clicked.connect(lambda checked, k=key: self._on_smart_view_clicked(k, checked))
+            parent_layout.addWidget(btn)
+            self._smart_view_buttons[key] = btn
+        # Set initial state
+        all_btn = self._smart_view_buttons.get("all")
+        if all_btn is not None:
+            all_btn.setChecked(True)
+
     @staticmethod
     def _derive_item_scope_from_mode(mode_filter: str) -> str:
         mode = str(mode_filter or "").strip().lower()
@@ -402,6 +449,7 @@ class InfoTab(QWidget):
             "content_mode_filter": "all",
             "sort_by": "updated",
             "sort_desc": True,
+            "group_by": "smart",
         }
 
     def _build_builtin_presets(self) -> dict[str, ViewPreset]:
@@ -494,6 +542,9 @@ class InfoTab(QWidget):
         sort_by = str(raw.get("sort_by", defaults["sort_by"]) or "").strip().lower()
         out["sort_by"] = sort_by if sort_by in self._SORT_BY_VALUES else defaults["sort_by"]
         out["sort_desc"] = bool(raw.get("sort_desc", defaults["sort_desc"]))
+
+        group_by = str(raw.get("group_by", defaults["group_by"]) or "").strip().lower()
+        out["group_by"] = group_by if group_by in self._GROUP_BY_VALUES else defaults["group_by"]
         return out
 
     def _sanitize_user_preset(self, raw: Any) -> Optional[ViewPreset]:
@@ -619,38 +670,25 @@ class InfoTab(QWidget):
         self.cmb_layout_mode.blockSignals(False)
         self._block_layout_mode_events = False
 
-    def _reload_smart_view_combo_items(self) -> None:
-        selected_data = str(self.cmb_smart_view.currentData() or self._smart_view or "all")
-        self._block_smart_view_events = True
-        self.cmb_smart_view.blockSignals(True)
-        self.cmb_smart_view.clear()
-        entries = [
-            ("all", "info_view_all", "info_view_tip_all"),
-            ("open", "info_view_open", "info_view_tip_open"),
-            ("today", "info_view_today", "info_view_tip_today"),
-            ("overdue", "info_view_overdue", "info_view_tip_overdue"),
-            ("starred", "info_view_starred", "info_view_tip_starred"),
-            ("archived", "info_view_archived", "info_view_tip_archived"),
-            ("custom", "info_view_custom", "info_view_tip_custom"),
-        ]
-        for value, text_key, tip_key in entries:
-            self.cmb_smart_view.addItem(tr(text_key), value)
-            idx = self.cmb_smart_view.count() - 1
-            self.cmb_smart_view.setItemData(idx, tr(tip_key), Qt.ItemDataRole.ToolTipRole)
-        idx = self.cmb_smart_view.findData(selected_data)
-        self.cmb_smart_view.setCurrentIndex(idx if idx >= 0 else self.cmb_smart_view.findData("custom"))
-        self.cmb_smart_view.blockSignals(False)
-        self._block_smart_view_events = False
+    def _reload_group_by_combo_items(self) -> None:
+        selected_data = str(self.cmb_group_by.currentData() or self._group_by or "smart")
+        self.cmb_group_by.blockSignals(True)
+        self.cmb_group_by.clear()
+        self.cmb_group_by.addItem(tr("info_group_smart"), "smart")
+        self.cmb_group_by.addItem(tr("info_group_by_tag"), "tag")
+        self.cmb_group_by.addItem(tr("info_group_by_window"), "window")
+        self.cmb_group_by.addItem(tr("info_group_flat"), "flat")
+        idx = self.cmb_group_by.findData(selected_data)
+        self.cmb_group_by.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_group_by.blockSignals(False)
 
-    def _on_smart_view_combo_changed(self, *_: Any) -> None:
-        if self._block_smart_view_events:
-            return
-        view_key = str(self.cmb_smart_view.currentData() or "custom")
-        if view_key in self._SMART_VIEW_KEYS:
-            self._on_smart_view_clicked(view_key, True)
-            return
-        if self._smart_view != "custom":
-            self._set_smart_view_indicator("custom")
+    def _on_group_by_changed(self, *_: Any) -> None:
+        group_by = str(self.cmb_group_by.currentData() or "smart").strip().lower()
+        if group_by not in self._GROUP_BY_VALUES:
+            group_by = "smart"
+        self._group_by = group_by
+        self._invalidate_refresh_signatures()
+        self.refresh_data(immediate=True)
 
     def _on_layout_mode_changed(self, *_: Any) -> None:
         if self._block_layout_mode_events:
@@ -675,10 +713,10 @@ class InfoTab(QWidget):
         self.btn_refresh.setToolTip(tr("info_refresh"))
         self.lbl_layout_mode.setText(tr("info_layout_mode_label_short") if compact else tr("info_layout_mode_label"))
         self.lbl_preset.setText(tr("info_view_preset_label_short") if compact else tr("info_view_preset_label"))
-        self.lbl_smart_view.setText(tr("info_smart_view_label_short") if compact else tr("info_smart_view_label"))
         self.lbl_archive_scope.setText(
             tr("info_archive_scope_label_short") if compact else tr("info_archive_scope_label")
         )
+        self.lbl_group_by.setText(tr("info_group_by_label_short") if compact else tr("info_group_by_label"))
         self.btn_preset_actions.setText(tr("info_view_actions_short") if compact else tr("info_view_actions"))
         self.btn_preset_actions.setToolTip(tr("info_view_actions"))
         self.btn_bulk_actions.setText(tr("info_bulk_actions_short") if compact else tr("info_bulk_actions_menu"))
@@ -787,13 +825,6 @@ class InfoTab(QWidget):
         if normalized not in self._SMART_VIEW_KEYS:
             normalized = "custom"
         self._smart_view = normalized
-        if hasattr(self, "cmb_smart_view"):
-            self._block_smart_view_events = True
-            self.cmb_smart_view.blockSignals(True)
-            idx = self.cmb_smart_view.findData(normalized)
-            self.cmb_smart_view.setCurrentIndex(idx if idx >= 0 else self.cmb_smart_view.findData("custom"))
-            self.cmb_smart_view.blockSignals(False)
-            self._block_smart_view_events = False
         for key, btn in self._smart_view_buttons.items():
             btn.blockSignals(True)
             btn.setChecked(normalized == key)
@@ -820,6 +851,9 @@ class InfoTab(QWidget):
             self._set_combo_data(self.cmb_mode_filter, mode_filter)
             self._set_combo_data(self.cmb_sort_by, str(sanitized["sort_by"]))
             self.btn_sort_desc.setChecked(bool(sanitized["sort_desc"]))
+            group_by = str(sanitized.get("group_by", "smart"))
+            self._group_by = group_by
+            self._set_combo_data(self.cmb_group_by, group_by)
         finally:
             self._block_filter_events = False
 
@@ -861,6 +895,7 @@ class InfoTab(QWidget):
                 "content_mode_filter": content_mode_filter,
                 "sort_by": str(self.cmb_sort_by.currentData() or "updated"),
                 "sort_desc": self.btn_sort_desc.isChecked(),
+                "group_by": str(self.cmb_group_by.currentData() or "smart"),
             }
         )
 
@@ -1046,6 +1081,7 @@ class InfoTab(QWidget):
     def _invalidate_refresh_signatures(self) -> None:
         self._last_task_rows_signature = None
         self._last_note_rows_signature = None
+        self._last_all_rows_signature = None
         self._last_operation_logs_signature = None
 
     def _get_index_items(self, windows: list[Any]) -> tuple[list[TaskIndexItem], list[NoteIndexItem]]:
@@ -1082,21 +1118,57 @@ class InfoTab(QWidget):
 
             task_sig = self._make_task_rows_signature(filtered_tasks)
             if task_sig != self._last_task_rows_signature:
-                task_groups = self.index_manager.group_tasks_smart(filtered_tasks)
+                task_groups = self._build_task_groups(filtered_tasks)
                 self._populate_tasks_grouped(task_groups, filtered_tasks)
                 self._last_task_rows_signature = task_sig
 
             note_sig = self._make_note_rows_signature(filtered_notes)
             if note_sig != self._last_note_rows_signature:
-                note_groups = self.index_manager.group_notes_smart(filtered_notes)
+                note_groups = self._build_note_groups(filtered_notes)
                 self._populate_notes_grouped(note_groups, filtered_notes)
                 self._last_note_rows_signature = note_sig
+
+            all_sig = (task_sig, note_sig)
+            if all_sig != self._last_all_rows_signature:
+                mixed_groups = self._build_mixed_groups(filtered_tasks, filtered_notes)
+                self._populate_all_grouped(mixed_groups, filtered_tasks, filtered_notes)
+                self._last_all_rows_signature = all_sig
 
             self._update_empty_state_hint(len(task_items) + len(note_items), len(filtered_tasks) + len(filtered_notes))
             self._update_stats(stats)
             self._populate_operation_logs()
         finally:
             self._is_refreshing = False
+
+    def _build_task_groups(self, items: list[TaskIndexItem]) -> list[Any]:
+        mgr = self.index_manager
+        if self._group_by == "tag":
+            return mgr.group_tasks_by_tag(items)
+        if self._group_by == "window":
+            return mgr.group_tasks_by_window(items)
+        if self._group_by == "flat":
+            return []
+        return mgr.group_tasks_smart(items)
+
+    def _build_note_groups(self, items: list[NoteIndexItem]) -> list[Any]:
+        mgr = self.index_manager
+        if self._group_by == "tag":
+            return mgr.group_notes_by_tag(items)
+        if self._group_by == "window":
+            return mgr.group_notes_by_window(items)
+        if self._group_by == "flat":
+            return []
+        return mgr.group_notes_smart(items)
+
+    def _build_mixed_groups(self, tasks: list[TaskIndexItem], notes: list[NoteIndexItem]) -> list[Any]:
+        mgr = self.index_manager
+        if self._group_by == "tag":
+            return mgr.group_mixed_by_tag(tasks, notes)
+        if self._group_by == "window":
+            return mgr.group_mixed_by_window(tasks, notes)
+        if self._group_by == "flat":
+            return []
+        return mgr.group_mixed_smart(tasks, notes)
 
     def _add_text_from_empty_state(self) -> None:
         main_controller = getattr(self.mw, "main_controller", None)
@@ -1383,6 +1455,109 @@ class InfoTab(QWidget):
         finally:
             self.notes_tree.blockSignals(False)
 
+    def _populate_all_grouped(
+        self,
+        groups: list[Any],
+        all_tasks: list[TaskIndexItem],
+        all_notes: list[NoteIndexItem],
+    ) -> None:
+        from managers.info_index_manager import GroupedMixed
+
+        due_text_cache: dict[tuple[str, str, str, str], str] = {}
+        due_state_cache: dict[tuple[str, str, str, str], str] = {}
+        self.all_tree.blockSignals(True)
+        try:
+            self.all_tree.clear()
+            total = len(all_tasks) + len(all_notes)
+            if total == 0:
+                empty = QTreeWidgetItem(self.all_tree)
+                empty.setText(0, tr("info_list_empty"))
+                empty.setFlags(Qt.ItemFlag.NoItemFlags)
+                return
+
+            all_items: list[Any] = list(all_tasks) + list(all_notes)
+            has_multiple_groups = len(groups) > 1 or (len(groups) == 1 and groups[0].group_key != "other")
+            if not has_multiple_groups:
+                items = groups[0].items if groups else all_items
+                for item in items:
+                    self._add_mixed_item_to_tree(self.all_tree, item, due_text_cache, due_state_cache)
+                return
+
+            for group in groups:
+                if not isinstance(group, GroupedMixed) or not group.items:
+                    continue
+                header = QTreeWidgetItem(self.all_tree)
+                header.setText(0, f"──── {group.label} ────")
+                header.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                header.setData(0, Qt.ItemDataRole.UserRole, "")
+                font = header.font(0)
+                font.setBold(True)
+                header.setFont(0, font)
+                _GROUP_HEADER_COLORS = {
+                    "overdue": QColor("#ff9a9a"),
+                    "today": QColor("#f5c16c"),
+                    "starred": QColor("#ffd700"),
+                }
+                group_color = _GROUP_HEADER_COLORS.get(group.group_key)
+                if group_color is not None:
+                    header.setForeground(0, QBrush(group_color))
+                for item in group.items:
+                    self._add_mixed_item_to_tree(header, item, due_text_cache, due_state_cache)
+                header.setExpanded(True)
+        finally:
+            self.all_tree.blockSignals(False)
+
+    def _add_mixed_item_to_tree(
+        self,
+        parent: Any,
+        item: Any,
+        due_text_cache: dict[tuple[str, str, str, str], str],
+        due_state_cache: dict[tuple[str, str, str, str], str],
+    ) -> None:
+        from managers.info_index_manager import TaskIndexItem as _TI
+
+        is_task = isinstance(item, _TI)
+        if is_task:
+            text, due_state = self._build_task_item_text(item, due_text_cache, due_state_cache)
+            prefix = "\U0001f4cb "
+        else:
+            text, due_state = self._build_note_item_text(item, due_text_cache, due_state_cache)
+            prefix = "\U0001f4dd "
+
+        tw_item = QTreeWidgetItem(parent)
+        tw_item.setText(0, f"{prefix}{text}")
+        tw_item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable)
+        if is_task:
+            tw_item.setCheckState(0, Qt.CheckState.Checked if item.done else Qt.CheckState.Unchecked)
+            tw_item.setData(0, Qt.ItemDataRole.UserRole, item.item_key)
+            tw_item.setData(0, Qt.ItemDataRole.UserRole + 1, bool(item.done))
+            tw_item.setData(0, Qt.ItemDataRole.UserRole + 2, item.window_uuid)
+            tw_item.setData(0, Qt.ItemDataRole.UserRole + 3, "task")
+        else:
+            tw_item.setCheckState(0, Qt.CheckState.Checked if item.is_starred else Qt.CheckState.Unchecked)
+            tw_item.setData(0, Qt.ItemDataRole.UserRole, item.window_uuid)
+            tw_item.setData(0, Qt.ItemDataRole.UserRole + 1, bool(item.is_starred))
+            tw_item.setData(0, Qt.ItemDataRole.UserRole + 3, "note")
+        color = self._item_color(due_state, bool(item.is_archived))
+        if color is not None:
+            tw_item.setForeground(0, QBrush(color))
+
+    def _on_all_item_changed(self, item: QTreeWidgetItem, column: int = 0) -> None:
+        if self._is_refreshing:
+            return
+        item_type = str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "")
+        if item_type == "task":
+            self._on_task_item_changed(item, column)
+        elif item_type == "note":
+            self._on_note_item_changed(item, column)
+
+    def _on_all_item_activated(self, item: QTreeWidgetItem, column: int = 0) -> None:
+        item_type = str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "")
+        if item_type == "task":
+            self._on_task_item_activated(item, column)
+        elif item_type == "note":
+            self._on_note_item_activated(item, column)
+
     def _update_stats(self, stats: InfoStats) -> None:
         self.lbl_stats.setText(
             tr("info_stats_fmt").format(
@@ -1531,18 +1706,28 @@ class InfoTab(QWidget):
 
     def _selected_task_item_keys(self) -> list[str]:
         keys: list[str] = []
-        for item in self.tasks_tree.selectedItems():
-            item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
-            if ":" in item_key:
-                keys.append(item_key)
+        for tree in (self.tasks_tree, self.all_tree):
+            for item in tree.selectedItems():
+                item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+                if ":" in item_key:
+                    keys.append(item_key)
         return keys
 
     def _selected_window_uuids(self) -> list[str]:
         uuids: set[str] = set()
-        for item in self.notes_tree.selectedItems():
-            window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
-            if window_uuid:
-                uuids.add(window_uuid)
+        for tree in (self.notes_tree, self.all_tree):
+            for item in tree.selectedItems():
+                item_type = str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "")
+                if item_type == "task":
+                    window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole + 2) or "")
+                    if not window_uuid:
+                        item_key = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+                        if ":" in item_key:
+                            window_uuid = item_key.rsplit(":", 1)[0]
+                else:
+                    window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
+                if window_uuid:
+                    uuids.add(window_uuid)
 
         for item in self.tasks_tree.selectedItems():
             window_uuid = str(item.data(0, Qt.ItemDataRole.UserRole + 2) or "")
@@ -1674,8 +1859,8 @@ class InfoTab(QWidget):
         self.btn_edit_tags_selected.setText(tr("info_bulk_edit_tags_selected"))
         self.btn_sort_desc.setText(tr("info_sort_desc"))
         self.lbl_preset.setText(tr("info_view_preset_label"))
-        self.lbl_smart_view.setText(tr("info_smart_view_label"))
         self.lbl_archive_scope.setText(tr("info_archive_scope_label"))
+        self.lbl_group_by.setText(tr("info_group_by_label"))
         self.btn_preset_actions.setText(tr("info_view_actions"))
         self.btn_bulk_actions.setText(tr("info_bulk_actions_menu"))
         self.btn_view_save.setText(tr("info_view_save"))
@@ -1708,12 +1893,14 @@ class InfoTab(QWidget):
         self._reload_sort_combo_items()
         self._reload_layout_mode_combo_items()
         self._set_combo_data(self.cmb_layout_mode, self._layout_mode)
-        self._reload_smart_view_combo_items()
+        self._reload_group_by_combo_items()
+        self._set_combo_data(self.cmb_group_by, self._group_by)
         self._reload_view_preset_combo_items()
         self._apply_preset_by_id(self._current_preset_id, refresh=False, persist_last=False)
         self._apply_layout_mode(force=True)
 
-        self.subtabs.setTabText(0, tr("info_tasks_tab"))
-        self.subtabs.setTabText(1, tr("info_notes_tab"))
+        self.subtabs.setTabText(0, tr("info_all_tab"))
+        self.subtabs.setTabText(1, tr("info_tasks_tab"))
+        self.subtabs.setTabText(2, tr("info_notes_tab"))
         self._invalidate_refresh_signatures()
         self.refresh_data(immediate=True)

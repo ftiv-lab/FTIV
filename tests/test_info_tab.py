@@ -673,28 +673,26 @@ def test_info_tab_core_controls_visible_on_320px_width(qapp):
     tab._apply_layout_mode(force=True)
 
     assert tab.cmb_view_preset.isVisible() is True
-    assert tab.cmb_smart_view.isVisible() is True
+    assert tab._smart_view_buttons["all"].isVisible() is True
     assert tab.cmb_archive_scope.isVisible() is True
     assert tab.btn_bulk_actions.isVisible() is True
 
 
-def test_smart_view_combo_items_have_tooltips(qapp):
+def test_smart_view_buttons_have_tooltips(qapp):
     _ = qapp
     mw, _ = _make_main_window()
     tab = InfoTab(mw)
 
-    for value, tip_key in [
+    for key, tip_key in [
         ("all", "info_view_tip_all"),
         ("open", "info_view_tip_open"),
         ("today", "info_view_tip_today"),
         ("overdue", "info_view_tip_overdue"),
         ("starred", "info_view_tip_starred"),
         ("archived", "info_view_tip_archived"),
-        ("custom", "info_view_tip_custom"),
     ]:
-        idx = tab.cmb_smart_view.findData(value)
-        assert idx >= 0
-        assert tab.cmb_smart_view.itemData(idx, Qt.ItemDataRole.ToolTipRole) == tr(tip_key)
+        btn = tab._smart_view_buttons[key]
+        assert btn.toolTip() == tr(tip_key)
 
 
 def test_empty_state_hint_first_time_shows_cta(qapp):
@@ -742,3 +740,86 @@ def test_refresh_data_rebuilds_index_when_window_snapshot_changes(qapp):
         task_window.text = "updated task body"
         tab.refresh_data(immediate=True)
         assert build_index_spy.call_count == 1
+
+
+def test_smart_view_buttons_toggle(qapp):
+    """スマートビューのボタン列がトグルで切り替わる。"""
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    # Default: "all" button is checked
+    assert tab._smart_view_buttons["all"].isChecked() is True
+    assert tab._smart_view_buttons["starred"].isChecked() is False
+
+    # Click "starred" button
+    tab._smart_view_buttons["starred"].click()
+    assert tab._smart_view == "starred"
+    assert tab._smart_view_buttons["starred"].isChecked() is True
+    assert tab._smart_view_buttons["all"].isChecked() is False
+
+
+def test_group_by_combo_changes_display(qapp):
+    """グループ化セレクタを切り替えるとツリーが更新される。"""
+    _ = qapp
+    tw1 = _DummyTaskWindow(uuid="tw-grp1")
+    tw1.tags = ["work"]
+    tw2 = _DummyTaskWindow(uuid="tw-grp2")
+    tw2.tags = ["home"]
+    mw, _ = _make_main_window(task_windows=[tw1, tw2], note_windows=[])
+    tab = InfoTab(mw)
+
+    # Default: smart grouping
+    assert tab._group_by == "smart"
+
+    # Switch to tag grouping
+    idx = tab.cmb_group_by.findData("tag")
+    tab.cmb_group_by.setCurrentIndex(idx)
+    assert tab._group_by == "tag"
+
+    # Switch to flat
+    idx = tab.cmb_group_by.findData("flat")
+    tab.cmb_group_by.setCurrentIndex(idx)
+    assert tab._group_by == "flat"
+
+
+def test_all_tab_shows_tasks_and_notes(qapp):
+    """統合ビュー（すべてタブ）にタスクとノートが両方表示される。"""
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+    tab.refresh_data(immediate=True)
+
+    # All tab is index 0
+    assert tab.subtabs.tabText(0) == tr("info_all_tab")
+
+    # Check all_tree has items
+    all_items = _iter_all_tree_items(tab.all_tree)
+    # Should have at least task items and note items
+    task_items_in_all = [item for item in all_items if str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "") == "task"]
+    note_items_in_all = [item for item in all_items if str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "") == "note"]
+    assert len(task_items_in_all) > 0
+    assert len(note_items_in_all) > 0
+
+
+def test_preset_saves_group_by(qapp):
+    """プリセット保存にgroup_byが含まれる。"""
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    # Change group_by to "tag"
+    idx = tab.cmb_group_by.findData("tag")
+    tab.cmb_group_by.setCurrentIndex(idx)
+
+    # Collect current filter state
+    filters = tab._collect_filter_state()
+    assert filters["group_by"] == "tag"
+
+    # Save preset
+    tab._save_new_view_preset()
+    # The last user preset should have group_by=tag
+    user_ids = tab._user_preset_ids
+    assert len(user_ids) > 0
+    preset = tab._view_presets[user_ids[-1]]
+    assert preset.filters["group_by"] == "tag"

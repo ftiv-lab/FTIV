@@ -645,17 +645,19 @@ def _scenario_s06_info_filter_switch() -> ScenarioFn:
     tab = _make_info_tab()
     idx_today = tab.cmb_due_filter.findData("today")
     idx_overdue = tab.cmb_due_filter.findData("overdue")
-    idx_starred_view = tab.cmb_smart_view.findData("starred")
-    idx_all_view = tab.cmb_smart_view.findData("all")
+    btn_starred = tab._smart_view_buttons.get("starred")
+    btn_all = tab._smart_view_buttons.get("all")
 
     def run() -> Counters:
         tab.cmb_due_filter.setCurrentIndex(idx_today if idx_today >= 0 else 0)
         tab.refresh_data(immediate=True)
         tab.cmb_due_filter.setCurrentIndex(idx_overdue if idx_overdue >= 0 else 0)
         tab.refresh_data(immediate=True)
-        tab.cmb_smart_view.setCurrentIndex(idx_starred_view if idx_starred_view >= 0 else 0)
+        if btn_starred is not None:
+            btn_starred.click()
         tab.refresh_data(immediate=True)
-        tab.cmb_smart_view.setCurrentIndex(idx_all_view if idx_all_view >= 0 else 0)
+        if btn_all is not None:
+            btn_all.click()
         tab.refresh_data(immediate=True)
         return {
             "filter_apply_count": 3,

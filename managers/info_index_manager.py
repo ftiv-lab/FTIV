@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Iterable, List, Literal, Sequence, Tuple
+from typing import Any, Iterable, List, Literal, Sequence, Tuple, Union
 
 from utils.due_date import compose_due_datetime
 
@@ -78,6 +78,16 @@ class GroupedNotes:
     label: str
     group_key: str
     items: List[NoteIndexItem] = field(default_factory=list)
+
+
+MixedItem = Union[TaskIndexItem, NoteIndexItem]
+
+
+@dataclass(frozen=True)
+class GroupedMixed:
+    label: str
+    group_key: str
+    items: List[MixedItem] = field(default_factory=list)
 
 
 class InfoIndexManager:
@@ -617,4 +627,171 @@ class InfoIndexManager:
             groups.append(GroupedNotes(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
         if other:
             groups.append(GroupedNotes(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
+
+    @staticmethod
+    def _first_tag_or_untagged(tags: Tuple[str, ...]) -> str:
+        return tags[0] if tags else ""
+
+    def group_tasks_by_tag(self, items: List[TaskIndexItem]) -> List[GroupedTasks]:
+        """タグごとにグループ化。複数タグは最初のタグで分類。タグなしは末尾。"""
+        buckets: dict[str, List[TaskIndexItem]] = {}
+        tag_order: List[str] = []
+        for item in list(items or []):
+            tag = self._first_tag_or_untagged(item.tags)
+            if tag not in buckets:
+                buckets[tag] = []
+                tag_order.append(tag)
+            buckets[tag].append(item)
+        groups: List[GroupedTasks] = []
+        for tag in tag_order:
+            bucket = buckets[tag]
+            label = f"[{tag}] ({len(bucket)})" if tag else f"\U0001f4c1 ({len(bucket)})"
+            group_key = f"tag:{tag}" if tag else "tag:"
+            groups.append(GroupedTasks(label=label, group_key=group_key, items=bucket))
+        return groups
+
+    def group_notes_by_tag(self, items: List[NoteIndexItem]) -> List[GroupedNotes]:
+        """ノートをタグごとにグループ化。"""
+        buckets: dict[str, List[NoteIndexItem]] = {}
+        tag_order: List[str] = []
+        for item in list(items or []):
+            tag = self._first_tag_or_untagged(item.tags)
+            if tag not in buckets:
+                buckets[tag] = []
+                tag_order.append(tag)
+            buckets[tag].append(item)
+        groups: List[GroupedNotes] = []
+        for tag in tag_order:
+            bucket = buckets[tag]
+            label = f"[{tag}] ({len(bucket)})" if tag else f"\U0001f4c1 ({len(bucket)})"
+            group_key = f"tag:{tag}" if tag else "tag:"
+            groups.append(GroupedNotes(label=label, group_key=group_key, items=bucket))
+        return groups
+
+    def group_tasks_by_window(self, items: List[TaskIndexItem]) -> List[GroupedTasks]:
+        """window_uuid + title でグループ化。"""
+        buckets: dict[str, List[TaskIndexItem]] = {}
+        uuid_order: List[str] = []
+        titles: dict[str, str] = {}
+        for item in list(items or []):
+            uid = item.window_uuid
+            if uid not in buckets:
+                buckets[uid] = []
+                uuid_order.append(uid)
+                titles[uid] = item.title or f"TextWindow {uid[:8]}"
+            buckets[uid].append(item)
+        groups: List[GroupedTasks] = []
+        for uid in uuid_order:
+            bucket = buckets[uid]
+            title = titles[uid]
+            starred = any(i.is_starred for i in bucket)
+            star_mark = " \u2605" if starred else ""
+            label = f"{title}{star_mark} ({len(bucket)})"
+            groups.append(GroupedTasks(label=label, group_key=f"window:{uid}", items=bucket))
+        return groups
+
+    def group_notes_by_window(self, items: List[NoteIndexItem]) -> List[GroupedNotes]:
+        """ノートを window_uuid + title でグループ化。"""
+        buckets: dict[str, List[NoteIndexItem]] = {}
+        uuid_order: List[str] = []
+        titles: dict[str, str] = {}
+        for item in list(items or []):
+            uid = item.window_uuid
+            if uid not in buckets:
+                buckets[uid] = []
+                uuid_order.append(uid)
+                titles[uid] = item.title or f"TextWindow {uid[:8]}"
+            buckets[uid].append(item)
+        groups: List[GroupedNotes] = []
+        for uid in uuid_order:
+            bucket = buckets[uid]
+            title = titles[uid]
+            starred = any(i.is_starred for i in bucket)
+            star_mark = " \u2605" if starred else ""
+            label = f"{title}{star_mark} ({len(bucket)})"
+            groups.append(GroupedNotes(label=label, group_key=f"window:{uid}", items=bucket))
+        return groups
+
+    def group_mixed_smart(self, tasks: List[TaskIndexItem], notes: List[NoteIndexItem]) -> List[GroupedMixed]:
+        """タスクとノートを混在で スマートグループ化。"""
+        overdue: List[MixedItem] = []
+        today: List[MixedItem] = []
+        starred: List[MixedItem] = []
+        other: List[MixedItem] = []
+
+        for item in list(tasks or []):
+            if not item.done:
+                due_state = self._classify_due_state(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
+                if due_state == "overdue":
+                    overdue.append(item)
+                    continue
+                if due_state == "today":
+                    today.append(item)
+                    continue
+            if item.is_starred:
+                starred.append(item)
+                continue
+            other.append(item)
+
+        for item in list(notes or []):
+            if item.is_starred:
+                starred.append(item)
+            else:
+                other.append(item)
+
+        groups: List[GroupedMixed] = []
+        if overdue:
+            groups.append(GroupedMixed(label=f"\U0001f534 {len(overdue)}", group_key="overdue", items=overdue))
+        if today:
+            groups.append(GroupedMixed(label=f"\U0001f4c5 {len(today)}", group_key="today", items=today))
+        if starred:
+            groups.append(GroupedMixed(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
+        if other:
+            groups.append(GroupedMixed(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
+
+    def group_mixed_by_tag(self, tasks: List[TaskIndexItem], notes: List[NoteIndexItem]) -> List[GroupedMixed]:
+        """タスクとノートをタグごとに混在グループ化。"""
+        buckets: dict[str, List[MixedItem]] = {}
+        tag_order: List[str] = []
+        for item in list(tasks or []) + list(notes or []):
+            tag = self._first_tag_or_untagged(item.tags)
+            if tag not in buckets:
+                buckets[tag] = []
+                tag_order.append(tag)
+            buckets[tag].append(item)
+        groups: List[GroupedMixed] = []
+        for tag in tag_order:
+            bucket = buckets[tag]
+            label = f"[{tag}] ({len(bucket)})" if tag else f"\U0001f4c1 ({len(bucket)})"
+            group_key = f"tag:{tag}" if tag else "tag:"
+            groups.append(GroupedMixed(label=label, group_key=group_key, items=bucket))
+        return groups
+
+    def group_mixed_by_window(self, tasks: List[TaskIndexItem], notes: List[NoteIndexItem]) -> List[GroupedMixed]:
+        """タスクとノートをウィンドウごとに混在グループ化。"""
+        buckets: dict[str, List[MixedItem]] = {}
+        uuid_order: List[str] = []
+        titles: dict[str, str] = {}
+        for item in list(tasks or []) + list(notes or []):
+            uid = item.window_uuid
+            if uid not in buckets:
+                buckets[uid] = []
+                uuid_order.append(uid)
+                titles[uid] = item.title or f"TextWindow {uid[:8]}"
+            buckets[uid].append(item)
+        groups: List[GroupedMixed] = []
+        for uid in uuid_order:
+            bucket = buckets[uid]
+            title = titles[uid]
+            starred = any(i.is_starred for i in bucket)
+            star_mark = " \u2605" if starred else ""
+            label = f"{title}{star_mark} ({len(bucket)})"
+            groups.append(GroupedMixed(label=label, group_key=f"window:{uid}", items=bucket))
         return groups

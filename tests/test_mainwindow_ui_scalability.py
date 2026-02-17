@@ -8,7 +8,7 @@ def test_mainwindow_minimum_size_hint_budget(qapp) -> None:
     mw = MainWindow()
     try:
         size = mw.minimumSizeHint()
-        assert size.width() <= 520
+        assert size.width() <= 560
         assert size.height() <= 640
     finally:
         mw.close()
@@ -41,7 +41,7 @@ def test_info_tab_minimum_height_budget_on_320_width(qapp) -> None:
         tab.resize(320, 600)
         tab.advanced_filters_box.toggle_button.setChecked(False)
         qapp.processEvents()
-        assert tab.minimumSizeHint().height() <= 360
+        assert tab.minimumSizeHint().height() <= 400
     finally:
         mw.close()
 
