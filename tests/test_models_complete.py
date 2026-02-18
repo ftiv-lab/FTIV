@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """models/ 層の未カバーモジュール完走テスト。
 
-Sprint 1: app_mode, window_layer のEnum網羅 + spacing_settings の未カバーパス。
+Sprint 1: spacing_settings の未カバーパス。
 """
 
-from models.app_mode import AppMode
 from models.spacing_settings import (
     DEFAULT_CHAR_SPACING,
     DEFAULT_LINE_SPACING,
@@ -17,44 +16,6 @@ from models.spacing_settings import (
     SpacingSettings,
     VerticalSpacing,
 )
-from models.window_layer import WindowLayer
-
-
-class TestAppMode:
-    """AppMode Enum の全値テスト。"""
-
-    def test_desktop_mode_exists(self) -> None:
-        assert AppMode.DESKTOP is not None
-
-    def test_mind_map_mode_exists(self) -> None:
-        assert AppMode.MIND_MAP is not None
-
-    def test_values_are_distinct(self) -> None:
-        assert AppMode.DESKTOP != AppMode.MIND_MAP
-
-    def test_enum_member_count(self) -> None:
-        assert len(AppMode) == 2
-
-    def test_enum_is_iterable(self) -> None:
-        members = list(AppMode)
-        assert AppMode.DESKTOP in members
-        assert AppMode.MIND_MAP in members
-
-
-class TestWindowLayer:
-    """WindowLayer Enum の全値テスト。"""
-
-    def test_desktop_layer_exists(self) -> None:
-        assert WindowLayer.DESKTOP is not None
-
-    def test_mind_map_layer_exists(self) -> None:
-        assert WindowLayer.MIND_MAP is not None
-
-    def test_values_are_distinct(self) -> None:
-        assert WindowLayer.DESKTOP != WindowLayer.MIND_MAP
-
-    def test_enum_member_count(self) -> None:
-        assert len(WindowLayer) == 2
 
 
 class TestSpacingSettingsFromDialogTuple:

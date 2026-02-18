@@ -57,7 +57,7 @@ class TaskLineRef:
 class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     """テキストを表示・制御するためのオーバーレイウィンドウクラス。
 
-    テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
+    テキストの描画、スタイル設定、および接続線と組み合わせたノード風の可視化操作を管理します。
     """
 
     def __init__(

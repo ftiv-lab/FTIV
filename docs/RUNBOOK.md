@@ -44,6 +44,11 @@ If you are new to the repository or switching environments, start here.
 3. If terminal output becomes garbled, restore UTF-8 before editing:
 - `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`
 
+## 6.1 Mode Contract (Current)
+1. FTIV has no dedicated "MindMap mode" runtime path.
+2. Visual mapping is provided by Connector relationships on the desktop overlay.
+3. In docs and UI wording, avoid "MindMap mode" and prefer "visual map / relationship mapping".
+
 ## 7. Phase 10A Lane (UI Structure + Visual Regression)
 1. Boundary guard:
 - `uv run pytest tests/test_architecture_boundaries.py -q -p no:cacheprovider`
