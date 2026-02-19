@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from PySide6.QtCore import QPoint
+
 from ui.tabs.layer_tab import LayerTab
 from utils.translator import tr
 
@@ -25,6 +27,13 @@ class _DummyWindow:
         self.is_hidden = False
         self.is_locked = False
         self.is_frontmost = False
+        self.context_menu_positions = []
+
+    def mapFromGlobal(self, pos):
+        return pos
+
+    def show_context_menu(self, pos) -> None:
+        self.context_menu_positions.append(pos)
 
 
 class _DummyWindowManager:
@@ -81,6 +90,13 @@ class _DummyWindowManager:
 class _DummyMainWindow:
     def __init__(self, wm: _DummyWindowManager) -> None:
         self.window_manager = wm
+        self.main_context_calls: list = []
+
+    def show_context_menu(self, pos) -> None:
+        self.main_context_calls.append(pos)
+
+    def mapFromGlobal(self, pos):
+        return pos
 
 
 def _build_layer_tab():
@@ -142,3 +158,24 @@ def test_drop_relation_reorder_within_parent():
     assert parent.child_windows[0].config.layer_order == 0
     assert parent.child_windows[1].config.layer_order == 1
     assert wm.raise_calls[-1] == parent.uuid
+
+
+def test_tree_context_menu_routes_to_selected_window_menu():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+    item = tab._uuid_to_item[child.uuid]
+    tab.tree.itemAt = lambda _pos: item
+
+    tab._on_tree_context_menu(QPoint(1, 1))
+
+    assert wm.last_selected_window is child
+    assert child.context_menu_positions
+
+
+def test_tree_context_menu_falls_back_to_main_menu_when_no_item():
+    tab, _wm, _parent, _child, _alt_parent = _build_layer_tab()
+    tab.tree.itemAt = lambda _pos: None
+    tab.tree.selectedItems = lambda: []
+
+    tab._on_tree_context_menu(QPoint(5, 6))
+
+    assert tab.mw.main_context_calls

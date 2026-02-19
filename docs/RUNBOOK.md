@@ -159,3 +159,5 @@ If you are new to the repository or switching environments, start here.
 3. Drag & Drop in LayerTab is a secondary route:
 - Drop child onto another parent item => attach.
 - Drop within same parent siblings => reorder.
+4. Context menu routing:
+- If right-click lands on MainWindow but the cursor is over the currently selected overlay window, FTIV forwards the menu to that selected window (useful in click-through scenarios).

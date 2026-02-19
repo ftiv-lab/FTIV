@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -178,8 +178,10 @@ class LayerTab(QWidget):
         self.tree.setExpandsOnDoubleClick(False)
         self.tree.setAnimated(True)
         self.tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         layout.addWidget(self.tree, 1)
 
         # --- ボタンバー ---
@@ -386,6 +388,48 @@ class LayerTab(QWidget):
                 wm.set_selected_window(window)
             except Exception:
                 pass
+
+    def _on_tree_context_menu(self, pos: QPoint) -> None:
+        """Layerツリー内の右クリックは、対象ウィンドウのメニューへ委譲する。"""
+        item = self.tree.itemAt(pos)
+        if item is not None:
+            self.tree.setCurrentItem(item)
+        else:
+            selected_items = self.tree.selectedItems()
+            item = selected_items[0] if selected_items else None
+
+        if item is None:
+            try:
+                global_pos = self.tree.viewport().mapToGlobal(pos)
+                self.mw.show_context_menu(self.mw.mapFromGlobal(global_pos))
+            except Exception:
+                logger.debug("LayerTab context fallback failed", exc_info=True)
+            return
+
+        uuid = item.data(0, Qt.ItemDataRole.UserRole)
+        if not uuid:
+            return
+
+        wm = self.mw.window_manager
+        window = wm.find_window_by_uuid(uuid)
+        if window is None or not hasattr(window, "show_context_menu"):
+            return
+
+        try:
+            wm.set_selected_window(window)
+        except Exception:
+            pass
+
+        try:
+            global_pos = self.tree.viewport().mapToGlobal(pos)
+            local_pos = window.mapFromGlobal(global_pos) if hasattr(window, "mapFromGlobal") else QPoint(0, 0)
+        except Exception:
+            local_pos = QPoint(0, 0)
+
+        try:
+            window.show_context_menu(local_pos)
+        except Exception:
+            logger.debug("Failed to show selected window context menu from LayerTab", exc_info=True)
 
     # ==========================================
     # 親スロット操作

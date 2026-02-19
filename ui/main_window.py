@@ -1335,7 +1335,43 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def show_context_menu(self, pos: QPoint) -> None:
         """メインウィンドウの背景右クリックメニュー構築（MenuManagerに委譲）。"""
+        if self._try_forward_context_menu_to_selected_window(pos):
+            return
         self.menu_manager.show_context_menu(pos)
+
+    def _try_forward_context_menu_to_selected_window(self, pos: QPoint) -> bool:
+        """選択中ウィンドウ上の右クリックを、そのウィンドウのメニューに委譲する。
+
+        主に click-through 時にイベントが MainWindow 側へ落ちるケースを補正する。
+        """
+        selected = self.last_selected_window
+        if selected is None or not hasattr(selected, "show_context_menu"):
+            return False
+
+        try:
+            import shiboken6
+
+            if not shiboken6.isValid(selected):
+                return False
+        except Exception:
+            # shiboken6 が使えない環境では isValid チェックを省略
+            pass
+
+        try:
+            if hasattr(selected, "isVisible") and not selected.isVisible():
+                return False
+
+            global_pos = self.mapToGlobal(pos)
+
+            if hasattr(selected, "frameGeometry") and not selected.frameGeometry().contains(global_pos):
+                return False
+
+            local_pos = selected.mapFromGlobal(global_pos) if hasattr(selected, "mapFromGlobal") else QPoint(0, 0)
+            selected.show_context_menu(local_pos)
+            return True
+        except Exception:
+            logger.debug("Failed to forward context menu to selected window", exc_info=True)
+            return False
 
     def open_log_folder(self) -> None:
         """ログファイルが保存されているフォルダを OS のエクスプローラー等で開きます。"""
