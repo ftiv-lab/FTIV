@@ -31,8 +31,6 @@ def _make_base_window(uuid_str: str = "test-uuid"):
     mock_config.parent_uuid = None
     mock_config.layer_offset = None
     mock_config.layer_order = None
-    mock_config.layer_scale_inherit = None
-    mock_config.layer_rotation_inherit = None
     w.config = mock_config
     w.child_windows = []
     w.connected_lines = []
@@ -57,17 +55,12 @@ class TestWindowConfigLayerFields:
 
         assert "layer_order" in WindowConfigBase.model_fields
 
-    def test_layer_scale_inherit_field_exists(self) -> None:
-        """WindowConfigBase に layer_scale_inherit フィールドがある"""
+    def test_layer_transform_inherit_fields_removed(self) -> None:
+        """未使用の transform 継承フィールドが再導入されていないこと"""
         from models.window_config import WindowConfigBase
 
-        assert "layer_scale_inherit" in WindowConfigBase.model_fields
-
-    def test_layer_rotation_inherit_field_exists(self) -> None:
-        """WindowConfigBase に layer_rotation_inherit フィールドがある"""
-        from models.window_config import WindowConfigBase
-
-        assert "layer_rotation_inherit" in WindowConfigBase.model_fields
+        assert "layer_scale_inherit" not in WindowConfigBase.model_fields
+        assert "layer_rotation_inherit" not in WindowConfigBase.model_fields
 
     def test_layer_fields_default_to_none(self) -> None:
         """Layer フィールドはデフォルトで None（後方互換）"""
@@ -76,8 +69,6 @@ class TestWindowConfigLayerFields:
         cfg = TextWindowConfig()
         assert cfg.layer_offset is None
         assert cfg.layer_order is None
-        assert cfg.layer_scale_inherit is None
-        assert cfg.layer_rotation_inherit is None
 
     def test_layer_offset_accepts_dict(self) -> None:
         """layer_offset に {"x": 50, "y": -30} を設定できる"""
@@ -103,6 +94,21 @@ class TestWindowConfigLayerFields:
         cfg = TextWindowConfig(**old_data)
         assert cfg.uuid == "abc"
         assert cfg.layer_offset is None  # デフォルト
+
+    def test_old_json_with_removed_transform_keys_loads_ok(self) -> None:
+        """削除済みキーが残る旧 JSON でも読み込みが壊れない（extra ignore）"""
+        from models.window_config import TextWindowConfig
+
+        old_data = {
+            "uuid": "abc",
+            "text": "hello",
+            "layer_scale_inherit": True,
+            "layer_rotation_inherit": True,
+        }
+        cfg = TextWindowConfig(**old_data)
+        assert cfg.uuid == "abc"
+        assert cfg.layer_offset is None
+        assert cfg.layer_order is None
 
 
 # ──────────────────────────────────────────────

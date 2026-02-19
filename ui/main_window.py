@@ -739,6 +739,8 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
                 self.animation_tab.refresh_ui()
             if hasattr(self, "about_tab"):
                 self.about_tab.refresh_ui()
+            if hasattr(self, "layer_tab"):
+                self.layer_tab.refresh_ui()
 
             # MainWindow自体
             self.setWindowTitle(tr("app_title"))

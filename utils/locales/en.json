@@ -825,6 +825,8 @@
     "layer_btn_clear_parent": "Clear",
     "layer_parent_slot_title": "Parent Slot:",
     "layer_parent_slot_empty": "(none)",
+    "layer_label_empty_text": "(empty)",
+    "layer_label_empty_image": "(image)",
     "layer_parent_slot_accessible": "Layer parent slot",
     "layer_tooltip_attach": "Use the parent slot and make the tree-selected window a child",
     "layer_tooltip_detach": "Remove parent-child relationship from selected window",

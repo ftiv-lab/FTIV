@@ -55,12 +55,12 @@ def _window_label(window: Any, *, is_parent_slot: bool = False) -> str:
         if isinstance(window, TextWindow):
             icon = _ICON_TEXT
             raw = getattr(window.config, "text", "") or ""
-            name = raw.replace("\n", " ").strip()[:24] or "(空)"
+            name = raw.replace("\n", " ").strip()[:24] or tr("layer_label_empty_text")
         elif isinstance(window, ImageWindow):
             icon = _ICON_IMAGE
             path = getattr(window, "image_path", "") or ""
             basename = path.replace("\\", "/").split("/")[-1] if path else ""
-            name = basename[:24] if basename else "(画像)"
+            name = basename[:24] if basename else tr("layer_label_empty_image")
         else:
             icon = "□"
             name = str(getattr(window, "uuid", "?"))[:8]
@@ -226,14 +226,32 @@ class LayerTab(QWidget):
         layout.addLayout(btn_row)
 
         # --- ヒントテキスト ---
-        hint = QLabel(tr("layer_hint"))
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addWidget(hint)
+        self.lbl_hint = QLabel(tr("layer_hint"))
+        self.lbl_hint.setWordWrap(True)
+        self.lbl_hint.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(self.lbl_hint)
 
     def showEvent(self, event: Any) -> None:
         """タブが表示されるたびにツリーを最新状態に更新する。"""
         super().showEvent(event)
+        self.rebuild()
+
+    def refresh_ui(self) -> None:
+        """言語切替時に LayerTab 内の文言を再適用する。"""
+        self.lbl_parent_slot_title.setText(tr("layer_parent_slot_title"))
+        self.lbl_parent_slot_value.setAccessibleName(tr("layer_parent_slot_accessible"))
+        self.btn_set_parent.setText(tr("layer_btn_set_parent"))
+        self.btn_set_parent.setToolTip(tr("layer_tooltip_set_parent"))
+        self.btn_clear_parent.setText(tr("layer_btn_clear_parent"))
+        self.btn_clear_parent.setToolTip(tr("layer_tooltip_clear_parent"))
+        self.btn_attach.setText(tr("layer_btn_attach"))
+        self.btn_attach.setToolTip(tr("layer_tooltip_attach"))
+        self.btn_detach.setText(tr("layer_btn_detach"))
+        self.btn_detach.setToolTip(tr("layer_tooltip_detach"))
+        self.btn_up.setToolTip(tr("layer_tooltip_move_up"))
+        self.btn_down.setToolTip(tr("layer_tooltip_move_down"))
+        self.btn_refresh.setToolTip(tr("layer_tooltip_refresh"))
+        self.lbl_hint.setText(tr("layer_hint"))
         self.rebuild()
 
     def _connect_signals(self) -> None:

@@ -61,10 +61,6 @@ class WindowConfigBase(BaseModel):
     layer_offset: Optional[Dict[str, int]] = None
     # 同階層内での表示順（0=最背面）。未設定時はロード順。
     layer_order: Optional[int] = None
-    # 親の変換（拡大縮小・回転）を子に伝播するかどうか
-    # None = ウィンドウ種別に従うデフォルト（ImageWindow=True / TextWindow=False）
-    layer_scale_inherit: Optional[bool] = None
-    layer_rotation_inherit: Optional[bool] = None
 
 
 class TextWindowConfig(WindowConfigBase):

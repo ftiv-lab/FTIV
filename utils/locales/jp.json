@@ -825,6 +825,8 @@
     "layer_btn_clear_parent": "クリア",
     "layer_parent_slot_title": "親候補:",
     "layer_parent_slot_empty": "(未設定)",
+    "layer_label_empty_text": "(空)",
+    "layer_label_empty_image": "(画像)",
     "layer_parent_slot_accessible": "レイヤー親候補",
     "layer_tooltip_attach": "親候補を使って、ツリー選択中のウィンドウを子にします",
     "layer_tooltip_detach": "選択中のウィンドウの親子関係を解除します",
