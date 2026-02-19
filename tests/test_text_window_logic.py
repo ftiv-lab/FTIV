@@ -8,8 +8,6 @@ set_undoable_property (font_size debounce), toggle 系をカバー。
 from datetime import datetime
 from unittest.mock import MagicMock, mock_open, patch
 
-from PySide6.QtCore import QPoint
-
 from models.window_config import TextWindowConfig
 from utils.due_date import classify_due
 from utils.translator import tr
@@ -110,62 +108,26 @@ class TestPropagateScaleToChildren:
         w.child_windows = []
         w.propagate_scale_to_children(2.0)  # No crash
 
-    def test_text_child_scales_font(self):
+    def test_text_child_not_scaled(self):
         w = _make_text_window()
         child = MagicMock()
         child.font_size = 24.0
-        child_geo = MagicMock()
-        child_center = MagicMock()
-        child_center.x.return_value = 200
-        child_center.y.return_value = 200
-        child_center.__sub__ = lambda self, other: QPoint(self.x() - other.x(), self.y() - other.y())
-        child_geo.center.return_value = child_center
-        child.geometry.return_value = child_geo
-        child.width.return_value = 100
-        child.height.return_value = 50
-
-        parent_geo = MagicMock()
-        parent_center = MagicMock()
-        parent_center.x.return_value = 100
-        parent_center.y.return_value = 100
-        parent_center.__add__ = lambda self, other: QPoint(self.x() + other.x(), self.y() + other.y())
-        parent_geo.center.return_value = parent_center
-
         w.child_windows = [child]
-        with patch.object(type(w), "geometry", return_value=parent_geo):
-            w.propagate_scale_to_children(2.0)
-        assert child.font_size == 48.0
-        child.update_text.assert_called()
-        child.move.assert_called()
+        w.propagate_scale_to_children(2.0)
+        assert child.font_size == 24.0
+        child.update_text.assert_not_called()
+        child.move.assert_not_called()
 
-    def test_image_child_scales_factor(self):
+    def test_image_child_not_scaled(self):
         w = _make_text_window()
         child = MagicMock(
             spec=["scale_factor", "update_image", "geometry", "move", "width", "height", "propagate_scale_to_children"]
         )
         child.scale_factor = 1.0
-        child_geo = MagicMock()
-        child_center = MagicMock()
-        child_center.x.return_value = 150
-        child_center.y.return_value = 150
-        child_center.__sub__ = lambda self, other: QPoint(self.x() - other.x(), self.y() - other.y())
-        child_geo.center.return_value = child_center
-        child.geometry.return_value = child_geo
-        child.width.return_value = 100
-        child.height.return_value = 50
-
-        parent_geo = MagicMock()
-        parent_center = MagicMock()
-        parent_center.x.return_value = 100
-        parent_center.y.return_value = 100
-        parent_center.__add__ = lambda self, other: QPoint(self.x() + other.x(), self.y() + other.y())
-        parent_geo.center.return_value = parent_center
-
         w.child_windows = [child]
-        with patch.object(type(w), "geometry", return_value=parent_geo):
-            w.propagate_scale_to_children(2.0)
-        assert child.scale_factor == 2.0
-        child.update_image.assert_called()
+        w.propagate_scale_to_children(2.0)
+        assert child.scale_factor == 1.0
+        child.update_image.assert_not_called()
 
 
 # ============================================================

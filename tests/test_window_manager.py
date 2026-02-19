@@ -131,6 +131,26 @@ class TestWindowManager:
         assert child.config.layer_order == 0
         window_manager.raise_group_stack.assert_called_once_with(parent)
 
+    def test_set_selected_window_with_children_restacked_after_click(self, window_manager, monkeypatch):
+        parent = MagicMock()
+        parent.child_windows = [MagicMock()]
+        window_manager.raise_group_stack = MagicMock()
+
+        called = {"count": 0}
+
+        def _immediate_single_shot(ms, callback):
+            called["count"] += 1
+            callback()
+
+        monkeypatch.setattr("managers.window_manager.QTimer.singleShot", _immediate_single_shot)
+
+        window_manager.set_selected_window(parent)
+
+        assert called["count"] == 1
+        assert window_manager.raise_group_stack.call_count == 2
+        window_manager.raise_group_stack.assert_any_call(parent)
+        window_manager.raise_group_stack.assert_any_call(parent, include_parent=False)
+
     def test_raise_group_stack_skip_parent_during_drag(self, window_manager, monkeypatch):
         fake_shiboken = types.SimpleNamespace(isValid=lambda _obj: True)
         monkeypatch.setitem(sys.modules, "shiboken6", fake_shiboken)

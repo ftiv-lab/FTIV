@@ -1220,29 +1220,8 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         self.sig_request_property_panel.emit(self)
 
     def propagate_scale_to_children(self, ratio: float) -> None:
-        """子ウィンドウに対してスケーリングを伝搬させる。
-
-        Args:
-            ratio (float): スケール倍率。
-        """
-        if not self.child_windows:
-            return
-        parent_center = self.geometry().center()
-        for child in self.child_windows:
-            try:
-                vec = child.geometry().center() - parent_center
-                new_center = parent_center + QPoint(int(vec.x() * ratio), int(vec.y() * ratio))
-                if hasattr(child, "font_size"):
-                    child.font_size *= ratio
-                    child.update_text()
-                elif hasattr(child, "scale_factor"):
-                    child.scale_factor *= ratio
-                    child.update_image()
-                child.move(int(new_center.x() - child.width() / 2), int(new_center.y() - child.height() / 2))
-                if hasattr(child, "propagate_scale_to_children"):
-                    child.propagate_scale_to_children(ratio)
-            except Exception:
-                pass  # Error propagating scale
+        """互換API: 拡大率の子伝播は無効（移動同期のみ方針）。"""
+        return
 
     # --- UI Menu ---
 

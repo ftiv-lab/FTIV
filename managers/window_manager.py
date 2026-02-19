@@ -5,7 +5,7 @@ import math
 import traceback
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from PySide6.QtCore import QObject, QPoint, Qt, Signal
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, Signal
 from PySide6.QtWidgets import QMessageBox
 
 from utils.edition import get_edition, get_limits, is_over_limit, show_limit_message
@@ -768,6 +768,7 @@ class WindowManager(QObject):
             # raise_group_stack で再整列する。単純な raise_() だと親が子の上に出てしまう。
             if getattr(self.last_selected_window, "child_windows", None):
                 self.raise_group_stack(self.last_selected_window)
+                self._schedule_post_select_child_restack(self.last_selected_window)
             else:
                 self.last_selected_window.raise_()
 
@@ -775,6 +776,28 @@ class WindowManager(QObject):
 
         # --- Auto-Follow: 編集ダイアログの所有権を移譲 ---
         self._try_transfer_edit_dialog(old_selected, window)
+
+    def _schedule_post_select_child_restack(self, parent: QObject) -> None:
+        """選択クリック後に子孫だけを再整列して、親前面化の上書きを防ぐ。
+
+        目的:
+            Windows/Qt 側で選択クリック直後に親が前面化されるタイミングがあり、
+            その瞬間に子が一時的/恒久的に隠れるケースがある。
+            0ms遅延で「子孫のみ」再raiseすることで視覚競合を抑える。
+        """
+
+        def _restack_children_only() -> None:
+            try:
+                # 選択対象が変わっていたら何もしない
+                if self.last_selected_window is not parent:
+                    return
+                if not getattr(parent, "child_windows", None):
+                    return
+                self.raise_group_stack(parent, include_parent=False)
+            except Exception:
+                logger.debug("post-select child restack failed", exc_info=True)
+
+        QTimer.singleShot(0, _restack_children_only)
 
     def _try_transfer_edit_dialog(
         self,
