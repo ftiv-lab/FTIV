@@ -8,13 +8,13 @@ from utils.due_date import display_due_iso
 from utils.translator import tr
 
 
-def build_text_content_section(panel: Any, target: Any) -> None:
+def build_text_header_controls(panel: Any, target: Any) -> None:
+    """テキスト共通の上段コントロール（選択情報の直下）を構築する。"""
     mode_row = QWidget()
     mode_row_layout = QHBoxLayout(mode_row)
     mode_row_layout.setContentsMargins(0, 0, 0, 0)
     mode_row_layout.setSpacing(4)
-    lbl_mode = QLabel(tr("label_content_mode"))
-    lbl_mode.setProperty("class", "small")
+
     panel.btn_task_mode = panel.create_action_button(
         tr("menu_toggle_task_mode"),
         lambda checked: target.set_content_mode("task" if checked else "note"),
@@ -22,13 +22,6 @@ def build_text_content_section(panel: Any, target: Any) -> None:
     )
     panel.btn_task_mode.setCheckable(True)
     panel.btn_task_mode.setChecked(target.is_task_mode())
-    mode_row_layout.addWidget(lbl_mode, 0)
-    mode_row_layout.addWidget(panel.btn_task_mode, 1)
-    panel.scroll_layout.addWidget(mode_row)
-
-    text_content_layout = panel.create_collapsible_group(
-        tr("prop_grp_text_content"), expanded=True, state_key="text_content"
-    )
 
     panel.btn_text_orientation = panel.create_action_button(
         tr("btn_toggle_orientation"),
@@ -38,7 +31,18 @@ def build_text_content_section(panel: Any, target: Any) -> None:
     panel.btn_text_orientation.setCheckable(True)
     panel.btn_text_orientation.setChecked(bool(getattr(target, "is_vertical", False)))
     panel.btn_text_orientation.setToolTip(tr("msg_task_mode_horizontal_only") if target.is_task_mode() else "")
-    text_content_layout.addRow("", typing.cast(QWidget, panel.btn_text_orientation))
+
+    mode_row_layout.addWidget(panel.btn_task_mode, 1)
+    mode_row_layout.addWidget(panel.btn_text_orientation, 1)
+    panel.scroll_layout.addWidget(mode_row)
+
+
+def build_text_content_section(panel: Any, target: Any) -> None:
+    text_content_layout = panel.create_collapsible_group(
+        tr("prop_grp_text_content"),
+        expanded=False,
+        state_key="text_content",
+    )
 
     if target.is_task_mode():
         done, total = target.get_task_progress()

@@ -266,6 +266,19 @@ def test_create_collapsible_group_uses_saved_state(qapp):
     assert panel._section_boxes["shadow"].toggle_button.isChecked() is False
 
 
+def test_create_collapsible_group_default_collapsed_ignores_saved_true(qapp):
+    _ = qapp
+    settings = SimpleNamespace(property_panel_section_state={"text_content": True})
+    mw = SimpleNamespace(
+        info_tab=SimpleNamespace(refresh_data=lambda: None), app_settings=settings, settings_manager=None
+    )
+    panel = PropertyPanel(main_window=mw)
+
+    _ = panel.create_collapsible_group("Text Content", expanded=False, state_key="text_content")
+
+    assert panel._section_boxes["text_content"].toggle_button.isChecked() is False
+
+
 def test_editing_target_preview_label_elides_long_text_and_keeps_tooltip(qapp):
     _ = qapp
     panel = _make_panel()

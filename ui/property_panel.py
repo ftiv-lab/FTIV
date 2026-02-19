@@ -172,6 +172,9 @@ class PropertyPanel(QWidget):
         normalized = str(key or "").strip().lower()
         if not normalized:
             return bool(default)
+        # Default-collapsed sections should always start collapsed on render.
+        if not bool(default):
+            return False
         settings = getattr(self.mw, "app_settings", None)
         raw = getattr(settings, "property_panel_section_state", {}) if settings is not None else {}
         if not isinstance(raw, dict):
@@ -1242,7 +1245,7 @@ class PropertyPanel(QWidget):
     def build_common_ui(self, target: Any) -> None:
         """全ウィンドウ共通のトランスフォーム設定。"""
         # Phase 5: Collapsible Group & Dual Row
-        layout = self.create_collapsible_group(tr("prop_grp_transform"), expanded=True)
+        layout = self.create_collapsible_group(tr("prop_grp_transform"), expanded=False)
 
         # Dual Row for X / Y
         self.spin_x = self.create_spinbox(target.x(), -9999, 9999, 1, lambda v: target.move(v, target.y()))
@@ -1523,7 +1526,7 @@ class PropertyPanel(QWidget):
 
         self.build_common_ui(target)
 
-        layout = self.create_collapsible_group(tr("prop_grp_image"), expanded=True)
+        layout = self.create_collapsible_group(tr("prop_grp_image"), expanded=False)
 
         # Scale: 1-500% (FTIV_a1 style)
         commit, prev = self._make_callbacks(target, "scale_factor", "update_image", False)
@@ -1632,7 +1635,7 @@ class PropertyPanel(QWidget):
     def build_connector_ui(self) -> None:
         """接続線用のUI構築。"""
         target = self.current_target
-        layout = self.create_collapsible_group(tr("prop_grp_connection"), expanded=True)
+        layout = self.create_collapsible_group(tr("prop_grp_connection"), expanded=False)
 
         self.add_color_button(
             layout, tr("prop_color"), target.line_color, lambda v: setattr(target, "line_color", v) or target.update()

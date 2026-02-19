@@ -11,7 +11,7 @@ from typing import Any
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QSizePolicy
 
-from ui.property_panel_sections import build_text_content_section, build_text_style_section
+from ui.property_panel_sections import build_text_content_section, build_text_header_controls, build_text_style_section
 from utils.translator import tr
 
 
@@ -90,15 +90,18 @@ def build_text_window_primary_sections(panel: Any, target: Any) -> None:
     from windows.connector import ConnectorLabel
     from windows.text_window import TextWindow
 
+    if isinstance(target, TextWindow):
+        update_editing_target_labels(panel, target)
+        build_text_header_controls(panel, target)
+
     if not isinstance(target, ConnectorLabel):
         panel.build_common_ui(target)
     else:
-        layout = panel.create_group(tr("prop_grp_transform"))
+        layout = panel.create_collapsible_group(tr("prop_grp_transform"), expanded=False)
         layout.addRow(QLabel(tr("prop_pos_auto_linked")))
         panel.add_action_button(layout, tr("btn_toggle_front"), target.toggle_frontmost, "secondary-button")
 
     if isinstance(target, TextWindow):
-        update_editing_target_labels(panel, target)
         build_text_content_section(panel, target)
 
     build_text_style_section(panel, target)

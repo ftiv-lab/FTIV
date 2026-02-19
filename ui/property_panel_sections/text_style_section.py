@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 def build_text_style_section(panel: Any, target: Any) -> None:
-    text_style_layout = panel.create_collapsible_group(tr("prop_grp_text_style"), expanded=True, state_key="text_style")
+    text_style_layout = panel.create_collapsible_group(
+        tr("prop_grp_text_style"),
+        expanded=False,
+        state_key="text_style",
+    )
 
     panel.btn_text_font = QPushButton(f"{target.font_family} ({target.font_size}pt)")
     panel.btn_text_font.setProperty("class", "secondary-button")

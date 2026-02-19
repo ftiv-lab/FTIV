@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from PySide6.QtGui import QFont
 
 from ui.property_panel import PropertyPanel
-from ui.property_panel_sections.text_content_section import build_text_content_section
+from ui.property_panel_sections.text_content_section import build_text_content_section, build_text_header_controls
 from ui.property_panel_sections.text_style_section import build_text_style_section
 
 
@@ -74,9 +74,11 @@ def test_text_content_section_builds_core_widgets_and_due_fields(qapp) -> None:
     target = _DummyTextTarget(task_mode=False)
     panel.current_target = target
 
+    build_text_header_controls(panel, target)
     build_text_content_section(panel, target)
 
     assert panel.btn_task_mode is not None
+    assert panel.btn_text_orientation is not None
     assert panel.edit_note_title.text() == "Section Title"
     assert panel.edit_note_tags.text() == "alpha, beta"
     assert panel.edit_note_due_at.text() == "2026-03-10"
@@ -94,6 +96,7 @@ def test_text_content_section_task_mode_adds_progress_widgets(qapp) -> None:
     target = _DummyTextTarget(task_mode=True)
     panel.current_target = target
 
+    build_text_header_controls(panel, target)
     build_text_content_section(panel, target)
 
     assert panel.btn_task_mode.isChecked() is True
@@ -109,7 +112,7 @@ def test_text_content_task_mode_button_invokes_set_content_mode(qapp) -> None:
     target = _DummyTextTarget(task_mode=False)
     panel.current_target = target
 
-    build_text_content_section(panel, target)
+    build_text_header_controls(panel, target)
     panel.btn_task_mode.click()
 
     assert "task" in target.mode_calls
