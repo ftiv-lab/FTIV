@@ -4,7 +4,7 @@ import typing
 from typing import Any
 
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QMenu, QMessageBox, QPushButton, QToolButton, QWidget
+from PySide6.QtWidgets import QMessageBox, QPushButton, QWidget
 
 from utils.font_dialog import choose_font
 from utils.translator import tr
@@ -72,14 +72,9 @@ def build_text_style_section(panel: Any, target: Any) -> None:
         text_style_layout, tr("menu_set_text_gradient_opacity"), target.text_gradient_opacity, 0, 100, commit, prev
     )
 
-    panel.btn_text_style_more = QToolButton()
-    panel.btn_text_style_more.setProperty("class", "secondary-button")
-    panel.btn_text_style_more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-    panel.btn_text_style_more.setText(tr("btn_more_actions"))
-    style_more_menu = QMenu(panel.btn_text_style_more)
-    act_save_text_def = style_more_menu.addAction("💾 " + tr("btn_save_as_default"))
-    act_save_text_def.setToolTip(tr("tip_save_text_default"))
+    panel.btn_save_text_default = QPushButton("💾 " + tr("btn_save_as_default"))
+    panel.btn_save_text_default.setProperty("class", "secondary-button")
+    panel.btn_save_text_default.setToolTip(tr("tip_save_text_default"))
     if panel.mw and hasattr(panel.mw, "main_controller"):
-        act_save_text_def.triggered.connect(panel.mw.main_controller.txt_actions.save_as_default)
-    panel.btn_text_style_more.setMenu(style_more_menu)
-    text_style_layout.addRow("", typing.cast(QWidget, panel.btn_text_style_more))
+        panel.btn_save_text_default.clicked.connect(panel.mw.main_controller.txt_actions.save_as_default)
+    text_style_layout.addRow("", typing.cast(QWidget, panel.btn_save_text_default))

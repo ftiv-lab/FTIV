@@ -103,7 +103,7 @@ class PropertyPanel(QWidget):
         self.lbl_editing_target = None
         self.lbl_editing_target_preview = None
         self.btn_text_orientation = None
-        self.btn_text_style_more = None
+        self.btn_save_text_default = None
         self.lbl_task_progress = None
         self.btn_complete_all = None
         self.btn_uncomplete_all = None

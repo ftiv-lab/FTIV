@@ -132,7 +132,7 @@ def test_text_style_section_font_button_applies_selected_font(qapp) -> None:
     assert target.update_text_calls == 1
 
 
-def test_text_style_section_initial_state_and_overflow_menu(qapp) -> None:
+def test_text_style_section_initial_state_and_save_default_button(qapp) -> None:
     _ = qapp
     panel = _make_panel()
     target = _DummyTextTarget(task_mode=False)
@@ -142,5 +142,7 @@ def test_text_style_section_initial_state_and_overflow_menu(qapp) -> None:
     assert panel.btn_text_font.text() == "Arial (24pt)"
     assert panel.btn_text_gradient_toggle.isCheckable() is True
     assert panel.btn_text_gradient_toggle.isChecked() is True
-    assert panel.btn_text_style_more.menu() is not None
-    assert len(panel.btn_text_style_more.menu().actions()) >= 1
+    assert panel.btn_save_text_default is not None
+    assert "💾" in panel.btn_save_text_default.text()
+    panel.btn_save_text_default.click()
+    panel.mw.main_controller.txt_actions.save_as_default.assert_called_once()
