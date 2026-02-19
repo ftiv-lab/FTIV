@@ -817,5 +817,19 @@
     "btn_unlock": "Unlock",
     "menu_select_text_window": "Select Text Window",
     "label_text": "Text",
-    "label_flip": "Flip:"
+    "label_flip": "Flip:",
+    "tab_layer": "Layer",
+    "layer_btn_attach": "Attach",
+    "layer_btn_detach": "Detach",
+    "layer_tooltip_attach": "Select parent on canvas, then click Attach to add tree-selected window as child",
+    "layer_tooltip_detach": "Remove parent-child relationship from selected window",
+    "layer_tooltip_move_up": "Move up within siblings",
+    "layer_tooltip_move_down": "Move down within siblings",
+    "layer_tooltip_refresh": "Refresh tree to current state",
+    "layer_hint": "Usage: Click parent on canvas → select child in tree → Attach",
+    "layer_msg_select_parent_first": "Click the parent window on the canvas first",
+    "layer_msg_no_parent": "This window has no parent",
+    "menu_layer_ops": "Layer Operations",
+    "menu_layer_attach": "Attach as Layer",
+    "menu_layer_detach": "Detach from Layer"
 }

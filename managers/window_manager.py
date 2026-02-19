@@ -32,6 +32,7 @@ class WindowManager(QObject):
     sig_selection_changed = Signal(object)  # 選択対象が変わったとき
     sig_status_message = Signal(str)  # フッターメッセージ用
     sig_undo_command_requested = Signal(object)  # Undoコマンド発行用
+    sig_layer_structure_changed = Signal()  # Layer構造変更時（LayerTab再構築用）
 
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
@@ -176,6 +177,7 @@ class WindowManager(QObject):
         window.show()
 
         self.set_selected_window(window)
+        self.sig_layer_structure_changed.emit()
 
         logger.info(f"TextWindow created: UUID={window.uuid}, Text='{text[:20]}...'")
         return window
@@ -213,6 +215,7 @@ class WindowManager(QObject):
             self.image_windows.append(window)
             window.show()
             self.set_selected_window(window)
+            self.sig_layer_structure_changed.emit()
 
             logger.info(f"ImageWindow created: UUID={window.uuid}, Path='{image_path}'")
             return window
@@ -427,6 +430,7 @@ class WindowManager(QObject):
                 except Exception as e:
                     logger.warning(f"Failed to delete associated connector: {e}")
 
+            self.sig_layer_structure_changed.emit()
             logger.info(f"{w_type}Window removed: UUID={w_uuid}")
 
         except Exception as e:
@@ -621,6 +625,99 @@ class WindowManager(QObject):
                         parent.remove_child_window(source_window)
                     break
         source_window.parent_window_uuid = None
+
+    # ==========================================
+    # Layer API（feat/layer-tab）
+    # ==========================================
+
+    def attach_layer(self, parent: "TextWindow | ImageWindow", child: "TextWindow | ImageWindow") -> None:
+        """child を parent の子レイヤーとしてアタッチする。
+        循環チェックは add_child_window() 側で実施。
+        Undo 対応: AttachLayerCommand を発行する。
+        """
+        from utils.commands import AttachLayerCommand
+
+        try:
+            # layer_offset（親相対座標）を記録してから追加
+            offset = child.pos() - parent.pos()
+            child.config.layer_offset = {"x": offset.x(), "y": offset.y()}
+            # layer_order を同階層の末尾に設定
+            child.config.layer_order = len(parent.child_windows)
+            parent.add_child_window(child)
+        except ValueError as e:
+            logger.warning("attach_layer rejected: %s", e)
+            return
+
+        # Z-order: 子を親の前面に並べる
+        self.raise_group_stack(parent)
+
+        # Undo 登録
+        undo_stack = getattr(self.main_window, "undo_stack", None)
+        if undo_stack is not None:
+            cmd = AttachLayerCommand(parent, child, self)
+            undo_stack.push(cmd)
+
+        self.sig_status_message.emit(tr("msg_group_success"))
+        self.sig_layer_structure_changed.emit()
+
+    def detach_layer(self, child: "TextWindow | ImageWindow") -> None:
+        """child の親子関係を解除して独立ウィンドウにする。
+        解除後は絶対座標のまま残る（layer_offset はクリア）。
+        """
+        from utils.commands import DetachLayerCommand
+
+        parent_uuid = child.parent_window_uuid
+        if not parent_uuid:
+            return
+
+        parent = next((w for w in self.all_windows if w.uuid == parent_uuid), None)
+
+        # Undo コマンドを先に作成（解除前の状態を保存）
+        saved_offset = child.config.layer_offset
+        saved_order = child.config.layer_order
+
+        if parent and hasattr(parent, "remove_child_window"):
+            parent.remove_child_window(child)
+        child.config.layer_offset = None
+        child.config.layer_order = None
+
+        undo_stack = getattr(self.main_window, "undo_stack", None)
+        if undo_stack is not None:
+            cmd = DetachLayerCommand(parent, child, self, saved_offset, saved_order)
+            undo_stack.push(cmd)
+
+        self.sig_layer_structure_changed.emit()
+
+    def raise_group_stack(self, parent: "TextWindow | ImageWindow") -> None:
+        """親とその全子孫を layer_order 順に raise() する（Z-order 暫定制御）。"""
+        try:
+            import shiboken6
+
+            if not shiboken6.isValid(parent):
+                return
+            parent.raise_()
+            children = sorted(
+                parent.child_windows,
+                key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
+            )
+            for child in children:
+                try:
+                    import shiboken6 as s6
+
+                    if s6.isValid(child):
+                        child.raise_()
+                        self.raise_group_stack(child)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("raise_group_stack: %s", e)
+
+    def find_window_by_uuid(self, uuid: str) -> "TextWindow | ImageWindow | None":
+        """UUID でウィンドウを検索して返す。見つからない場合は None。"""
+        for w in self.all_windows:
+            if w.uuid == uuid:
+                return w
+        return None
 
     # ==========================================
     # Selection Logic

@@ -817,5 +817,19 @@
     "btn_unlock": "ロック解除",
     "menu_select_text_window": "テキストウィンドウを選択",
     "label_text": "テキスト",
-    "label_flip": "反転:"
+    "label_flip": "反転:",
+    "tab_layer": "レイヤー",
+    "layer_btn_attach": "アタッチ",
+    "layer_btn_detach": "デタッチ",
+    "layer_tooltip_attach": "キャンバスで親ウィンドウを選択し、このボタンでツリー選択中の子をアタッチします",
+    "layer_tooltip_detach": "選択中のウィンドウの親子関係を解除します",
+    "layer_tooltip_move_up": "同階層内で1つ上に移動",
+    "layer_tooltip_move_down": "同階層内で1つ下に移動",
+    "layer_tooltip_refresh": "ツリーを最新状態に更新",
+    "layer_hint": "使い方: キャンバスで親を選択 → ツリーで子を選択 → アタッチ",
+    "layer_msg_select_parent_first": "先にキャンバスで親ウィンドウをクリックしてください",
+    "layer_msg_no_parent": "このウィンドウに親はありません",
+    "menu_layer_ops": "レイヤー操作",
+    "menu_layer_attach": "レイヤーとしてアタッチ",
+    "menu_layer_detach": "レイヤーから解除"
 }

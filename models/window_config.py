@@ -56,6 +56,16 @@ class WindowConfigBase(BaseModel):
     fade_speed: int = 1000
     fade_pause_time: int = 0
 
+    # --- Layer（親子レイヤー管理）---
+    # 親ウィンドウの左上を (0,0) とした相対オフセット。未設定時は絶対座標で復元。
+    layer_offset: Optional[Dict[str, int]] = None
+    # 同階層内での表示順（0=最背面）。未設定時はロード順。
+    layer_order: Optional[int] = None
+    # 親の変換（拡大縮小・回転）を子に伝播するかどうか
+    # None = ウィンドウ種別に従うデフォルト（ImageWindow=True / TextWindow=False）
+    layer_scale_inherit: Optional[bool] = None
+    layer_rotation_inherit: Optional[bool] = None
+
 
 class TextWindowConfig(WindowConfigBase):
     """TextWindow用の設定モデル"""

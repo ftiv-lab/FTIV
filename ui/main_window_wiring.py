@@ -15,6 +15,7 @@ from ui.tabs.animation_tab import AnimationTab
 from ui.tabs.general_tab import GeneralTab
 from ui.tabs.image_tab import ImageTab
 from ui.tabs.info_tab import InfoTab
+from ui.tabs.layer_tab import LayerTab
 from ui.tabs.scene_tab import ConnectionsTab, SceneTab
 from ui.tabs.text_tab import TextTab
 from utils.translator import tr
@@ -43,6 +44,9 @@ def build_main_tabs(main_window: Any, tabs: QTabWidget) -> None:
     main_window.animation_tab = AnimationTab(main_window)
     tabs.addTab(main_window.animation_tab, tr("tab_animation"))
 
+    main_window.layer_tab = LayerTab(main_window)
+    tabs.addTab(main_window.layer_tab, tr("tab_layer"))
+
     main_window.about_tab = AboutTab(main_window)
     tabs.addTab(main_window.about_tab, tr("tab_about"))
 
@@ -57,6 +61,7 @@ def refresh_main_tab_titles(tabs: QTabWidget) -> None:
         "tab_connections",
         "tab_info",
         "tab_animation",
+        "tab_layer",
         "tab_about",
     )
     count = min(tabs.count(), len(title_keys))

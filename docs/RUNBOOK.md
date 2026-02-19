@@ -106,5 +106,45 @@ If you are new to the repository or switching environments, start here.
 - exception window must not exceed `governance.max_exception_days`
 8. Governance:
 - See `docs/internal/architecture/phase10d_visual_gate_governance.md`
-9. Final integrated verification:
+
+## 11. Layer / Connector Shortcut Contract (feat/layer-tab)
+
+### 11.1 Frozen shortcut assignments (do not reassign)
+
+| Key | Action | File |
+|-----|--------|------|
+| Ctrl+Click | Resume animation | `windows/base_window.py` |
+| Tab | Create child TextWindow | `windows/text_window.py` |
+| Enter | Create sibling TextWindow | `windows/text_window.py` |
+| F | Toggle frontmost | `windows/base_window.py` |
+| H | Toggle hidden | `windows/base_window.py` |
+| Delete | Delete window | `windows/base_window.py` |
+| Wheel | Scale (ImageWindow) / font size (TextWindow) | respective files |
+
+### 11.2 Layer operation key assignments
+
+| Layer operation | Primary route | Secondary (shortcut) |
+|----------------|---------------|----------------------|
+| Attach child | LayerTab / right-click menu | none |
+| Detach from parent | LayerTab / right-click menu | none |
+| Move up in layer order | LayerTab ⬆ button | none |
+| Move down in layer order | LayerTab ⬇ button | none |
+
+### 11.3 Rules
+
+- **Shift shortcuts are intentionally unassigned for both Connector and Layer operations.**
+- Connector creation must be done via MainWindow UI / context menu routes.
+- All Layer operations must be completable without shortcuts (UI-only path is the default contract).
+- Any new shortcut addition must not conflict with the frozen table above.
+- Regression test: `tests/test_shortcut_contract.py`
+
+### 11.4 Layer tab lane
+
+1. Prerequisite tests:
+- `uv run pytest tests/test_shortcut_contract.py tests/test_layer_prerequisites.py -q -p no:cacheprovider`
+2. Selection / context checks:
+- `uv run pytest tests/test_window_manager.py tests/test_window_manager_extended.py -q -p no:cacheprovider`
+3. Performance smoke (cross-lane check):
+- `uv run pytest tests/test_performance_smoke.py -q -p no:cacheprovider`
+4. Final integrated verification:
 - `cmd /c verify_all.bat`

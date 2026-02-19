@@ -113,7 +113,12 @@ class ImageWindow(BaseOverlayWindow):
 
     @rotation_angle.setter
     def rotation_angle(self, value: float):
-        self.config.rotation_angle = float(value)
+        old_angle = float(getattr(self.config, "rotation_angle", 0.0))
+        new_angle = float(value)
+        self.config.rotation_angle = new_angle
+        delta = new_angle - old_angle
+        if delta != 0.0:
+            self.propagate_rotation_to_children(delta)
 
     @property
     def flip_horizontal(self) -> bool:
@@ -158,6 +163,7 @@ class ImageWindow(BaseOverlayWindow):
             builder.add_action("menu_reselect_image", self.reselect_image)
             builder.add_action("menu_clone_image", self.clone_image)
             builder.add_connect_group_menu()
+            builder.add_layer_menu()
             builder.add_action("menu_show_properties", self.show_property_panel)
             builder.add_separator()
 
@@ -956,8 +962,6 @@ class ImageWindow(BaseOverlayWindow):
                 if hasattr(child, "rotation_angle"):
                     child.rotation_angle += delta_angle
                     child.update_image()
-                if hasattr(child, "propagate_rotation_to_children"):
-                    child.propagate_rotation_to_children(delta_angle)
 
             except Exception:
                 pass  # Propagation fail should not crash

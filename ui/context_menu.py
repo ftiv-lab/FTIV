@@ -82,5 +82,30 @@ class ContextMenuBuilder:
             parent_menu=sub,
         )
 
+    def add_layer_menu(self):
+        """レイヤー管理メニュー（親子構造の Attach / Detach）"""
+        sub = self.add_submenu("menu_layer_ops")
+
+        self.add_action(
+            "menu_layer_attach",
+            self._do_layer_attach,
+            parent_menu=sub,
+        )
+
+        self.add_action(
+            "menu_layer_detach",
+            lambda: self.main_window.window_manager.detach_layer(self.window),
+            parent_menu=sub,
+        )
+
+    def _do_layer_attach(self):
+        """このウィンドウを、最後に選択されたウィンドウの子としてアタッチする。"""
+        wm = self.main_window.window_manager
+        parent = wm.last_selected_window
+        if parent is None or parent is self.window:
+            wm.sig_status_message.emit(tr("layer_msg_select_parent_first"))
+            return
+        wm.attach_layer(parent, self.window)
+
     def exec(self, pos):
         self.menu.exec(pos)

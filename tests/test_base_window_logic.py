@@ -345,6 +345,7 @@ class TestChildWindowManagement:
         parent = _make_base_window()
         child = MagicMock()
         child.parent_window_uuid = None
+        child._contains_in_subtree.return_value = False  # 循環チェック: 非循環
         parent.add_child_window(child)
         assert child in parent.child_windows
         assert child.parent_window_uuid == parent.uuid
@@ -357,6 +358,7 @@ class TestChildWindowManagement:
     def test_add_child_window_duplicate(self):
         parent = _make_base_window()
         child = MagicMock()
+        child._contains_in_subtree.return_value = False  # 循環チェック: 非循環
         parent.add_child_window(child)
         parent.add_child_window(child)
         assert parent.child_windows.count(child) == 1

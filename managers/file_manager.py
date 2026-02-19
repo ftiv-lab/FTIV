@@ -295,6 +295,16 @@ class FileManager:
                 if parent_uuid in all_map:
                     all_map[parent_uuid].add_child_window(child)
 
+        # 2.5 同一親配下の順序を layer_order で復元
+        for parent in all_wins:
+            children = getattr(parent, "child_windows", None)
+            if not children:
+                continue
+            try:
+                children.sort(key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0)
+            except Exception:
+                pass
+
         # 3. 接続の復元
         connections_list = normalized.get("connections", [])
         if isinstance(connections_list, list) and connections_list:

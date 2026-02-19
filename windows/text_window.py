@@ -1256,6 +1256,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
             builder = ContextMenuBuilder(self, self.main_window)
 
             builder.add_connect_group_menu()
+            builder.add_layer_menu()
             builder.add_action("menu_show_properties", self.show_property_panel)
             builder.add_separator()
 

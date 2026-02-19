@@ -329,11 +329,37 @@ class BaseOverlayWindow(QLabel):
 
     # --- 親子・コネクタ管理 ---
 
+    def _contains_in_subtree(self, target: "BaseOverlayWindow", _visited: set | None = None) -> bool:
+        """自分のサブツリー（子・孫…）に target が含まれるか再帰的に確認する。
+        循環参照の安全対策として _visited で訪問済みノードを追跡する。"""
+        if _visited is None:
+            _visited = set()
+        if id(self) in _visited:
+            return False
+        _visited.add(id(self))
+        if self is target:
+            return True
+        for child in self.child_windows:
+            if child._contains_in_subtree(target, _visited):
+                return True
+        return False
+
     def add_child_window(self, window: "BaseOverlayWindow"):
-        """子ウィンドウを追加し親子関係を設定します。"""
-        if window not in self.child_windows and window is not self:
-            self.child_windows.append(window)
-            window.parent_window_uuid = self.uuid
+        """子ウィンドウを追加し親子関係を設定します。
+        循環親子（A→B→A）は ValueError を発生させます。
+        """
+        if window is self:
+            return
+        if window in self.child_windows:
+            return
+        # 循環チェック: window のサブツリーに self が含まれる場合は循環になる
+        if window._contains_in_subtree(self):
+            raise ValueError(
+                f"循環親子禁止: {self.uuid[:8]} は {window.uuid[:8]} の子孫です。"
+                " add_child_window() をキャンセルします。"
+            )
+        self.child_windows.append(window)
+        window.parent_window_uuid = self.uuid
 
     def remove_child_window(self, window: "BaseOverlayWindow"):
         """子ウィンドウをリストから削除します。"""
