@@ -54,8 +54,8 @@ FTIVは、単なるビューワーではありません。**「デスクトッ�
     *   ソフト内で「ふわふわ浮く」「フェードイン・アウト」などの簡易アニメーションをテキストや画像に付与できます。
 
 ### 4. 🧠 Visual Thinking / 思考の可視化 
-*   **Connect the Dots**: Link items with customizable lines (Shift+Drag) to create visual maps or relationship charts directly on your desktop.
-    *   Shift+ドラッグでウィンドウ同士を **「線」** で接続。デスクトップ上でそのまま整理図や相関図を作れます。
+*   **Connect the Dots**: Link items with customizable lines from MainWindow controls or right-click menu to create visual maps or relationship charts directly on your desktop.
+    *   MainWindow の接続操作や右クリックメニューから、ウィンドウ同士を **「線」** で接続。デスクトップ上でそのまま整理図や相関図を作れます。
 
 ### 5. ⚙️ Pro-Level Customization / プロ級のカスタマイズ
 *   **Deep Control**: Every aspect (Window style, Border, Background) is tweakable via Property Panel or Right-click menu.

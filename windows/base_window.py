@@ -841,33 +841,6 @@ class BaseOverlayWindow(QLabel):
                 elif self.fade_in_only_loop_enabled:
                     self.start_fade_in_only()
 
-            elif event.button() == Qt.MouseButton.LeftButton and (event.modifiers() & Qt.ShiftModifier):
-                # Shift+Click: Connect to last selected window (Daisy Chain)
-                try:
-                    mw = getattr(self, "main_window", None)
-                    wm = getattr(mw, "window_manager", None) if mw else None
-                    if wm:
-                        # 直前に選択されていたウィンドウを取得
-                        last_sel = getattr(wm, "last_selected_window", None)
-
-                        # 自分自身以外、かつ直前選択がある場合に接続
-                        if last_sel and last_sel != self and hasattr(wm, "add_connector"):
-                            wm.add_connector(last_sel, self)
-
-                        # 次の接続のために自分を選択状態にする
-                        # (ここで is_dragging=True にしないことで、誤ドラッグを防ぐ)
-                        self.sig_window_selected.emit(self)
-                        event.accept()
-                        return
-
-                except Exception as e:
-                    logger.warning(f"Failed to connect via Shift+Click: {e}")
-                    pass  # 失敗しても通常のクリック処理へ流すか、ここで止めるか。安全のため止める。
-
-                # 接続処理が走った（または失敗した）が、通常のドラッグには行かせない
-                event.accept()
-                return
-
             elif event.button() == Qt.MouseButton.LeftButton:
                 # ★追加：ロック中はドラッグ移動を開始しない（選択はできる）
                 if getattr(self, "is_locked", False):

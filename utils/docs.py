@@ -134,7 +134,7 @@ MANUAL_TEXT_JP = """
 
 <h3 id="connect">4. 接続とグループ化</h3>
 <ul>
-    <li><b>接続 (Connector):</b> <b>Shift + クリック</b> でウィンドウ同士を線で繋ぎます。整理図や相関図の可視化に使えます。</li>
+    <li><b>接続 (Connector):</b> MainWindow の接続操作または右クリックメニューから、ウィンドウ同士を線で繋ぎます。整理図や相関図の可視化に使えます。</li>
     <li><b>グループ化 (Group):</b> 右クリックメニューから「選択元を親として追従」を選ぶと、親ウィンドウを動かした時に子ウィンドウも一緒についてくるようになります。</li>
     <li><b>ラベル:</b> 接続線を右クリックすると、線の上に文字（ラベル）を追加できます。</li>
 </ul>
@@ -293,7 +293,7 @@ MANUAL_TEXT_EN = """
 
 <h3 id="connect">4. Connectors & Grouping</h3>
 <ul>
-    <li><b>Connector:</b> <b>Shift + Click</b> another window to connect them with a line.</li>
+    <li><b>Connector:</b> Connect windows from MainWindow connector actions or the right-click menu.</li>
     <li><b>Grouping:</b> Right-click -> "Set Selected as Parent" to group. Moving the parent moves the child.</li>
     <li><b>Label:</b> Right-click a connector line to add text (label) on it.</li>
 </ul>
