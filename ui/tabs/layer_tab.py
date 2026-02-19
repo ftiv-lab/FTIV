@@ -252,11 +252,10 @@ class LayerTab(QWidget):
             self.tree.blockSignals(False)
 
     def _on_tree_selection_changed(self) -> None:
-        """ツリーで選択が変わったとき、対応するキャンバスウィンドウを raise_() する。
+        """ツリー選択をキャンバス選択へ同期する。
 
-        Note:
-            activateWindow() はフォーカス奪取を引き起こすため使わない。
-            raise_() のみ使い、キャンバスの自然なフォーカスを保つ（Antigravity ガイドライン）。
+        Z-order は WindowManager.set_selected_window() 側で制御する。
+        LayerTab から直接 raise_() を呼ぶと、親子再整列を上書きしてしまうため禁止。
         """
         items = self.tree.selectedItems()
         if not items:
@@ -278,20 +277,19 @@ class LayerTab(QWidget):
                     self._attach_parent_candidate_uuid = prev_uuid
                 elif self._attach_parent_candidate_uuid is None:
                     self._attach_parent_candidate_uuid = uuid
-                window.raise_()
             except Exception:
                 pass
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
-        """ダブルクリックで対応 Window を最前面に出してアクティベートする。"""
+        """ダブルクリックで対応 Window を選択状態にする。"""
         uuid = item.data(0, Qt.ItemDataRole.UserRole)
         if not uuid:
             return
-        window = self.mw.window_manager.find_window_by_uuid(uuid)
+        wm = self.mw.window_manager
+        window = wm.find_window_by_uuid(uuid)
         if window:
             try:
-                window.raise_()
-                window.activateWindow()
+                wm.set_selected_window(window)
             except Exception:
                 pass
 

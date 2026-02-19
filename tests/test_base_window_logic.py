@@ -457,3 +457,26 @@ class TestSetSelected:
         with patch.object(type(w), "update"):
             w.set_selected(False)
         assert w.is_selected is False
+
+
+# ============================================================
+# mouseMoveEvent (drag + layer z-order sync)
+# ============================================================
+class TestMouseMoveEventLayerZOrder:
+    def test_drag_with_children_reorders_group_stack(self):
+        w = _make_base_window()
+        w.is_dragging = True
+        w.last_mouse_pos = QPoint(10, 10)
+        w.child_windows = [MagicMock()]
+        wm = MagicMock()
+        w.main_window.window_manager = wm
+
+        event = MagicMock()
+        event.globalPosition.return_value.toPoint.return_value = QPoint(25, 30)
+
+        with patch.object(type(w), "move_tree_by_delta") as mock_move_tree:
+            w.mouseMoveEvent(event)
+
+        # delta = (25,30) - (10,10)
+        mock_move_tree.assert_called_once_with(QPoint(15, 20))
+        wm.raise_group_stack.assert_called_once_with(w, include_parent=False)

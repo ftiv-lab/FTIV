@@ -922,6 +922,19 @@ class BaseOverlayWindow(QLabel):
 
                 self.move_tree_by_delta(delta)
 
+                # 親子レイヤー構造がある場合は、ドラッグ中もZ順を再整列する。
+                # 位置追従だけでは親が前面化して子が隠れるケースがあるため、
+                # WindowManager.raise_group_stack で「親の上に子」を維持する。
+                if self.child_windows:
+                    try:
+                        wm = getattr(self.main_window, "window_manager", None)
+                        if wm is not None and hasattr(wm, "raise_group_stack"):
+                            # ドラッグ中は親を再raiseしない。親を毎フレーム前面化すると、
+                            # 子が一瞬隠れてから再表示されるフリッカーが発生する。
+                            wm.raise_group_stack(self, include_parent=False)
+                    except Exception:
+                        pass
+
                 # 追加：相対移動アニメ中なら、軌道の基準も一緒に平行移動する
                 if getattr(self, "_rel_move_anim", None) is not None:
                     self._shift_relative_move_base_by_delta(delta)

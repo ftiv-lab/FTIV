@@ -648,6 +648,17 @@ class WindowManager(QObject):
             logger.warning("attach_layer rejected: %s", e)
             return
 
+        # 親子の frontmost フラグを同期する。
+        # 親/子で WindowStaysOnTopHint がずれると、ドラッグ時に子が親の下へ潜る要因になる。
+        try:
+            if hasattr(parent, "is_frontmost") and hasattr(child, "is_frontmost"):
+                child_front = bool(getattr(child, "is_frontmost", False))
+                parent_front = bool(getattr(parent, "is_frontmost", False))
+                if child_front != parent_front:
+                    child.is_frontmost = parent_front
+        except Exception:
+            logger.debug("attach_layer frontmost sync failed", exc_info=True)
+
         # Z-order: 子を親の前面に並べる
         self.raise_group_stack(parent)
 
@@ -688,25 +699,41 @@ class WindowManager(QObject):
 
         self.sig_layer_structure_changed.emit()
 
-    def raise_group_stack(self, parent: "TextWindow | ImageWindow") -> None:
-        """親とその全子孫を layer_order 順に raise() する（Z-order 暫定制御）。"""
+    def raise_group_stack(self, parent: "TextWindow | ImageWindow", *, include_parent: bool = True) -> None:
+        """親子ツリーを layer_order 順に raise() する。
+
+        Args:
+            parent: ルート親ウィンドウ
+            include_parent:
+                True  -> 親も含めて再整列（選択時/Attach時）
+                False -> 子孫のみ再整列（ドラッグ中のフリッカー抑止用）
+        """
+
+        def _collect_subtree_in_order(node: "TextWindow | ImageWindow", out: list[Any]) -> None:
+            out.append(node)
+            children = sorted(
+                getattr(node, "child_windows", []),
+                key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
+            )
+            for child in children:
+                _collect_subtree_in_order(child, out)
+
         try:
             import shiboken6
 
             if not shiboken6.isValid(parent):
                 return
-            parent.raise_()
-            children = sorted(
-                parent.child_windows,
-                key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
-            )
-            for child in children:
-                try:
-                    import shiboken6 as s6
 
-                    if s6.isValid(child):
-                        child.raise_()
-                        self.raise_group_stack(child)
+            ordered: list[Any] = []
+            _collect_subtree_in_order(parent, ordered)
+
+            if not include_parent and ordered:
+                ordered = ordered[1:]
+
+            for window in ordered:
+                try:
+                    if shiboken6.isValid(window):
+                        window.raise_()
                 except Exception:
                     pass
         except Exception as e:
@@ -737,6 +764,11 @@ class WindowManager(QObject):
         if self.last_selected_window:
             if hasattr(self.last_selected_window, "set_selected"):
                 self.last_selected_window.set_selected(True)
+            # Z-order: 子ウィンドウを持つ親を選択したとき、子が前面に残るよう
+            # raise_group_stack で再整列する。単純な raise_() だと親が子の上に出てしまう。
+            if getattr(self.last_selected_window, "child_windows", None):
+                self.raise_group_stack(self.last_selected_window)
+            else:
                 self.last_selected_window.raise_()
 
         self.sig_selection_changed.emit(window)
