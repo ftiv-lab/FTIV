@@ -16,7 +16,9 @@ import logging
 from typing import TYPE_CHECKING, Any, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -41,9 +43,10 @@ _ICON_IMAGE = "🖼"
 _BADGE_HIDDEN = " [H]"
 _BADGE_LOCKED = " [L]"
 _BADGE_FRONT = " [F]"
+_BADGE_PARENT = " [P]"
 
 
-def _window_label(window: Any) -> str:
+def _window_label(window: Any, *, is_parent_slot: bool = False) -> str:
     """ツリー表示用のラベル文字列を生成する。"""
     try:
         from windows.image_window import ImageWindow
@@ -63,6 +66,8 @@ def _window_label(window: Any) -> str:
             name = str(getattr(window, "uuid", "?"))[:8]
 
         badges = ""
+        if is_parent_slot:
+            badges += _BADGE_PARENT
         if getattr(window, "is_hidden", False):
             badges += _BADGE_HIDDEN
         if getattr(window, "is_locked", False):
@@ -75,13 +80,49 @@ def _window_label(window: Any) -> str:
         return "?"
 
 
+class _LayerTreeWidget(QTreeWidget):
+    """Layerタブ専用ツリー。
+
+    ドラッグ＆ドロップは LayerTab 側でドメイン処理（attach/reorder）へ変換する。
+    """
+
+    def __init__(self, owner: "LayerTab"):
+        super().__init__(owner)
+        self._owner = owner
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def dropEvent(self, event: Any) -> None:
+        source_item = self.currentItem()
+        target_item = None
+        try:
+            pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
+            target_item = self.itemAt(pos)
+        except Exception:
+            target_item = None
+
+        if source_item is not None and target_item is not None:
+            source_uuid = source_item.data(0, Qt.ItemDataRole.UserRole)
+            target_uuid = target_item.data(0, Qt.ItemDataRole.UserRole)
+            if source_uuid and target_uuid and source_uuid != target_uuid:
+                if self._owner._apply_tree_drop_relation(str(source_uuid), str(target_uuid)):
+                    event.accept()
+                    return
+
+        # 既定動作はフォールバックとして残す（不明ケースのみ）
+        super().dropEvent(event)
+
+
 class LayerTab(QWidget):
     """Layerタブ: 親子ウィンドウ構造を可視化・操作するパネル。
 
     双方向同期:
-      - キャンバス選択変更 (sig_selection_changed) → ツリー選択ハイライト
-      - ツリー選択変更 → キャンバスウィンドウを raise_()
-      - Layer 構造変更 (sig_layer_structure_changed) → rebuild()
+      - キャンバス選択変更 (sig_selection_changed) -> ツリー選択ハイライト
+      - ツリー選択変更 -> キャンバス選択同期
+      - Layer 構造変更 (sig_layer_structure_changed) -> rebuild()
     """
 
     def __init__(self, main_window: "MainWindow"):
@@ -90,6 +131,8 @@ class LayerTab(QWidget):
         self._rebuilding = False
         self._uuid_to_item: dict[str, QTreeWidgetItem] = {}
         self._attach_parent_candidate_uuid: Optional[str] = None
+        # Attach時の明示親（最優先）
+        self._explicit_parent_uuid: Optional[str] = None
         self._setup_ui()
         self._connect_signals()
 
@@ -102,8 +145,34 @@ class LayerTab(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
+        # --- 親スロット行 ---
+        parent_row = QHBoxLayout()
+        parent_row.setSpacing(4)
+
+        self.lbl_parent_slot_title = QLabel(tr("layer_parent_slot_title"))
+        self.lbl_parent_slot_value = QLabel(tr("layer_parent_slot_empty"))
+        self.lbl_parent_slot_value.setObjectName("LayerParentSlotValue")
+        self.lbl_parent_slot_value.setAccessibleName(tr("layer_parent_slot_accessible"))
+        self.lbl_parent_slot_value.setStyleSheet("color: #2E7D32; font-weight: 600;")
+
+        self.btn_set_parent = QPushButton(tr("layer_btn_set_parent"))
+        self.btn_set_parent.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_set_parent.setToolTip(tr("layer_tooltip_set_parent"))
+        self.btn_set_parent.clicked.connect(self._on_set_parent)
+
+        self.btn_clear_parent = QPushButton(tr("layer_btn_clear_parent"))
+        self.btn_clear_parent.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.btn_clear_parent.setToolTip(tr("layer_tooltip_clear_parent"))
+        self.btn_clear_parent.clicked.connect(self._on_clear_parent)
+
+        parent_row.addWidget(self.lbl_parent_slot_title)
+        parent_row.addWidget(self.lbl_parent_slot_value, 1)
+        parent_row.addWidget(self.btn_set_parent)
+        parent_row.addWidget(self.btn_clear_parent)
+        layout.addLayout(parent_row)
+
         # --- ツリー ---
-        self.tree = QTreeWidget()
+        self.tree = _LayerTreeWidget(self)
         self.tree.setColumnCount(1)
         self.tree.setHeaderHidden(True)
         self.tree.setExpandsOnDoubleClick(False)
@@ -193,6 +262,10 @@ class LayerTab(QWidget):
             wm = self.mw.window_manager
             all_wins = list(wm.text_windows) + list(wm.image_windows)
 
+            # 参照切れをクリア
+            if self._explicit_parent_uuid and wm.find_window_by_uuid(self._explicit_parent_uuid) is None:
+                self._explicit_parent_uuid = None
+
             # 親なし（ルート）Window を先に追加
             for window in all_wins:
                 if not getattr(window, "parent_window_uuid", None):
@@ -203,6 +276,7 @@ class LayerTab(QWidget):
                     self._add_children(item, window, all_wins)
 
             self.tree.expandAll()
+            self._refresh_parent_slot_ui()
         except Exception:
             logger.exception("LayerTab.rebuild() failed")
         finally:
@@ -226,8 +300,14 @@ class LayerTab(QWidget):
 
     def _make_item(self, window: Any) -> QTreeWidgetItem:
         """QTreeWidgetItem を生成する。"""
-        item = QTreeWidgetItem([_window_label(window)])
+        is_parent_slot = bool(self._explicit_parent_uuid and window.uuid == self._explicit_parent_uuid)
+        item = QTreeWidgetItem([_window_label(window, is_parent_slot=is_parent_slot)])
         item.setData(0, Qt.ItemDataRole.UserRole, window.uuid)
+        if is_parent_slot:
+            font = item.font(0)
+            font.setBold(True)
+            item.setFont(0, font)
+            item.setForeground(0, QBrush(QColor("#2E7D32")))
         return item
 
     # ==========================================
@@ -252,11 +332,7 @@ class LayerTab(QWidget):
             self.tree.blockSignals(False)
 
     def _on_tree_selection_changed(self) -> None:
-        """ツリー選択をキャンバス選択へ同期する。
-
-        Z-order は WindowManager.set_selected_window() 側で制御する。
-        LayerTab から直接 raise_() を呼ぶと、親子再整列を上書きしてしまうため禁止。
-        """
+        """ツリー選択をキャンバス選択へ同期する。"""
         items = self.tree.selectedItems()
         if not items:
             return
@@ -294,6 +370,38 @@ class LayerTab(QWidget):
                 pass
 
     # ==========================================
+    # 親スロット操作
+    # ==========================================
+
+    def _refresh_parent_slot_ui(self) -> None:
+        wm = self.mw.window_manager
+        parent = wm.find_window_by_uuid(self._explicit_parent_uuid) if self._explicit_parent_uuid else None
+        if parent is None:
+            self.lbl_parent_slot_value.setText(tr("layer_parent_slot_empty"))
+            return
+        self.lbl_parent_slot_value.setText(_window_label(parent, is_parent_slot=True))
+
+    def _on_set_parent(self) -> None:
+        wm = self.mw.window_manager
+        parent_uuid = self._selected_uuid()
+        parent = wm.find_window_by_uuid(parent_uuid) if parent_uuid else None
+        if parent is None:
+            parent = getattr(wm, "last_selected_window", None)
+        if parent is None:
+            wm.sig_status_message.emit(tr("layer_msg_select_parent_first"))
+            return
+
+        self._explicit_parent_uuid = getattr(parent, "uuid", None)
+        self._attach_parent_candidate_uuid = self._explicit_parent_uuid
+        self.rebuild()
+        wm.sig_status_message.emit(tr("layer_msg_parent_slot_set").format(parent=_window_label(parent)))
+
+    def _on_clear_parent(self) -> None:
+        self._explicit_parent_uuid = None
+        self.rebuild()
+        self.mw.window_manager.sig_status_message.emit(tr("layer_msg_parent_slot_cleared"))
+
+    # ==========================================
     # ボタンアクション
     # ==========================================
 
@@ -304,14 +412,26 @@ class LayerTab(QWidget):
             return None
         return items[0].data(0, Qt.ItemDataRole.UserRole)
 
-    def _on_attach(self) -> None:
-        """ツリーで選択中の Window を、キャンバスの最後選択 Window の子にアタッチする。
+    def _resolve_attach_parent(self, child: Any) -> Any:
+        wm = self.mw.window_manager
 
-        操作手順:
-          1. キャンバス上で「親にしたい Window」を左クリックして選択
-          2. LayerタブのツリーでChild にしたい Window を選択
-          3. [アタッチ] を押す
-        """
+        # 1) 明示親を最優先
+        if self._explicit_parent_uuid:
+            explicit = wm.find_window_by_uuid(self._explicit_parent_uuid)
+            if explicit is not None:
+                return explicit
+            self._explicit_parent_uuid = None
+
+        # 2) 従来フォールバック
+        parent = getattr(wm, "last_selected_window", None)
+        if parent is child:
+            candidate_uuid = self._attach_parent_candidate_uuid
+            if candidate_uuid:
+                parent = wm.find_window_by_uuid(candidate_uuid)
+        return parent
+
+    def _on_attach(self) -> None:
+        """ツリーで選択中の Window を親へアタッチする。"""
         child_uuid = self._selected_uuid()
         if not child_uuid:
             return
@@ -321,21 +441,26 @@ class LayerTab(QWidget):
         if child is None:
             return
 
-        # 親候補は「直前の選択」を優先し、直近が child 自身なら候補UUIDをフォールバックする
-        parent = wm.last_selected_window
-        if parent is child:
-            candidate_uuid = self._attach_parent_candidate_uuid
-            if candidate_uuid:
-                parent = wm.find_window_by_uuid(candidate_uuid)
-        if parent is None or parent is child:
+        parent = self._resolve_attach_parent(child)
+        if parent is None:
             wm.sig_status_message.emit(tr("layer_msg_select_parent_first"))
+            return
+        if parent is child:
+            wm.sig_status_message.emit(tr("layer_msg_attach_self_forbidden"))
             return
 
         try:
             wm.attach_layer(parent, child)
             parent_uuid = getattr(parent, "uuid", None)
             if parent_uuid:
+                self._explicit_parent_uuid = parent_uuid
                 self._attach_parent_candidate_uuid = parent_uuid
+            wm.sig_status_message.emit(
+                tr("layer_msg_attached_parent_child").format(
+                    parent=_window_label(parent),
+                    child=_window_label(child),
+                )
+            )
         except Exception as e:
             logger.warning("attach_layer failed: %s", e)
             wm.sig_status_message.emit(str(e))
@@ -356,6 +481,7 @@ class LayerTab(QWidget):
             return
 
         wm.detach_layer(child)
+        wm.sig_status_message.emit(tr("layer_msg_detached_child").format(child=_window_label(child)))
 
     def _on_move_up(self) -> None:
         """同階層内で1つ上（layer_order -1）に移動する。"""
@@ -385,12 +511,10 @@ class LayerTab(QWidget):
         if parent is None:
             return
 
-        # 兄弟リストを layer_order でソート
         siblings = sorted(
             parent.child_windows,
             key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
         )
-
         idx = next((i for i, s in enumerate(siblings) if s.uuid == child_uuid), None)
         if idx is None:
             return
@@ -399,15 +523,83 @@ class LayerTab(QWidget):
         if new_idx < 0 or new_idx >= len(siblings):
             return
 
-        # 隣と入れ替え
         siblings[idx], siblings[new_idx] = siblings[new_idx], siblings[idx]
         for order, sibling in enumerate(siblings):
             sibling.config.layer_order = order
         try:
-            parent.child_windows.sort(key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0)
+            parent.child_windows[:] = siblings
         except Exception:
             pass
 
-        # Z-order 更新 + ツリー再構築
         wm.raise_group_stack(parent)
         wm.sig_layer_structure_changed.emit()
+
+    # ==========================================
+    # Drag & Drop 補助導線
+    # ==========================================
+
+    def _apply_tree_drop_relation(self, source_uuid: str, target_uuid: str) -> bool:
+        """D&D結果を attach/reorder のドメイン操作に変換する。"""
+        wm = self.mw.window_manager
+        source = wm.find_window_by_uuid(source_uuid)
+        target = wm.find_window_by_uuid(target_uuid)
+        if source is None or target is None or source is target:
+            return False
+
+        source_parent_uuid = getattr(source, "parent_window_uuid", None)
+        target_parent_uuid = getattr(target, "parent_window_uuid", None)
+
+        # 同一親配下の sibling ドロップは並び替え
+        if source_parent_uuid and source_parent_uuid == target_parent_uuid:
+            parent = wm.find_window_by_uuid(source_parent_uuid)
+            if parent is None:
+                return False
+            return self._reorder_by_drop_target(parent, source, target)
+
+        # それ以外は「target を親として attach」
+        try:
+            wm.attach_layer(target, source)
+            self._explicit_parent_uuid = getattr(target, "uuid", None)
+            self._attach_parent_candidate_uuid = self._explicit_parent_uuid
+            wm.sig_status_message.emit(
+                tr("layer_msg_attached_parent_child").format(
+                    parent=_window_label(target),
+                    child=_window_label(source),
+                )
+            )
+            return True
+        except Exception as e:
+            logger.warning("drop attach failed: %s", e)
+            wm.sig_status_message.emit(str(e))
+            return False
+
+    def _reorder_by_drop_target(self, parent: Any, source: Any, target: Any) -> bool:
+        siblings = sorted(
+            parent.child_windows,
+            key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
+        )
+        if source not in siblings or target not in siblings or source is target:
+            return False
+
+        siblings.remove(source)
+        target_index = siblings.index(target)
+        siblings.insert(target_index, source)
+
+        for order, sibling in enumerate(siblings):
+            sibling.config.layer_order = order
+
+        try:
+            parent.child_windows[:] = siblings
+        except Exception:
+            pass
+
+        wm = self.mw.window_manager
+        wm.raise_group_stack(parent)
+        wm.sig_layer_structure_changed.emit()
+        wm.sig_status_message.emit(
+            tr("layer_msg_reordered_child").format(
+                parent=_window_label(parent),
+                child=_window_label(source),
+            )
+        )
+        return True

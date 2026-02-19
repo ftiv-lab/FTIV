@@ -148,3 +148,14 @@ If you are new to the repository or switching environments, start here.
 - `uv run pytest tests/test_performance_smoke.py -q -p no:cacheprovider`
 4. Final integrated verification:
 - `cmd /c verify_all.bat`
+
+### 11.5 Layer Attach UX (Parent Slot Contract)
+
+1. Layer operations are completed in LayerTab without adding shortcuts.
+2. Recommended flow:
+- Select or focus the parent candidate in LayerTab, then click `Set Parent`.
+- Select the child window in tree, then click `Make Child`.
+- Use `Detach` to make child independent again.
+3. Drag & Drop in LayerTab is a secondary route:
+- Drop child onto another parent item => attach.
+- Drop within same parent siblings => reorder.
