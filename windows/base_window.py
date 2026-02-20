@@ -68,6 +68,7 @@ class BaseOverlayWindow(QLabel):
         self.child_windows: List["BaseOverlayWindow"] = []
         self.connected_lines: List[Any] = []
         self.is_selected: bool = False
+        self._layer_hover_preview: bool = False
         self.is_dragging: bool = False
         self.last_mouse_pos: Optional[QPoint] = None
         self._drag_start_pos_global: Optional[QPoint] = None
@@ -284,6 +285,14 @@ class BaseOverlayWindow(QLabel):
         self.is_selected = selected
         self.update()
 
+    def set_layer_hover_preview(self, enabled: bool) -> None:
+        """LayerTab ホバーに応じた一時プレビュー枠の表示を切り替える。"""
+        enabled = bool(enabled)
+        if self._layer_hover_preview == enabled:
+            return
+        self._layer_hover_preview = enabled
+        self.update()
+
     def draw_selection_frame(self, painter: QPainter) -> None:
         """
         選択中のハイライト枠を描画します。
@@ -291,7 +300,8 @@ class BaseOverlayWindow(QLabel):
         Args:
             painter (QPainter): 描画に使用するペインター。
         """
-        if not self.is_selected:
+        is_hover_preview = bool(getattr(self, "_layer_hover_preview", False))
+        if not self.is_selected and not is_hover_preview:
             return
 
         # MainWindow 側の設定を参照（無ければデフォルト）
@@ -314,14 +324,24 @@ class BaseOverlayWindow(QLabel):
 
         try:
             painter.save()
-            pen = QPen(QColor(color_str))
-            pen.setWidth(max(1, int(width)))
-            pen.setJoinStyle(Qt.RoundJoin)
-            painter.setPen(pen)
             painter.setBrush(QColor(0, 0, 0, 0))
 
-            rect = self.rect().adjusted(2, 2, -2, -2)
-            painter.drawRoundedRect(rect, 5, 5)
+            if self.is_selected:
+                pen = QPen(QColor(color_str))
+                pen.setWidth(max(1, int(width)))
+                pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(pen)
+                rect = self.rect().adjusted(2, 2, -2, -2)
+                painter.drawRoundedRect(rect, 5, 5)
+
+            if is_hover_preview:
+                sonar_pen = QPen(QColor("#66FFC107"))
+                sonar_pen.setWidth(max(1, int(width // 2) + 1))
+                sonar_pen.setStyle(Qt.PenStyle.DashLine)
+                sonar_pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(sonar_pen)
+                sonar_rect = self.rect().adjusted(5, 5, -5, -5)
+                painter.drawRoundedRect(sonar_rect, 4, 4)
             painter.restore()
         except Exception:
             # 描画で落とさない

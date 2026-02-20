@@ -157,11 +157,13 @@ If you are new to the repository or switching environments, start here.
 - Select the child window in tree, then click `Make Child`.
 - Use `Detach` to make child independent again.
 3. Drag & Drop in LayerTab is a secondary route:
-- Drop child onto another parent item => attach.
-- Drop within same parent siblings => reorder.
- - Drop outside valid item target => ignored (UI-only reorder fallback is blocked to prevent model/UI mismatch).
+- Drop on item => attach (make child).
+- Drop between items => reorder within siblings.
+- Drop on viewport empty area => detach (if currently attached).
+4. Sonar Hover (MVP):
+- Hovering a Layer item briefly highlights the corresponding window subtree on canvas.
 4. Undo contract:
- - Attach / Detach / Reorder are all undoable (`Ctrl+Z`).
- - Reorder from both button route and D&D route is recorded in undo stack.
+  - Attach / Detach / Reorder are all undoable (`Ctrl+Z`).
+  - Reorder from both button route and D&D route is recorded in undo stack.
 5. Context menu routing:
 - If right-click lands on MainWindow but the cursor is over the currently selected overlay window, FTIV forwards the menu to that selected window (useful in click-through scenarios).

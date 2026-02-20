@@ -245,3 +245,67 @@ def test_tree_context_menu_falls_back_to_main_menu_when_no_item():
     tab._on_tree_context_menu(QPoint(5, 6))
 
     assert tab.mw.main_context_calls
+
+
+def test_button_states_follow_parent_slot_and_selection_state_machine():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+
+    # 初期状態: 選択なし
+    assert tab.btn_attach.isEnabled() is False
+    assert tab.btn_detach.isEnabled() is False
+    assert tab.btn_up.isEnabled() is False
+    assert tab.btn_down.isEnabled() is False
+
+    # 子を選択しても、親候補がない限り attach は無効
+    child_item = tab._uuid_to_item[child.uuid]
+    tab.tree.setCurrentItem(child_item)
+    tab._on_tree_selection_changed()
+    assert wm.last_selected_window is child
+    assert tab.btn_attach.isEnabled() is False
+    assert tab.btn_detach.isEnabled() is False
+    assert tab.btn_up.isEnabled() is True
+    assert tab.btn_down.isEnabled() is True
+
+    # 親候補を設定すると attach 有効
+    tab._explicit_parent_uuid = parent.uuid
+    tab._refresh_parent_slot_ui()
+    assert tab.btn_attach.isEnabled() is True
+
+    # 親自身を選んだときは self-attach 防止で無効
+    parent_item = tab._uuid_to_item[parent.uuid]
+    tab.tree.setCurrentItem(parent_item)
+    tab._on_tree_selection_changed()
+    assert tab.btn_attach.isEnabled() is False
+
+
+def test_detach_button_enabled_only_when_selected_item_has_parent():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+    wm.attach_layer(parent, child)
+    tab.rebuild()
+
+    child_item = tab._uuid_to_item[child.uuid]
+    tab.tree.setCurrentItem(child_item)
+    tab._on_tree_selection_changed()
+    assert tab.btn_detach.isEnabled() is True
+
+    parent_item = tab._uuid_to_item[parent.uuid]
+    tab.tree.setCurrentItem(parent_item)
+    tab._on_tree_selection_changed()
+    assert tab.btn_detach.isEnabled() is False
+
+
+def test_sonar_hover_previews_subtree_and_clears():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+    wm.attach_layer(parent, child)
+    tab.rebuild()
+
+    parent_item = tab._uuid_to_item[parent.uuid]
+    tab._on_tree_item_entered(parent_item, 0)
+
+    assert bool(getattr(parent, "_layer_hover_preview", False)) is True
+    assert bool(getattr(child, "_layer_hover_preview", False)) is True
+
+    tab._clear_hover_preview()
+
+    assert bool(getattr(parent, "_layer_hover_preview", False)) is False
+    assert bool(getattr(child, "_layer_hover_preview", False)) is False

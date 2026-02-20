@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QAbstractItemView
 
 from ui.tabs.layer_tab import LayerTab
 
@@ -29,10 +30,11 @@ class _DummyWindow:
 
 
 class _DummyWindowManager:
-    def __init__(self, windows: list[_DummyWindow]) -> None:
+    def __init__(self, windows: list[_DummyWindow], *, fail_attach: bool = False) -> None:
         self.text_windows = list(windows)
         self.image_windows = []
         self.last_selected_window = None
+        self._fail_attach = fail_attach
         self.sig_layer_structure_changed = _DummySignal()
         self.sig_selection_changed = _DummySignal()
         self.sig_status_message = _DummySignal()
@@ -50,10 +52,27 @@ class _DummyWindowManager:
         self.sig_selection_changed.emit(window)
 
     def attach_layer(self, parent, child) -> None:
-        raise RuntimeError("attach failed")
+        if self._fail_attach:
+            raise RuntimeError("attach failed")
+        if child.parent_window_uuid:
+            old_parent = self.find_window_by_uuid(child.parent_window_uuid)
+            if old_parent and child in old_parent.child_windows:
+                old_parent.child_windows.remove(child)
+        child.parent_window_uuid = parent.uuid
+        if child not in parent.child_windows:
+            parent.child_windows.append(child)
+        for idx, sibling in enumerate(parent.child_windows):
+            sibling.config.layer_order = idx
+        self.sig_layer_structure_changed.emit()
 
     def detach_layer(self, child) -> None:
-        _ = child
+        parent_uuid = child.parent_window_uuid
+        parent = self.find_window_by_uuid(parent_uuid) if parent_uuid else None
+        if parent and child in parent.child_windows:
+            parent.child_windows.remove(child)
+        child.parent_window_uuid = None
+        child.config.layer_order = None
+        self.sig_layer_structure_changed.emit()
 
     def raise_group_stack(self, parent) -> None:
         _ = parent
@@ -100,7 +119,7 @@ def test_drop_relation_returns_false_for_same_source_and_target():
 def test_drop_relation_attach_error_is_reported_and_false():
     source = _DummyWindow("source")
     target = _DummyWindow("target")
-    wm = _DummyWindowManager([source, target])
+    wm = _DummyWindowManager([source, target], fail_attach=True)
     tab = LayerTab(_DummyMainWindow(wm))
     tab.rebuild()
 
@@ -120,6 +139,7 @@ def test_drop_event_gap_ignores_default_qt_fallback():
     source_item = tab._uuid_to_item[source.uuid]
     tab.tree.setCurrentItem(source_item)
     tab.tree.itemAt = lambda _pos: None
+    tab.tree.dropIndicatorPosition = lambda: QAbstractItemView.DropIndicatorPosition.OnItem
 
     called = {"value": False}
 
@@ -135,3 +155,67 @@ def test_drop_event_gap_ignores_default_qt_fallback():
     assert called["value"] is False
     assert event.ignored is True
     assert event.accepted is False
+
+
+def test_drop_event_on_viewport_detaches_attached_child():
+    parent = _DummyWindow("parent")
+    child = _DummyWindow("child", parent_window_uuid=parent.uuid, layer_order=0)
+    parent.child_windows.append(child)
+    wm = _DummyWindowManager([parent, child])
+    tab = LayerTab(_DummyMainWindow(wm))
+    tab.rebuild()
+
+    child_item = tab._uuid_to_item[child.uuid]
+    tab.tree.setCurrentItem(child_item)
+    tab.tree.itemAt = lambda _pos: None
+    tab.tree.dropIndicatorPosition = lambda: QAbstractItemView.DropIndicatorPosition.OnViewport
+
+    event = _DummyDropEvent(QPoint(9999, 9999))
+    tab.tree.dropEvent(event)
+
+    assert child.parent_window_uuid is None
+    assert event.accepted is True
+    assert event.ignored is False
+
+
+def test_drop_event_on_item_attaches_child_to_target():
+    source = _DummyWindow("source")
+    target = _DummyWindow("target")
+    wm = _DummyWindowManager([source, target])
+    tab = LayerTab(_DummyMainWindow(wm))
+    tab.rebuild()
+
+    source_item = tab._uuid_to_item[source.uuid]
+    target_item = tab._uuid_to_item[target.uuid]
+    tab.tree.setCurrentItem(source_item)
+    tab.tree.itemAt = lambda _pos: target_item
+    tab.tree.dropIndicatorPosition = lambda: QAbstractItemView.DropIndicatorPosition.OnItem
+
+    event = _DummyDropEvent(QPoint(1, 1))
+    tab.tree.dropEvent(event)
+
+    assert source.parent_window_uuid == target.uuid
+    assert event.accepted is True
+
+
+def test_drop_event_between_items_reorders_with_drop_position():
+    parent = _DummyWindow("parent")
+    c1 = _DummyWindow("c1", parent_window_uuid=parent.uuid, layer_order=0)
+    c2 = _DummyWindow("c2", parent_window_uuid=parent.uuid, layer_order=1)
+    parent.child_windows = [c1, c2]
+    wm = _DummyWindowManager([parent, c1, c2])
+    tab = LayerTab(_DummyMainWindow(wm))
+    tab.rebuild()
+
+    source_item = tab._uuid_to_item[c1.uuid]
+    target_item = tab._uuid_to_item[c2.uuid]
+    tab.tree.setCurrentItem(source_item)
+    tab.tree.itemAt = lambda _pos: target_item
+    tab.tree.dropIndicatorPosition = lambda: QAbstractItemView.DropIndicatorPosition.BelowItem
+
+    event = _DummyDropEvent(QPoint(1, 1))
+    tab.tree.dropEvent(event)
+
+    assert parent.child_windows[0].uuid == "c2"
+    assert parent.child_windows[1].uuid == "c1"
+    assert event.accepted is True

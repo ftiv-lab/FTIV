@@ -13,9 +13,10 @@ Attach / Detach / Move Up / Move Down 操作を提供する。
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING, Any, Optional
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -80,6 +81,26 @@ def _window_label(window: Any, *, is_parent_slot: bool = False) -> str:
         return "?"
 
 
+def _window_accessible_label(window: Any, *, is_parent_slot: bool = False) -> str:
+    """スクリーンリーダー向けの説明文を生成する。"""
+    try:
+        base = _window_label(window, is_parent_slot=False)
+        states: list[str] = []
+        if is_parent_slot:
+            states.append(tr("layer_badge_parent_meaning"))
+        if getattr(window, "is_hidden", False):
+            states.append(tr("layer_badge_hidden_meaning"))
+        if getattr(window, "is_locked", False):
+            states.append(tr("layer_badge_locked_meaning"))
+        if getattr(window, "is_frontmost", False):
+            states.append(tr("layer_badge_front_meaning"))
+        if not states:
+            return base
+        return f"{base} ({', '.join(states)})"
+    except Exception:
+        return _window_label(window, is_parent_slot=is_parent_slot)
+
+
 class _LayerTreeWidget(QTreeWidget):
     """Layerタブ専用ツリー。
 
@@ -94,21 +115,53 @@ class _LayerTreeWidget(QTreeWidget):
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
 
     def dropEvent(self, event: Any) -> None:
         source_item = self.currentItem()
-        target_item = None
+        if source_item is None:
+            event.ignore()
+            return
+
+        source_uuid = source_item.data(0, Qt.ItemDataRole.UserRole)
+        if not source_uuid:
+            event.ignore()
+            return
+
         try:
             pos = event.position().toPoint() if hasattr(event, "position") else event.pos()
             target_item = self.itemAt(pos)
         except Exception:
             target_item = None
 
-        if source_item is not None and target_item is not None:
-            source_uuid = source_item.data(0, Qt.ItemDataRole.UserRole)
+        indicator = self.dropIndicatorPosition()
+
+        # Viewport へドロップ: 既存の親から切り離す（Detach）
+        if indicator == QAbstractItemView.DropIndicatorPosition.OnViewport:
+            handled = self._owner._apply_tree_drop_detach_from_viewport(str(source_uuid))
+            if handled:
+                event.accept()
+            else:
+                event.ignore()
+            return
+
+        if target_item is not None:
             target_uuid = target_item.data(0, Qt.ItemDataRole.UserRole)
             if source_uuid and target_uuid and source_uuid != target_uuid:
-                if self._owner._apply_tree_drop_relation(str(source_uuid), str(target_uuid)):
+                source_uuid_s = str(source_uuid)
+                target_uuid_s = str(target_uuid)
+                handled = False
+                if indicator == QAbstractItemView.DropIndicatorPosition.OnItem:
+                    handled = self._owner._apply_tree_drop_attach(source_uuid_s, target_uuid_s)
+                elif indicator == QAbstractItemView.DropIndicatorPosition.AboveItem:
+                    handled = self._owner._apply_tree_drop_reorder(source_uuid_s, target_uuid_s, drop_after=False)
+                elif indicator == QAbstractItemView.DropIndicatorPosition.BelowItem:
+                    handled = self._owner._apply_tree_drop_reorder(source_uuid_s, target_uuid_s, drop_after=True)
+                else:
+                    handled = self._owner._apply_tree_drop_relation(source_uuid_s, target_uuid_s)
+
+                if handled:
                     event.accept()
                     return
 
@@ -131,9 +184,15 @@ class LayerTab(QWidget):
         super().__init__()
         self.mw = main_window
         self._rebuilding = False
+        self._rebuild_scheduled = False
         self._uuid_to_item: dict[str, QTreeWidgetItem] = {}
         # Attach時の明示親（最優先）
         self._explicit_parent_uuid: Optional[str] = None
+        # Sonar Hover 用の一時ハイライト状態
+        self._hover_preview_uuids: set[str] = set()
+        self._sonar_clear_timer = QTimer(self)
+        self._sonar_clear_timer.setSingleShot(True)
+        self._sonar_clear_timer.timeout.connect(self._clear_hover_preview)
         self._setup_ui()
         self._connect_signals()
 
@@ -183,6 +242,7 @@ class LayerTab(QWidget):
         self.tree.setToolTip(tr("layer_tooltip_tree_dnd"))
         self.tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.tree.itemEntered.connect(self._on_tree_item_entered)
         self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
         layout.addWidget(self.tree, 1)
 
@@ -216,7 +276,7 @@ class LayerTab(QWidget):
         self.btn_refresh.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.btn_refresh.setToolTip(tr("layer_tooltip_refresh"))
         self.btn_refresh.setFixedWidth(32)
-        self.btn_refresh.clicked.connect(self.rebuild)
+        self.btn_refresh.clicked.connect(self._schedule_rebuild)
 
         btn_row.addWidget(self.btn_attach)
         btn_row.addWidget(self.btn_detach)
@@ -230,13 +290,14 @@ class LayerTab(QWidget):
         # --- ヒントテキスト ---
         self.lbl_hint = QLabel(tr("layer_hint"))
         self.lbl_hint.setWordWrap(True)
-        self.lbl_hint.setStyleSheet("color: gray; font-size: 10px;")
+        self.lbl_hint.setStyleSheet("color: #595959; font-size: 10px;")
         layout.addWidget(self.lbl_hint)
+        self._update_button_states()
 
     def showEvent(self, event: Any) -> None:
         """タブが表示されるたびにツリーを最新状態に更新する。"""
         super().showEvent(event)
-        self.rebuild()
+        self._schedule_rebuild()
 
     def refresh_ui(self) -> None:
         """言語切替時に LayerTab 内の文言を再適用する。"""
@@ -257,16 +318,33 @@ class LayerTab(QWidget):
         self.btn_refresh.setToolTip(tr("layer_tooltip_refresh"))
         self.lbl_hint.setText(tr("layer_hint"))
         self.tree.setToolTip(tr("layer_tooltip_tree_dnd"))
-        self.rebuild()
+        self._schedule_rebuild()
 
     def _connect_signals(self) -> None:
         """WindowManager シグナルを接続する。"""
         try:
             wm = self.mw.window_manager
-            wm.sig_layer_structure_changed.connect(self.rebuild)
+            wm.sig_layer_structure_changed.connect(self._schedule_rebuild)
             wm.sig_selection_changed.connect(self._on_canvas_selection_changed)
         except AttributeError:
             logger.debug("LayerTab: WindowManager シグナル接続スキップ（テスト環境）")
+
+    def _schedule_rebuild(self) -> None:
+        """多重 rebuild を1回に合流する。テスト時は同期実行。"""
+        if self._rebuilding:
+            return
+        if os.getenv("FTIV_TEST_MODE") == "1":
+            self._rebuild_scheduled = False
+            self.rebuild()
+            return
+        if self._rebuild_scheduled:
+            return
+        self._rebuild_scheduled = True
+        QTimer.singleShot(0, self._run_scheduled_rebuild)
+
+    def _run_scheduled_rebuild(self) -> None:
+        self._rebuild_scheduled = False
+        self.rebuild()
 
     # ==========================================
     # Public: ツリー再構築
@@ -300,6 +378,7 @@ class LayerTab(QWidget):
 
             self.tree.expandAll()
             self._refresh_parent_slot_ui()
+            self._update_button_states()
         except Exception:
             logger.exception("LayerTab.rebuild() failed")
         finally:
@@ -326,6 +405,10 @@ class LayerTab(QWidget):
         is_parent_slot = bool(self._explicit_parent_uuid and window.uuid == self._explicit_parent_uuid)
         item = QTreeWidgetItem([_window_label(window, is_parent_slot=is_parent_slot)])
         item.setData(0, Qt.ItemDataRole.UserRole, window.uuid)
+        item.setData(
+            0, Qt.ItemDataRole.AccessibleTextRole, _window_accessible_label(window, is_parent_slot=is_parent_slot)
+        )
+        item.setToolTip(0, _window_accessible_label(window, is_parent_slot=is_parent_slot))
         if is_parent_slot:
             font = item.font(0)
             font.setBold(True)
@@ -371,6 +454,7 @@ class LayerTab(QWidget):
                     wm.last_selected_window = window
             except Exception:
                 pass
+        self._update_button_states()
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
         """ダブルクリックで対応 Window を選択状態にする。"""
@@ -436,8 +520,26 @@ class LayerTab(QWidget):
         parent = wm.find_window_by_uuid(self._explicit_parent_uuid) if self._explicit_parent_uuid else None
         if parent is None:
             self.lbl_parent_slot_value.setText(tr("layer_parent_slot_empty"))
+            self._update_button_states()
             return
         self.lbl_parent_slot_value.setText(_window_label(parent, is_parent_slot=True))
+        self._update_button_states()
+
+    def _update_button_states(self) -> None:
+        selected_uuid = self._selected_uuid()
+        has_selected = bool(selected_uuid)
+        has_parent_slot = bool(self._explicit_parent_uuid)
+        can_attach = has_selected and has_parent_slot and selected_uuid != self._explicit_parent_uuid
+
+        can_detach = False
+        if has_selected:
+            window = self.mw.window_manager.find_window_by_uuid(str(selected_uuid))
+            can_detach = bool(window and getattr(window, "parent_window_uuid", None))
+
+        self.btn_attach.setEnabled(bool(can_attach))
+        self.btn_detach.setEnabled(bool(can_detach))
+        self.btn_up.setEnabled(bool(has_selected))
+        self.btn_down.setEnabled(bool(has_selected))
 
     def _on_set_parent(self) -> None:
         wm = self.mw.window_manager
@@ -450,12 +552,14 @@ class LayerTab(QWidget):
             return
 
         self._explicit_parent_uuid = getattr(parent, "uuid", None)
-        self.rebuild()
+        self._refresh_parent_slot_ui()
+        self._schedule_rebuild()
         wm.sig_status_message.emit(tr("layer_msg_parent_slot_set").format(parent=_window_label(parent)))
 
     def _on_clear_parent(self) -> None:
         self._explicit_parent_uuid = None
-        self.rebuild()
+        self._refresh_parent_slot_ui()
+        self._schedule_rebuild()
         self.mw.window_manager.sig_status_message.emit(tr("layer_msg_parent_slot_cleared"))
 
     # ==========================================
@@ -479,7 +583,7 @@ class LayerTab(QWidget):
         explicit = wm.find_window_by_uuid(self._explicit_parent_uuid)
         if explicit is None:
             self._explicit_parent_uuid = None
-            self.rebuild()
+            self._schedule_rebuild()
             return None
         return explicit
 
@@ -538,6 +642,7 @@ class LayerTab(QWidget):
         except Exception:
             pass
         wm.sig_status_message.emit(tr("layer_msg_detached_child").format(child=_window_label(child)))
+        self._update_button_states()
 
     def _on_move_up(self) -> None:
         """同階層内で前面方向（layer_order +1）に移動する。"""
@@ -599,14 +704,21 @@ class LayerTab(QWidget):
         source_parent_uuid = getattr(source, "parent_window_uuid", None)
         target_parent_uuid = getattr(target, "parent_window_uuid", None)
 
-        # 同一親配下の sibling ドロップは並び替え
+        # 旧導線互換: 同一親配下は並び替え、それ以外は attach
         if source_parent_uuid and source_parent_uuid == target_parent_uuid:
             parent = wm.find_window_by_uuid(source_parent_uuid)
             if parent is None:
                 return False
-            return self._reorder_by_drop_target(parent, source, target)
+            return self._reorder_by_drop_target(parent, source, target, drop_after=False)
+        return self._apply_tree_drop_attach(source_uuid, target_uuid)
 
-        # それ以外は「target を親として attach」
+    def _apply_tree_drop_attach(self, source_uuid: str, target_uuid: str) -> bool:
+        wm = self.mw.window_manager
+        source = wm.find_window_by_uuid(source_uuid)
+        target = wm.find_window_by_uuid(target_uuid)
+        if source is None or target is None or source is target:
+            return False
+
         try:
             wm.attach_layer(target, source)
             self._explicit_parent_uuid = getattr(target, "uuid", None)
@@ -616,13 +728,54 @@ class LayerTab(QWidget):
                     child=_window_label(source),
                 )
             )
+            self._update_button_states()
             return True
         except Exception as e:
             logger.warning("drop attach failed: %s", e)
             wm.sig_status_message.emit(str(e))
             return False
 
-    def _reorder_by_drop_target(self, parent: Any, source: Any, target: Any) -> bool:
+    def _apply_tree_drop_reorder(self, source_uuid: str, target_uuid: str, *, drop_after: bool) -> bool:
+        wm = self.mw.window_manager
+        source = wm.find_window_by_uuid(source_uuid)
+        target = wm.find_window_by_uuid(target_uuid)
+        if source is None or target is None or source is target:
+            return False
+
+        source_parent_uuid = getattr(source, "parent_window_uuid", None)
+        target_parent_uuid = getattr(target, "parent_window_uuid", None)
+
+        # 同一親配下の sibling ドロップは並び替え
+        if source_parent_uuid and source_parent_uuid == target_parent_uuid:
+            parent = wm.find_window_by_uuid(source_parent_uuid)
+            if parent is None:
+                return False
+            return self._reorder_by_drop_target(parent, source, target, drop_after=drop_after)
+        return False
+
+    def _apply_tree_drop_detach_from_viewport(self, source_uuid: str) -> bool:
+        """Viewport へドロップした場合は、親子関係を解除する。"""
+        wm = self.mw.window_manager
+        source = wm.find_window_by_uuid(source_uuid)
+        if source is None:
+            return False
+        if not getattr(source, "parent_window_uuid", None):
+            return False
+        try:
+            wm.detach_layer(source)
+            try:
+                wm.set_selected_window(source)
+            except Exception:
+                pass
+            wm.sig_status_message.emit(tr("layer_msg_detached_child").format(child=_window_label(source)))
+            self._update_button_states()
+            return True
+        except Exception as e:
+            logger.warning("drop detach failed: %s", e)
+            wm.sig_status_message.emit(str(e))
+            return False
+
+    def _reorder_by_drop_target(self, parent: Any, source: Any, target: Any, *, drop_after: bool = False) -> bool:
         siblings = sorted(
             parent.child_windows,
             key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
@@ -633,7 +786,12 @@ class LayerTab(QWidget):
         before_order = [s.uuid for s in siblings]
         siblings.remove(source)
         target_index = siblings.index(target)
-        siblings.insert(target_index, source)
+        insert_index = target_index + (1 if drop_after else 0)
+        if insert_index < 0:
+            insert_index = 0
+        if insert_index > len(siblings):
+            insert_index = len(siblings)
+        siblings.insert(insert_index, source)
         after_order = [s.uuid for s in siblings]
         if not self._commit_reorder(parent, before_order, after_order):
             return False
@@ -697,3 +855,61 @@ class LayerTab(QWidget):
         wm.raise_group_stack(parent)
         wm.sig_layer_structure_changed.emit()
         return True
+
+    # ==========================================
+    # Sonar Hover（MVP）
+    # ==========================================
+
+    def _on_tree_item_entered(self, item: QTreeWidgetItem, _column: int) -> None:
+        uuid = item.data(0, Qt.ItemDataRole.UserRole)
+        if not uuid:
+            return
+        self._preview_subtree(str(uuid))
+
+    def _preview_subtree(self, root_uuid: str) -> None:
+        self._clear_hover_preview()
+        wm = self.mw.window_manager
+        root = wm.find_window_by_uuid(root_uuid)
+        if root is None:
+            return
+
+        windows: list[Any] = []
+
+        def _walk(node: Any) -> None:
+            windows.append(node)
+            for child in list(getattr(node, "child_windows", [])):
+                _walk(child)
+
+        _walk(root)
+        for window in windows:
+            self._set_hover_preview(window, enabled=True)
+            try:
+                self._hover_preview_uuids.add(str(getattr(window, "uuid", "")))
+            except Exception:
+                pass
+
+        # 連続ホバー時は都度リセットして短時間だけ可視化する。
+        self._sonar_clear_timer.stop()
+        self._sonar_clear_timer.start(450)
+
+    def _clear_hover_preview(self) -> None:
+        if not self._hover_preview_uuids:
+            return
+        wm = self.mw.window_manager
+        for uuid in list(self._hover_preview_uuids):
+            window = wm.find_window_by_uuid(uuid)
+            if window is not None:
+                self._set_hover_preview(window, enabled=False)
+        self._hover_preview_uuids.clear()
+
+    @staticmethod
+    def _set_hover_preview(window: Any, *, enabled: bool) -> None:
+        try:
+            if hasattr(window, "set_layer_hover_preview"):
+                window.set_layer_hover_preview(bool(enabled))
+            else:
+                setattr(window, "_layer_hover_preview", bool(enabled))
+                if hasattr(window, "update"):
+                    window.update()
+        except Exception:
+            logger.debug("hover preview toggle failed", exc_info=True)
