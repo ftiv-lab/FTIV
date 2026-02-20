@@ -4,6 +4,7 @@ from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QAbstractItemView
 
 from ui.tabs.layer_tab import LayerTab
+from utils.translator import tr
 
 
 class _DummySignal:
@@ -219,3 +220,36 @@ def test_drop_event_between_items_reorders_with_drop_position():
     assert parent.child_windows[0].uuid == "c2"
     assert parent.child_windows[1].uuid == "c1"
     assert event.accepted is True
+
+
+def test_drag_feedback_messages_follow_drop_indicator():
+    source = _DummyWindow("source")
+    target = _DummyWindow("target")
+    wm = _DummyWindowManager([source, target])
+    tab = LayerTab(_DummyMainWindow(wm))
+    tab.rebuild()
+
+    tab._update_drag_feedback_for_indicator(QAbstractItemView.DropIndicatorPosition.OnItem)
+    assert wm.status_messages[-1] == tr("layer_msg_drag_attach_preview")
+
+    tab._update_drag_feedback_for_indicator(QAbstractItemView.DropIndicatorPosition.AboveItem)
+    assert wm.status_messages[-1] == tr("layer_msg_drag_reorder_preview")
+
+    tab._update_drag_feedback_for_indicator(QAbstractItemView.DropIndicatorPosition.OnViewport)
+    assert wm.status_messages[-1] == tr("layer_msg_drag_detach_preview")
+
+
+def test_drag_feedback_dedupes_same_message_until_reset():
+    source = _DummyWindow("source")
+    target = _DummyWindow("target")
+    wm = _DummyWindowManager([source, target])
+    tab = LayerTab(_DummyMainWindow(wm))
+    tab.rebuild()
+
+    tab._update_drag_feedback_for_indicator(QAbstractItemView.DropIndicatorPosition.OnItem)
+    tab._update_drag_feedback_for_indicator(QAbstractItemView.DropIndicatorPosition.OnItem)
+    assert wm.status_messages.count(tr("layer_msg_drag_attach_preview")) == 1
+
+    tab._reset_drag_intent_feedback()
+    tab._update_drag_feedback_for_indicator(QAbstractItemView.DropIndicatorPosition.OnItem)
+    assert wm.status_messages.count(tr("layer_msg_drag_attach_preview")) == 2

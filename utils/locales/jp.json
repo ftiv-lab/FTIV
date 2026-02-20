@@ -853,6 +853,9 @@
     "layer_msg_detached_child": "{child} を独立させました",
     "layer_msg_attach_self_forbidden": "同じウィンドウを親子にはできません",
     "layer_msg_reordered_child": "親: {parent} 内で {child} の順序を変更しました",
+    "layer_msg_drag_attach_preview": "ドロップで「子にする」",
+    "layer_msg_drag_reorder_preview": "ドロップで「順序変更」",
+    "layer_msg_drag_detach_preview": "ドロップで「独立させる」",
     "menu_layer_ops": "レイヤー操作",
     "menu_layer_attach": "子にする",
     "menu_layer_detach": "独立させる"

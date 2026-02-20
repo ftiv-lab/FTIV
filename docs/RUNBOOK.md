@@ -161,9 +161,16 @@ If you are new to the repository or switching environments, start here.
 - Drop between items => reorder within siblings.
 - Drop on viewport empty area => detach (if currently attached).
 4. Sonar Hover (MVP):
-- Hovering a Layer item briefly highlights the corresponding window subtree on canvas.
-4. Undo contract:
+- Hovering **or selecting** a Layer item briefly highlights the corresponding window subtree on canvas.
+- Runtime sonar duration is `1200ms`.
+- In `FTIV_TEST_MODE=1`, sonar timer uses `0ms` to keep async tests deterministic.
+5. D&D intent feedback:
+- During drag move, status message previews intent:
+  - on item = attach
+  - between items = reorder
+  - empty viewport = detach
+6. Undo contract:
   - Attach / Detach / Reorder are all undoable (`Ctrl+Z`).
   - Reorder from both button route and D&D route is recorded in undo stack.
-5. Context menu routing:
+7. Context menu routing:
 - If right-click lands on MainWindow but the cursor is over the currently selected overlay window, FTIV forwards the menu to that selected window (useful in click-through scenarios).

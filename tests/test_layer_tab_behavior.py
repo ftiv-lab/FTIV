@@ -309,3 +309,47 @@ def test_sonar_hover_previews_subtree_and_clears():
 
     assert bool(getattr(parent, "_layer_hover_preview", False)) is False
     assert bool(getattr(child, "_layer_hover_preview", False)) is False
+
+
+def test_sonar_selection_previews_subtree_once_for_same_uuid():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+    wm.attach_layer(parent, child)
+    tab.rebuild()
+
+    calls: list[tuple[str, str]] = []
+    original = tab._preview_subtree
+
+    def _spy_preview(root_uuid: str, *, source: str = "hover"):
+        calls.append((root_uuid, source))
+        return original(root_uuid, source=source)
+
+    tab._preview_subtree = _spy_preview  # type: ignore[method-assign]
+
+    parent_item = tab._uuid_to_item[parent.uuid]
+    tab.tree.setCurrentItem(parent_item)
+    tab._on_tree_selection_changed()
+    tab._on_tree_selection_changed()
+
+    assert calls.count((parent.uuid, "selection")) == 1
+    assert bool(getattr(parent, "_layer_hover_preview", False)) is True
+    assert bool(getattr(child, "_layer_hover_preview", False)) is True
+
+
+def test_sonar_timer_default_duration_is_extended(monkeypatch):
+    monkeypatch.setenv("FTIV_TEST_MODE", "0")
+    tab, _wm, parent, _child, _alt_parent = _build_layer_tab()
+    parent_item = tab._uuid_to_item[parent.uuid]
+
+    tab._on_tree_item_entered(parent_item, 0)
+
+    assert tab._sonar_clear_timer.interval() == 1200
+
+
+def test_sonar_timer_uses_test_mode_duration(monkeypatch):
+    monkeypatch.setenv("FTIV_TEST_MODE", "1")
+    tab, _wm, parent, _child, _alt_parent = _build_layer_tab()
+    parent_item = tab._uuid_to_item[parent.uuid]
+
+    tab._on_tree_item_entered(parent_item, 0)
+
+    assert tab._sonar_clear_timer.interval() == 0

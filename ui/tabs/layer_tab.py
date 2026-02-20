@@ -46,6 +46,9 @@ _BADGE_LOCKED = " [L]"
 _BADGE_FRONT = " [F]"
 _BADGE_PARENT = " [P]"
 
+_SONAR_DURATION_MS = 1200
+_SONAR_DURATION_MS_TEST = 0
+
 
 def _window_label(window: Any, *, is_parent_slot: bool = False) -> str:
     """ツリー表示用のラベル文字列を生成する。"""
@@ -118,7 +121,22 @@ class _LayerTreeWidget(QTreeWidget):
         self.setMouseTracking(True)
         self.viewport().setMouseTracking(True)
 
+    def dragMoveEvent(self, event: Any) -> None:
+        super().dragMoveEvent(event)
+        try:
+            self._owner._update_drag_feedback_for_indicator(self.dropIndicatorPosition())
+        except Exception:
+            logger.debug("LayerTab drag feedback update failed", exc_info=True)
+
+    def dragLeaveEvent(self, event: Any) -> None:
+        try:
+            self._owner._reset_drag_intent_feedback()
+        except Exception:
+            logger.debug("LayerTab drag feedback reset failed", exc_info=True)
+        super().dragLeaveEvent(event)
+
     def dropEvent(self, event: Any) -> None:
+        self._owner._reset_drag_intent_feedback()
         source_item = self.currentItem()
         if source_item is None:
             event.ignore()
@@ -190,9 +208,11 @@ class LayerTab(QWidget):
         self._explicit_parent_uuid: Optional[str] = None
         # Sonar Hover 用の一時ハイライト状態
         self._hover_preview_uuids: set[str] = set()
+        self._last_selection_sonar_uuid: Optional[str] = None
         self._sonar_clear_timer = QTimer(self)
         self._sonar_clear_timer.setSingleShot(True)
         self._sonar_clear_timer.timeout.connect(self._clear_hover_preview)
+        self._last_drag_feedback_key: Optional[str] = None
         self._setup_ui()
         self._connect_signals()
 
@@ -425,6 +445,7 @@ class LayerTab(QWidget):
         if self._rebuilding:
             return
         if selected_window is None:
+            self._last_selection_sonar_uuid = None
             self.tree.blockSignals(True)
             self.tree.clearSelection()
             self.tree.blockSignals(False)
@@ -454,6 +475,10 @@ class LayerTab(QWidget):
                     wm.last_selected_window = window
             except Exception:
                 pass
+        uuid_s = str(uuid)
+        if uuid_s and uuid_s != self._last_selection_sonar_uuid:
+            self._preview_subtree(uuid_s, source="selection")
+            self._last_selection_sonar_uuid = uuid_s
         self._update_button_states()
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
@@ -775,6 +800,31 @@ class LayerTab(QWidget):
             wm.sig_status_message.emit(str(e))
             return False
 
+    def _update_drag_feedback_for_indicator(self, indicator: QAbstractItemView.DropIndicatorPosition) -> None:
+        if indicator == QAbstractItemView.DropIndicatorPosition.OnItem:
+            self._emit_drag_feedback("layer_msg_drag_attach_preview")
+            return
+        if indicator in (
+            QAbstractItemView.DropIndicatorPosition.AboveItem,
+            QAbstractItemView.DropIndicatorPosition.BelowItem,
+        ):
+            self._emit_drag_feedback("layer_msg_drag_reorder_preview")
+            return
+        if indicator == QAbstractItemView.DropIndicatorPosition.OnViewport:
+            self._emit_drag_feedback("layer_msg_drag_detach_preview")
+
+    def _emit_drag_feedback(self, message_key: str) -> None:
+        if self._last_drag_feedback_key == message_key:
+            return
+        self._last_drag_feedback_key = message_key
+        try:
+            self.mw.window_manager.sig_status_message.emit(tr(message_key))
+        except Exception:
+            logger.debug("LayerTab drag feedback emit failed", exc_info=True)
+
+    def _reset_drag_intent_feedback(self) -> None:
+        self._last_drag_feedback_key = None
+
     def _reorder_by_drop_target(self, parent: Any, source: Any, target: Any, *, drop_after: bool = False) -> bool:
         siblings = sorted(
             parent.child_windows,
@@ -864,9 +914,10 @@ class LayerTab(QWidget):
         uuid = item.data(0, Qt.ItemDataRole.UserRole)
         if not uuid:
             return
-        self._preview_subtree(str(uuid))
+        self._preview_subtree(str(uuid), source="hover")
 
-    def _preview_subtree(self, root_uuid: str) -> None:
+    def _preview_subtree(self, root_uuid: str, *, source: str = "hover") -> None:
+        _ = source
         self._clear_hover_preview()
         wm = self.mw.window_manager
         root = wm.find_window_by_uuid(root_uuid)
@@ -888,9 +939,13 @@ class LayerTab(QWidget):
             except Exception:
                 pass
 
-        # 連続ホバー時は都度リセットして短時間だけ可視化する。
+        # 連続ホバー/選択時は都度リセットして短時間だけ可視化する。
+        self._arm_sonar_timer()
+
+    def _arm_sonar_timer(self) -> None:
         self._sonar_clear_timer.stop()
-        self._sonar_clear_timer.start(450)
+        timeout_ms = _SONAR_DURATION_MS_TEST if os.getenv("FTIV_TEST_MODE") == "1" else _SONAR_DURATION_MS
+        self._sonar_clear_timer.start(timeout_ms)
 
     def _clear_hover_preview(self) -> None:
         if not self._hover_preview_uuids:

@@ -853,6 +853,9 @@
     "layer_msg_detached_child": "{child} was detached",
     "layer_msg_attach_self_forbidden": "A window cannot be parent/child of itself",
     "layer_msg_reordered_child": "Order changed in {parent}: {child}",
+    "layer_msg_drag_attach_preview": "Drop to make child",
+    "layer_msg_drag_reorder_preview": "Drop to reorder",
+    "layer_msg_drag_detach_preview": "Drop to detach",
     "menu_layer_ops": "Layer Operations",
     "menu_layer_attach": "Make Child",
     "menu_layer_detach": "Detach"

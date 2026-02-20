@@ -301,7 +301,9 @@ class BaseOverlayWindow(QLabel):
             painter (QPainter): 描画に使用するペインター。
         """
         is_hover_preview = bool(getattr(self, "_layer_hover_preview", False))
-        if not self.is_selected and not is_hover_preview:
+        draw_selected_frame = bool(self.is_selected)
+        draw_sonar_frame = bool(is_hover_preview)
+        if not draw_selected_frame and not draw_sonar_frame:
             return
 
         # MainWindow 側の設定を参照（無ければデフォルト）
@@ -319,14 +321,18 @@ class BaseOverlayWindow(QLabel):
         except Exception:
             pass
 
+        # 選択枠OFFは「選択枠のみ」を抑止する。SonarはLayer UX導線なので維持する。
         if not enabled:
+            draw_selected_frame = False
+
+        if not draw_selected_frame and not draw_sonar_frame:
             return
 
         try:
             painter.save()
             painter.setBrush(QColor(0, 0, 0, 0))
 
-            if self.is_selected:
+            if draw_selected_frame:
                 pen = QPen(QColor(color_str))
                 pen.setWidth(max(1, int(width)))
                 pen.setJoinStyle(Qt.RoundJoin)
@@ -334,13 +340,13 @@ class BaseOverlayWindow(QLabel):
                 rect = self.rect().adjusted(2, 2, -2, -2)
                 painter.drawRoundedRect(rect, 5, 5)
 
-            if is_hover_preview:
-                sonar_pen = QPen(QColor("#66FFC107"))
-                sonar_pen.setWidth(max(1, int(width // 2) + 1))
-                sonar_pen.setStyle(Qt.PenStyle.DashLine)
+            if draw_sonar_frame:
+                sonar_pen = QPen(QColor("#FF8F00"))
+                sonar_pen.setWidth(max(2, int(width)))
+                sonar_pen.setStyle(Qt.PenStyle.SolidLine)
                 sonar_pen.setJoinStyle(Qt.RoundJoin)
                 painter.setPen(sonar_pen)
-                sonar_rect = self.rect().adjusted(5, 5, -5, -5)
+                sonar_rect = self.rect().adjusted(4, 4, -4, -4)
                 painter.drawRoundedRect(sonar_rect, 4, 4)
             painter.restore()
         except Exception:
