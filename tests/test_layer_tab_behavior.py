@@ -134,6 +134,18 @@ def test_attach_prefers_explicit_parent_slot():
     assert wm.attach_calls[-1] == (parent.uuid, child.uuid)
 
 
+def test_attach_requires_explicit_parent_slot():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+    wm.last_selected_window = parent
+    tab._explicit_parent_uuid = None
+    tab._selected_uuid = lambda: child.uuid
+
+    tab._on_attach()
+
+    assert wm.attach_calls == []
+    assert any(tr("layer_msg_select_parent_first") in msg for msg in wm.status_messages)
+
+
 def test_drop_relation_attach_as_child():
     tab, wm, parent, child, _alt_parent = _build_layer_tab()
     ok = tab._apply_tree_drop_relation(child.uuid, parent.uuid)
@@ -158,6 +170,35 @@ def test_drop_relation_reorder_within_parent():
     assert parent.child_windows[0].config.layer_order == 0
     assert parent.child_windows[1].config.layer_order == 1
     assert wm.raise_calls[-1] == parent.uuid
+
+
+def test_move_up_moves_selected_child_toward_front():
+    tab, wm, parent, _child, _alt_parent = _build_layer_tab()
+    c1 = _DummyWindow("c1", parent_window_uuid=parent.uuid, layer_order=0)
+    c2 = _DummyWindow("c2", parent_window_uuid=parent.uuid, layer_order=1)
+    parent.child_windows = [c1, c2]
+    wm.text_windows.extend([c1, c2])
+    tab.rebuild()
+    tab._selected_uuid = lambda: "c1"
+
+    tab._on_move_up()
+
+    assert parent.child_windows[0].uuid == "c2"
+    assert parent.child_windows[1].uuid == "c1"
+    assert parent.child_windows[0].config.layer_order == 0
+    assert parent.child_windows[1].config.layer_order == 1
+
+
+def test_detach_keeps_detached_window_selected():
+    tab, wm, parent, child, _alt_parent = _build_layer_tab()
+    wm.attach_layer(parent, child)
+    tab.rebuild()
+    tab._selected_uuid = lambda: child.uuid
+
+    tab._on_detach()
+
+    assert child.parent_window_uuid is None
+    assert wm.last_selected_window is child
 
 
 def test_tree_context_menu_routes_to_selected_window_menu():

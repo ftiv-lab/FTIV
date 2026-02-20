@@ -295,7 +295,33 @@ class FileManager:
                 if parent_uuid in all_map:
                     all_map[parent_uuid].add_child_window(child)
 
-        # 2.5 同一親配下の順序を layer_order で復元
+        # 2.5 layer_offset（親相対座標）で位置を復元
+        # layer_offset が無効/未設定の場合は、JSON の絶対座標をそのまま使う。
+        def _restore_layer_offsets(parent: Any) -> None:
+            try:
+                children = list(getattr(parent, "child_windows", []))
+            except Exception:
+                children = []
+            for child in children:
+                try:
+                    offset = getattr(getattr(child, "config", None), "layer_offset", None)
+                    if isinstance(offset, dict):
+                        ox = int(offset.get("x", 0))
+                        oy = int(offset.get("y", 0))
+                        target = parent.pos() + QPoint(ox, oy)
+                        child.move(target)
+                        if hasattr(child, "config"):
+                            child.config.position = {"x": int(target.x()), "y": int(target.y())}
+                except Exception:
+                    # 位置復元に失敗してもロード全体は継続
+                    pass
+                _restore_layer_offsets(child)
+
+        roots = [w for w in all_wins if not getattr(w, "parent_window_uuid", None)]
+        for root in roots:
+            _restore_layer_offsets(root)
+
+        # 2.6 同一親配下の順序を layer_order で復元
         for parent in all_wins:
             children = getattr(parent, "child_windows", None)
             if not children:

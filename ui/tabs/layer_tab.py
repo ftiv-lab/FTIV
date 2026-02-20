@@ -130,7 +130,6 @@ class LayerTab(QWidget):
         self.mw = main_window
         self._rebuilding = False
         self._uuid_to_item: dict[str, QTreeWidgetItem] = {}
-        self._attach_parent_candidate_uuid: Optional[str] = None
         # Attach時の明示親（最優先）
         self._explicit_parent_uuid: Optional[str] = None
         self._setup_ui()
@@ -179,6 +178,7 @@ class LayerTab(QWidget):
         self.tree.setAnimated(True)
         self.tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.setToolTip(tr("layer_tooltip_tree_dnd"))
         self.tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
         self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         self.tree.customContextMenuRequested.connect(self._on_tree_context_menu)
@@ -200,16 +200,14 @@ class LayerTab(QWidget):
         self.btn_detach.setToolTip(tr("layer_tooltip_detach"))
         self.btn_detach.clicked.connect(self._on_detach)
 
-        self.btn_up = QPushButton("↑")
+        self.btn_up = QPushButton(tr("layer_btn_front"))
         self.btn_up.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_up.setToolTip(tr("layer_tooltip_move_up"))
-        self.btn_up.setFixedWidth(32)
+        self.btn_up.setToolTip(tr("layer_tooltip_move_front"))
         self.btn_up.clicked.connect(self._on_move_up)
 
-        self.btn_down = QPushButton("↓")
+        self.btn_down = QPushButton(tr("layer_btn_back"))
         self.btn_down.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.btn_down.setToolTip(tr("layer_tooltip_move_down"))
-        self.btn_down.setFixedWidth(32)
+        self.btn_down.setToolTip(tr("layer_tooltip_move_back"))
         self.btn_down.clicked.connect(self._on_move_down)
 
         self.btn_refresh = QPushButton("⟳")
@@ -250,10 +248,13 @@ class LayerTab(QWidget):
         self.btn_attach.setToolTip(tr("layer_tooltip_attach"))
         self.btn_detach.setText(tr("layer_btn_detach"))
         self.btn_detach.setToolTip(tr("layer_tooltip_detach"))
-        self.btn_up.setToolTip(tr("layer_tooltip_move_up"))
-        self.btn_down.setToolTip(tr("layer_tooltip_move_down"))
+        self.btn_up.setText(tr("layer_btn_front"))
+        self.btn_up.setToolTip(tr("layer_tooltip_move_front"))
+        self.btn_down.setText(tr("layer_btn_back"))
+        self.btn_down.setToolTip(tr("layer_tooltip_move_back"))
         self.btn_refresh.setToolTip(tr("layer_tooltip_refresh"))
         self.lbl_hint.setText(tr("layer_hint"))
+        self.tree.setToolTip(tr("layer_tooltip_tree_dnd"))
         self.rebuild()
 
     def _connect_signals(self) -> None:
@@ -346,7 +347,6 @@ class LayerTab(QWidget):
 
         uuid = getattr(selected_window, "uuid", None)
         if uuid and uuid in self._uuid_to_item:
-            self._attach_parent_candidate_uuid = uuid
             self.tree.blockSignals(True)
             self.tree.setCurrentItem(self._uuid_to_item[uuid])
             self.tree.blockSignals(False)
@@ -363,16 +363,10 @@ class LayerTab(QWidget):
         window = wm.find_window_by_uuid(uuid)
         if window:
             try:
-                prev_selected = getattr(wm, "last_selected_window", None)
                 if hasattr(wm, "set_selected_window"):
                     wm.set_selected_window(window)
                 else:
                     wm.last_selected_window = window
-                prev_uuid = getattr(prev_selected, "uuid", None)
-                if prev_uuid and prev_uuid != uuid:
-                    self._attach_parent_candidate_uuid = prev_uuid
-                elif self._attach_parent_candidate_uuid is None:
-                    self._attach_parent_candidate_uuid = uuid
             except Exception:
                 pass
 
@@ -454,7 +448,6 @@ class LayerTab(QWidget):
             return
 
         self._explicit_parent_uuid = getattr(parent, "uuid", None)
-        self._attach_parent_candidate_uuid = self._explicit_parent_uuid
         self.rebuild()
         wm.sig_status_message.emit(tr("layer_msg_parent_slot_set").format(parent=_window_label(parent)))
 
@@ -477,20 +470,16 @@ class LayerTab(QWidget):
     def _resolve_attach_parent(self, child: Any) -> Any:
         wm = self.mw.window_manager
 
-        # 1) 明示親を最優先
-        if self._explicit_parent_uuid:
-            explicit = wm.find_window_by_uuid(self._explicit_parent_uuid)
-            if explicit is not None:
-                return explicit
-            self._explicit_parent_uuid = None
+        # Attach ボタン導線は「明示親スロット必須」とする。
+        if not self._explicit_parent_uuid:
+            return None
 
-        # 2) 従来フォールバック
-        parent = getattr(wm, "last_selected_window", None)
-        if parent is child:
-            candidate_uuid = self._attach_parent_candidate_uuid
-            if candidate_uuid:
-                parent = wm.find_window_by_uuid(candidate_uuid)
-        return parent
+        explicit = wm.find_window_by_uuid(self._explicit_parent_uuid)
+        if explicit is None:
+            self._explicit_parent_uuid = None
+            self.rebuild()
+            return None
+        return explicit
 
     def _on_attach(self) -> None:
         """ツリーで選択中の Window を親へアタッチする。"""
@@ -516,7 +505,6 @@ class LayerTab(QWidget):
             parent_uuid = getattr(parent, "uuid", None)
             if parent_uuid:
                 self._explicit_parent_uuid = parent_uuid
-                self._attach_parent_candidate_uuid = parent_uuid
             wm.sig_status_message.emit(
                 tr("layer_msg_attached_parent_child").format(
                     parent=_window_label(parent),
@@ -543,15 +531,19 @@ class LayerTab(QWidget):
             return
 
         wm.detach_layer(child)
+        try:
+            wm.set_selected_window(child)
+        except Exception:
+            pass
         wm.sig_status_message.emit(tr("layer_msg_detached_child").format(child=_window_label(child)))
 
     def _on_move_up(self) -> None:
-        """同階層内で1つ上（layer_order -1）に移動する。"""
-        self._reorder_selected(delta=-1)
+        """同階層内で前面方向（layer_order +1）に移動する。"""
+        self._reorder_selected(delta=+1)
 
     def _on_move_down(self) -> None:
-        """同階層内で1つ下（layer_order +1）に移動する。"""
-        self._reorder_selected(delta=+1)
+        """同階層内で背面方向（layer_order -1）に移動する。"""
+        self._reorder_selected(delta=-1)
 
     def _reorder_selected(self, delta: int) -> None:
         """選択中の Window の layer_order を delta だけ変更し、兄弟の順序を整える。"""
@@ -622,7 +614,6 @@ class LayerTab(QWidget):
         try:
             wm.attach_layer(target, source)
             self._explicit_parent_uuid = getattr(target, "uuid", None)
-            self._attach_parent_candidate_uuid = self._explicit_parent_uuid
             wm.sig_status_message.emit(
                 tr("layer_msg_attached_parent_child").format(
                     parent=_window_label(target),
