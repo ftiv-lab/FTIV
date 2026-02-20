@@ -119,6 +119,15 @@ python main.py
 & '.venv313\Scripts\python.exe' build_release.py
 ```
 
+### GitHub Pages (Website)
+
+- Live site: `https://ftiv-lab.github.io/FTIV/`
+- Pages source: `main` branch, `docs/` folder
+- Entrypoint: `docs/index.html` (redirect)
+- Canonical page content: `docs/public/index.html`
+
+If you update the website on a feature branch, it will not appear on the live site until the change is merged (or cherry-picked) into `main`.
+
 For detailed rules and contributing guide, please see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
