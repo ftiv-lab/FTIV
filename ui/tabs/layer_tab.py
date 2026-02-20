@@ -112,8 +112,10 @@ class _LayerTreeWidget(QTreeWidget):
                     event.accept()
                     return
 
-        # 既定動作はフォールバックとして残す（不明ケースのみ）
-        super().dropEvent(event)
+        # Qt既定の InternalMove を許可すると、ドメイン(child_windows)未更新のまま
+        # ツリー表示だけ変化する不整合が起きる。LayerTabでは解釈可能なドロップのみ受理する。
+        event.ignore()
+        return
 
 
 class LayerTab(QWidget):
@@ -577,16 +579,10 @@ class LayerTab(QWidget):
         if new_idx < 0 or new_idx >= len(siblings):
             return
 
+        before_order = [s.uuid for s in siblings]
         siblings[idx], siblings[new_idx] = siblings[new_idx], siblings[idx]
-        for order, sibling in enumerate(siblings):
-            sibling.config.layer_order = order
-        try:
-            parent.child_windows[:] = siblings
-        except Exception:
-            pass
-
-        wm.raise_group_stack(parent)
-        wm.sig_layer_structure_changed.emit()
+        after_order = [s.uuid for s in siblings]
+        self._commit_reorder(parent, before_order, after_order)
 
     # ==========================================
     # Drag & Drop 補助導線
@@ -634,25 +630,70 @@ class LayerTab(QWidget):
         if source not in siblings or target not in siblings or source is target:
             return False
 
+        before_order = [s.uuid for s in siblings]
         siblings.remove(source)
         target_index = siblings.index(target)
         siblings.insert(target_index, source)
-
-        for order, sibling in enumerate(siblings):
-            sibling.config.layer_order = order
-
-        try:
-            parent.child_windows[:] = siblings
-        except Exception:
-            pass
+        after_order = [s.uuid for s in siblings]
+        if not self._commit_reorder(parent, before_order, after_order):
+            return False
 
         wm = self.mw.window_manager
-        wm.raise_group_stack(parent)
-        wm.sig_layer_structure_changed.emit()
         wm.sig_status_message.emit(
             tr("layer_msg_reordered_child").format(
                 parent=_window_label(parent),
                 child=_window_label(source),
             )
         )
+        return True
+
+    def _commit_reorder(self, parent: Any, before_order: list[str], after_order: list[str]) -> bool:
+        if before_order == after_order:
+            return True
+
+        # MainWindow の UndoStack が使える環境ではコマンド経由で適用する。
+        try:
+            if hasattr(self.mw, "add_undo_command"):
+                from utils.commands import ReorderLayerCommand
+
+                cmd = ReorderLayerCommand(parent, before_order, after_order, self.mw.window_manager)
+                self.mw.add_undo_command(cmd)
+                return True
+        except Exception:
+            logger.debug("LayerTab reorder command push failed; fallback to direct apply", exc_info=True)
+
+        return self._apply_reorder_direct(parent, after_order)
+
+    def _apply_reorder_direct(self, parent: Any, order_uuids: list[str]) -> bool:
+        try:
+            siblings = list(parent.child_windows)
+        except Exception:
+            return False
+
+        by_uuid = {getattr(w, "uuid", None): w for w in siblings}
+        if None in by_uuid:
+            return False
+
+        try:
+            ordered = [by_uuid[uuid] for uuid in order_uuids]
+        except Exception:
+            return False
+
+        if len(ordered) != len(siblings) or set(order_uuids) != set(by_uuid.keys()):
+            return False
+
+        for idx, sibling in enumerate(ordered):
+            try:
+                sibling.config.layer_order = idx
+            except Exception:
+                pass
+
+        try:
+            parent.child_windows[:] = ordered
+        except Exception:
+            return False
+
+        wm = self.mw.window_manager
+        wm.raise_group_stack(parent)
+        wm.sig_layer_structure_changed.emit()
         return True

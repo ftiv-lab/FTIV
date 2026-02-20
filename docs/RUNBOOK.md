@@ -127,8 +127,8 @@ If you are new to the repository or switching environments, start here.
 |----------------|---------------|----------------------|
 | Attach child | LayerTab / right-click menu | none |
 | Detach from parent | LayerTab / right-click menu | none |
-| Move up in layer order | LayerTab ⬆ button | none |
-| Move down in layer order | LayerTab ⬇ button | none |
+| Move toward front | LayerTab `Bring Front` / `前面へ` | none |
+| Move toward back | LayerTab `Send Back` / `背面へ` | none |
 
 ### 11.3 Rules
 
@@ -159,5 +159,9 @@ If you are new to the repository or switching environments, start here.
 3. Drag & Drop in LayerTab is a secondary route:
 - Drop child onto another parent item => attach.
 - Drop within same parent siblings => reorder.
-4. Context menu routing:
+ - Drop outside valid item target => ignored (UI-only reorder fallback is blocked to prevent model/UI mismatch).
+4. Undo contract:
+ - Attach / Detach / Reorder are all undoable (`Ctrl+Z`).
+ - Reorder from both button route and D&D route is recorded in undo stack.
+5. Context menu routing:
 - If right-click lands on MainWindow but the cursor is over the currently selected overlay window, FTIV forwards the menu to that selected window (useful in click-through scenarios).

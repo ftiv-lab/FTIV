@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from PySide6.QtCore import QPoint
+
 from ui.tabs.layer_tab import LayerTab
 
 
@@ -62,6 +64,30 @@ class _DummyMainWindow:
         self.window_manager = wm
 
 
+class _DummyDropPos:
+    def __init__(self, point: QPoint) -> None:
+        self._point = point
+
+    def toPoint(self) -> QPoint:
+        return self._point
+
+
+class _DummyDropEvent:
+    def __init__(self, point: QPoint) -> None:
+        self._point = point
+        self.accepted = False
+        self.ignored = False
+
+    def position(self) -> _DummyDropPos:
+        return _DummyDropPos(self._point)
+
+    def accept(self) -> None:
+        self.accepted = True
+
+    def ignore(self) -> None:
+        self.ignored = True
+
+
 def test_drop_relation_returns_false_for_same_source_and_target():
     w1 = _DummyWindow("w1")
     wm = _DummyWindowManager([w1])
@@ -82,3 +108,30 @@ def test_drop_relation_attach_error_is_reported_and_false():
 
     assert ok is False
     assert any("attach failed" in msg for msg in wm.status_messages)
+
+
+def test_drop_event_gap_ignores_default_qt_fallback():
+    source = _DummyWindow("source")
+    target = _DummyWindow("target")
+    wm = _DummyWindowManager([source, target])
+    tab = LayerTab(_DummyMainWindow(wm))
+    tab.rebuild()
+
+    source_item = tab._uuid_to_item[source.uuid]
+    tab.tree.setCurrentItem(source_item)
+    tab.tree.itemAt = lambda _pos: None
+
+    called = {"value": False}
+
+    def _stub_apply(*_args, **_kwargs):
+        called["value"] = True
+        return False
+
+    tab._apply_tree_drop_relation = _stub_apply
+    event = _DummyDropEvent(QPoint(9999, 9999))
+
+    tab.tree.dropEvent(event)
+
+    assert called["value"] is False
+    assert event.ignored is True
+    assert event.accepted is False

@@ -1,6 +1,7 @@
 # windows/base_window.py
 
 import logging
+import time
 import traceback
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Type
@@ -70,6 +71,8 @@ class BaseOverlayWindow(QLabel):
         self.is_dragging: bool = False
         self.last_mouse_pos: Optional[QPoint] = None
         self._drag_start_pos_global: Optional[QPoint] = None
+        # ドラッグ中の過剰な raise_group_stack 呼び出しを抑制する（約60fps上限）
+        self._next_layer_restack_ts: float = 0.0
 
         # ウィンドウ基本設定
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -929,9 +932,14 @@ class BaseOverlayWindow(QLabel):
                     try:
                         wm = getattr(self.main_window, "window_manager", None)
                         if wm is not None and hasattr(wm, "raise_group_stack"):
-                            # ドラッグ中は親を再raiseしない。親を毎フレーム前面化すると、
-                            # 子が一瞬隠れてから再表示されるフリッカーが発生する。
-                            wm.raise_group_stack(self, include_parent=False)
+                            # ドラッグ中は親を再raiseしない。親を毎イベント前面化すると、
+                            # 子が一瞬隠れてから再表示されるフリッカーが発生しやすい。
+                            # さらに、再整列頻度を約60fpsに制限して負荷を抑える。
+                            now = time.monotonic()
+                            next_ts = float(getattr(self, "_next_layer_restack_ts", 0.0))
+                            if now >= next_ts:
+                                wm.raise_group_stack(self, include_parent=False)
+                                self._next_layer_restack_ts = now + 0.016
                     except Exception:
                         pass
 

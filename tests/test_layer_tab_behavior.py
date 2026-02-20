@@ -91,12 +91,17 @@ class _DummyMainWindow:
     def __init__(self, wm: _DummyWindowManager) -> None:
         self.window_manager = wm
         self.main_context_calls: list = []
+        self.undo_commands: list = []
 
     def show_context_menu(self, pos) -> None:
         self.main_context_calls.append(pos)
 
     def mapFromGlobal(self, pos):
         return pos
+
+    def add_undo_command(self, command) -> None:
+        self.undo_commands.append(command)
+        command.redo()
 
 
 def _build_layer_tab():
@@ -187,6 +192,26 @@ def test_move_up_moves_selected_child_toward_front():
     assert parent.child_windows[1].uuid == "c1"
     assert parent.child_windows[0].config.layer_order == 0
     assert parent.child_windows[1].config.layer_order == 1
+
+
+def test_move_up_pushes_reorder_command_and_undo_restores_order():
+    tab, wm, parent, _child, _alt_parent = _build_layer_tab()
+    c1 = _DummyWindow("c1", parent_window_uuid=parent.uuid, layer_order=0)
+    c2 = _DummyWindow("c2", parent_window_uuid=parent.uuid, layer_order=1)
+    parent.child_windows = [c1, c2]
+    wm.text_windows.extend([c1, c2])
+    tab.rebuild()
+    tab._selected_uuid = lambda: "c1"
+
+    tab._on_move_up()
+
+    assert parent.child_windows[0].uuid == "c2"
+    assert parent.child_windows[1].uuid == "c1"
+    assert len(tab.mw.undo_commands) == 1
+
+    tab.mw.undo_commands[-1].undo()
+    assert parent.child_windows[0].uuid == "c1"
+    assert parent.child_windows[1].uuid == "c2"
 
 
 def test_detach_keeps_detached_window_selected():

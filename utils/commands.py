@@ -187,3 +187,74 @@ class DetachLayerCommand(QUndoCommand):
             self._wm.sig_layer_structure_changed.emit()
         except (RuntimeError, ValueError):
             pass
+
+
+class ReorderLayerCommand(QUndoCommand):
+    """同一親配下のレイヤー順変更を Undo/Redo 可能にするコマンド。"""
+
+    def __init__(self, parent_win, before_order_uuids, after_order_uuids, window_manager):
+        super().__init__("レイヤー順序を変更")
+        self._parent = parent_win
+        self._before = list(before_order_uuids or [])
+        self._after = list(after_order_uuids or [])
+        self._wm = window_manager
+
+    def _is_parent_valid(self) -> bool:
+        if self._parent is None:
+            return False
+        try:
+            return shiboken6.isValid(self._parent)
+        except Exception:
+            # テストダブルなど非Qtオブジェクトも許容
+            return True
+
+    def _apply(self, order_uuids) -> None:
+        if not self._is_parent_valid():
+            return
+
+        try:
+            siblings = list(getattr(self._parent, "child_windows", []))
+        except Exception:
+            return
+
+        if not siblings:
+            return
+
+        by_uuid = {getattr(w, "uuid", None): w for w in siblings}
+        if None in by_uuid:
+            return
+
+        try:
+            ordered = [by_uuid[uid] for uid in order_uuids]
+        except Exception:
+            return
+
+        # UUID集合が一致しない場合は破壊的変更を避ける
+        if len(ordered) != len(siblings) or set(order_uuids) != set(by_uuid.keys()):
+            return
+
+        for idx, sibling in enumerate(ordered):
+            try:
+                sibling.config.layer_order = idx
+            except Exception:
+                pass
+
+        try:
+            self._parent.child_windows[:] = ordered
+        except Exception:
+            return
+
+        try:
+            self._wm.raise_group_stack(self._parent)
+        except Exception:
+            pass
+        try:
+            self._wm.sig_layer_structure_changed.emit()
+        except Exception:
+            pass
+
+    def redo(self):
+        self._apply(self._after)
+
+    def undo(self):
+        self._apply(self._before)
