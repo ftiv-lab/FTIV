@@ -7,6 +7,8 @@ This is the single tracked entry point for development flow in FTIV.
 If you are new to the repository or switching environments, start here.
 
 ## 2. Quick Start
+Note:
+- Use `main` as the default branch for normal development and app launch (`main.bat` / `uv run main.py` run the currently checked-out branch code).
 1. Sync env:
 - `uv sync`
 2. Run app:
