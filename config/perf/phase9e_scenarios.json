@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-02-16T23:40:00",
+  "notes": "Tracked scenario contract for CI perf lanes.",
+  "ci_default_scenarios": [
+    "P9E-S06",
+    "P9E-S05",
+    "P9E-S02"
+  ],
+  "enforce_target_scenarios": [
+    "P9E-S06",
+    "P9E-S05",
+    "P9E-S02"
+  ]
+}

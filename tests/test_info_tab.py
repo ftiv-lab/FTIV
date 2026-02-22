@@ -207,32 +207,48 @@ def _make_main_window(task_windows=None, note_windows=None):
         info_operation_logs=[],
         info_layout_mode="auto",
         info_advanced_filters_expanded=False,
-        info_operations_expanded=False,
     )
     settings_manager = SimpleNamespace(save_app_settings=lambda: None)
     mw = SimpleNamespace(window_manager=wm, app_settings=app_settings, settings_manager=settings_manager)
     return mw, text_windows
 
 
-def _find_note_item(tab: InfoTab, window_uuid: str):
-    for i in range(tab.notes_list.count()):
-        candidate = tab.notes_list.item(i)
-        if candidate is None:
+def _iter_all_tree_items(tree):
+    """QTreeWidget の全アイテム（トップレベル + 子）をフラットに列挙する。"""
+    result = []
+    for i in range(tree.topLevelItemCount()):
+        top = tree.topLevelItem(i)
+        if top is None:
             continue
-        if str(candidate.data(Qt.ItemDataRole.UserRole) or "") == window_uuid:
-            return candidate
+        result.append(top)
+        for j in range(top.childCount()):
+            child = top.child(j)
+            if child is not None:
+                result.append(child)
+    return result
+
+
+def _find_note_item(tab: InfoTab, window_uuid: str):
+    for item in _iter_all_tree_items(tab.notes_tree):
+        if str(item.data(0, Qt.ItemDataRole.UserRole) or "") == window_uuid:
+            return item
     return None
 
 
 def _count_task_items(tab: InfoTab) -> int:
     count = 0
-    for i in range(tab.tasks_list.count()):
-        item = tab.tasks_list.item(i)
-        if item is None:
-            continue
-        if ":" in str(item.data(Qt.ItemDataRole.UserRole) or ""):
+    for item in _iter_all_tree_items(tab.tasks_tree):
+        if ":" in str(item.data(0, Qt.ItemDataRole.UserRole) or ""):
             count += 1
     return count
+
+
+def _find_first_task_item(tab: InfoTab):
+    """最初の実タスクアイテム（グループヘッダーを除く）を返す。"""
+    for item in _iter_all_tree_items(tab.tasks_tree):
+        if ":" in str(item.data(0, Qt.ItemDataRole.UserRole) or ""):
+            return item
+    return None
 
 
 def test_task_item_changed_safe_when_action_refreshes(qapp):
@@ -241,11 +257,13 @@ def test_task_item_changed_safe_when_action_refreshes(qapp):
     tab = InfoTab(mw)
     mw.main_controller = SimpleNamespace(info_actions=_DummyInfoActions(tab, text_windows))
 
-    item = tab.tasks_list.item(0)
+    item = _find_first_task_item(tab)
     assert item is not None
 
-    # Must not raise RuntimeError even if action refreshes list immediately.
-    item.setCheckState(Qt.CheckState.Checked)
+    # Must not crash even if action refreshes list immediately.
+    # Action is deferred via QTimer.singleShot(0), so processEvents is needed.
+    item.setCheckState(0, Qt.CheckState.Checked)
+    qapp.processEvents()
     task_window = text_windows[0]
     assert isinstance(task_window, _DummyTaskWindow)
     assert task_window._states[0] is True
@@ -261,8 +279,10 @@ def test_note_item_changed_safe_when_action_refreshes(qapp):
     item = _find_note_item(tab, note_window.uuid)
     assert item is not None
 
-    # Must not raise RuntimeError even if action refreshes list immediately.
-    item.setCheckState(Qt.CheckState.Checked)
+    # Must not crash even if action refreshes list immediately.
+    # Action is deferred via QTimer.singleShot(0), so processEvents is needed.
+    item.setCheckState(0, Qt.CheckState.Checked)
+    qapp.processEvents()
     assert note_window.is_starred is True
 
 
@@ -277,9 +297,9 @@ def test_smart_view_overdue_filters_tasks(qapp):
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-overdue:")
+    assert str(first.data(0, Qt.ItemDataRole.UserRole)).startswith("t-overdue:")
 
 
 def test_bulk_archive_selected_updates_windows(qapp):
@@ -308,11 +328,8 @@ def test_bulk_complete_selected_updates_task_states(qapp):
     actions = _DummyInfoActions(tab, text_windows)
     mw.main_controller = SimpleNamespace(info_actions=actions)
 
-    for i in range(tab.tasks_list.count()):
-        item = tab.tasks_list.item(i)
-        if item is None:
-            continue
-        if ":" in str(item.data(Qt.ItemDataRole.UserRole) or ""):
+    for item in _iter_all_tree_items(tab.tasks_tree):
+        if ":" in str(item.data(0, Qt.ItemDataRole.UserRole) or ""):
             item.setSelected(True)
 
     tab._apply_bulk_task_done(True)
@@ -331,11 +348,8 @@ def test_mode_filter_task_limits_note_list(qapp):
     tab.refresh_data(immediate=True)
 
     note_rows = []
-    for i in range(tab.notes_list.count()):
-        item = tab.notes_list.item(i)
-        if item is None:
-            continue
-        uuid = str(item.data(Qt.ItemDataRole.UserRole) or "")
+    for item in _iter_all_tree_items(tab.notes_tree):
+        uuid = str(item.data(0, Qt.ItemDataRole.UserRole) or "")
         if uuid:
             note_rows.append(uuid)
     assert note_rows == ["t-1"]
@@ -352,9 +366,9 @@ def test_due_filter_upcoming_limits_tasks(qapp):
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-future:")
+    assert str(first.data(0, Qt.ItemDataRole.UserRole)).startswith("t-future:")
 
 
 def test_smart_view_today_applies_due_sort_controls(qapp):
@@ -398,11 +412,13 @@ def test_view_preset_save_update_delete_syncs_settings(qapp):
     assert len(mw.app_settings.info_view_presets) == 1
     preset_id = mw.app_settings.info_view_presets[0]["id"]
     assert preset_id.startswith("user:")
+    assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
     assert save_calls["count"] >= 1
 
     tab.edit_search.setText("updated")
     tab._update_current_view_preset()
     assert mw.app_settings.info_view_presets[0]["filters"]["text"] == "updated"
+    assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
 
     tab._delete_current_view_preset()
     assert mw.app_settings.info_view_presets == []
@@ -416,9 +432,9 @@ def test_overdue_badge_rendered_on_task_item(qapp):
     tab = InfoTab(mw)
     tab.refresh_data(immediate=True)
 
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert f"[{tr('info_badge_overdue')}]" in first.text()
+    assert f"[{tr('info_badge_overdue')}]" in first.text(0)
 
 
 def test_archive_scope_archived_filters_task_rows(qapp):
@@ -432,9 +448,9 @@ def test_archive_scope_archived_filters_task_rows(qapp):
     tab.refresh_data(immediate=True)
 
     assert _count_task_items(tab) == 1
-    first = tab.tasks_list.item(0)
+    first = _find_first_task_item(tab)
     assert first is not None
-    assert str(first.data(Qt.ItemDataRole.UserRole)).startswith("t-archived:")
+    assert str(first.data(0, Qt.ItemDataRole.UserRole)).startswith("t-archived:")
 
 
 def test_builtin_archived_preset_sets_archive_scope(qapp):
@@ -513,7 +529,7 @@ def test_archived_badge_rendered_on_note_item(qapp):
 
     note_item = _find_note_item(tab, "n-1")
     assert note_item is not None
-    assert f"[{tr('info_badge_archived')}]" in note_item.text()
+    assert f"[{tr('info_badge_archived')}]" in note_item.text(0)
 
 
 def test_operation_log_panel_renders_and_clears(qapp):
@@ -567,7 +583,6 @@ def test_advanced_filter_forced_collapsed_on_auto_mode(qapp):
     mw, _ = _make_main_window()
     mw.app_settings.info_layout_mode = "auto"
     mw.app_settings.info_advanced_filters_expanded = True
-    mw.app_settings.info_operations_expanded = True
 
     tab = InfoTab(mw)
 
@@ -601,6 +616,29 @@ def test_preset_action_menu_save_creates_user_preset(qapp):
 
     assert len(mw.app_settings.info_view_presets) == 1
     assert str(mw.app_settings.info_view_presets[0]["id"]).startswith("user:")
+    assert "mode_filter" not in mw.app_settings.info_view_presets[0]["filters"]
+
+
+def test_canonical_scope_preset_is_applied_without_legacy_mode_filter(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    mw.app_settings.info_view_presets = [
+        {
+            "id": "user:1",
+            "name": "Canonical",
+            "filters": {"item_scope": "tasks", "content_mode_filter": "task", "due_filter": "today"},
+        }
+    ]
+    mw.app_settings.info_last_view_preset_id = "user:1"
+
+    tab = InfoTab(mw)
+
+    assert str(tab.cmb_mode_filter.currentData() or "") == "task"
+    assert len(mw.app_settings.info_view_presets) == 1
+    filters = mw.app_settings.info_view_presets[0]["filters"]
+    assert filters["item_scope"] == "tasks"
+    assert filters["content_mode_filter"] == "task"
+    assert "mode_filter" not in filters
 
 
 def test_operation_summary_and_dialog(qapp):
@@ -635,28 +673,26 @@ def test_info_tab_core_controls_visible_on_320px_width(qapp):
     tab._apply_layout_mode(force=True)
 
     assert tab.cmb_view_preset.isVisible() is True
-    assert tab.cmb_smart_view.isVisible() is True
+    assert tab._smart_view_buttons["all"].isVisible() is True
     assert tab.cmb_archive_scope.isVisible() is True
     assert tab.btn_bulk_actions.isVisible() is True
 
 
-def test_smart_view_combo_items_have_tooltips(qapp):
+def test_smart_view_buttons_have_tooltips(qapp):
     _ = qapp
     mw, _ = _make_main_window()
     tab = InfoTab(mw)
 
-    for value, tip_key in [
+    for key, tip_key in [
         ("all", "info_view_tip_all"),
         ("open", "info_view_tip_open"),
         ("today", "info_view_tip_today"),
         ("overdue", "info_view_tip_overdue"),
         ("starred", "info_view_tip_starred"),
         ("archived", "info_view_tip_archived"),
-        ("custom", "info_view_tip_custom"),
     ]:
-        idx = tab.cmb_smart_view.findData(value)
-        assert idx >= 0
-        assert tab.cmb_smart_view.itemData(idx, Qt.ItemDataRole.ToolTipRole) == tr(tip_key)
+        btn = tab._smart_view_buttons[key]
+        assert btn.toolTip() == tr(tip_key)
 
 
 def test_empty_state_hint_first_time_shows_cta(qapp):
@@ -681,3 +717,109 @@ def test_empty_state_hint_filtered_hides_cta(qapp):
     assert tab.empty_state_row.isHidden() is False
     assert tab.lbl_empty_state_hint.text() == tr("info_empty_state_filtered")
     assert tab.btn_empty_add_text.isHidden() is True
+
+
+def test_refresh_data_reuses_cached_index_for_unchanged_windows(qapp):
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    with patch.object(tab.index_manager, "build_index", wraps=tab.index_manager.build_index) as build_index_spy:
+        tab.refresh_data(immediate=True)
+        tab.refresh_data(immediate=True)
+        assert build_index_spy.call_count == 0
+
+
+def test_refresh_data_rebuilds_index_when_window_snapshot_changes(qapp):
+    _ = qapp
+    task_window = _DummyTaskWindow(uuid="tw-cache")
+    mw, _ = _make_main_window(task_windows=[task_window], note_windows=[])
+    tab = InfoTab(mw)
+
+    with patch.object(tab.index_manager, "build_index", wraps=tab.index_manager.build_index) as build_index_spy:
+        task_window.text = "updated task body"
+        tab.refresh_data(immediate=True)
+        assert build_index_spy.call_count == 1
+
+
+def test_smart_view_buttons_toggle(qapp):
+    """スマートビューのボタン列がトグルで切り替わる。"""
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    # Default: "all" button is checked
+    assert tab._smart_view_buttons["all"].isChecked() is True
+    assert tab._smart_view_buttons["starred"].isChecked() is False
+
+    # Click "starred" button
+    tab._smart_view_buttons["starred"].click()
+    assert tab._smart_view == "starred"
+    assert tab._smart_view_buttons["starred"].isChecked() is True
+    assert tab._smart_view_buttons["all"].isChecked() is False
+
+
+def test_group_by_combo_changes_display(qapp):
+    """グループ化セレクタを切り替えるとツリーが更新される。"""
+    _ = qapp
+    tw1 = _DummyTaskWindow(uuid="tw-grp1")
+    tw1.tags = ["work"]
+    tw2 = _DummyTaskWindow(uuid="tw-grp2")
+    tw2.tags = ["home"]
+    mw, _ = _make_main_window(task_windows=[tw1, tw2], note_windows=[])
+    tab = InfoTab(mw)
+
+    # Default: smart grouping
+    assert tab._group_by == "smart"
+
+    # Switch to tag grouping
+    idx = tab.cmb_group_by.findData("tag")
+    tab.cmb_group_by.setCurrentIndex(idx)
+    assert tab._group_by == "tag"
+
+    # Switch to flat
+    idx = tab.cmb_group_by.findData("flat")
+    tab.cmb_group_by.setCurrentIndex(idx)
+    assert tab._group_by == "flat"
+
+
+def test_all_tab_shows_tasks_and_notes(qapp):
+    """統合ビュー（すべてタブ）にタスクとノートが両方表示される。"""
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+    tab.refresh_data(immediate=True)
+
+    # All tab is index 0
+    assert tab.subtabs.tabText(0) == tr("info_all_tab")
+
+    # Check all_tree has items
+    all_items = _iter_all_tree_items(tab.all_tree)
+    # Should have at least task items and note items
+    task_items_in_all = [item for item in all_items if str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "") == "task"]
+    note_items_in_all = [item for item in all_items if str(item.data(0, Qt.ItemDataRole.UserRole + 3) or "") == "note"]
+    assert len(task_items_in_all) > 0
+    assert len(note_items_in_all) > 0
+
+
+def test_preset_saves_group_by(qapp):
+    """プリセット保存にgroup_byが含まれる。"""
+    _ = qapp
+    mw, _ = _make_main_window()
+    tab = InfoTab(mw)
+
+    # Change group_by to "tag"
+    idx = tab.cmb_group_by.findData("tag")
+    tab.cmb_group_by.setCurrentIndex(idx)
+
+    # Collect current filter state
+    filters = tab._collect_filter_state()
+    assert filters["group_by"] == "tag"
+
+    # Save preset
+    tab._save_new_view_preset()
+    # The last user preset should have group_by=tag
+    user_ids = tab._user_preset_ids
+    assert len(user_ids) > 0
+    preset = tab._view_presets[user_ids[-1]]
+    assert preset.filters["group_by"] == "tag"

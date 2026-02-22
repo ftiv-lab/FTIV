@@ -345,6 +345,7 @@ class TestChildWindowManagement:
         parent = _make_base_window()
         child = MagicMock()
         child.parent_window_uuid = None
+        child._contains_in_subtree.return_value = False  # 循環チェック: 非循環
         parent.add_child_window(child)
         assert child in parent.child_windows
         assert child.parent_window_uuid == parent.uuid
@@ -357,6 +358,7 @@ class TestChildWindowManagement:
     def test_add_child_window_duplicate(self):
         parent = _make_base_window()
         child = MagicMock()
+        child._contains_in_subtree.return_value = False  # 循環チェック: 非循環
         parent.add_child_window(child)
         parent.add_child_window(child)
         assert parent.child_windows.count(child) == 1
@@ -416,14 +418,14 @@ class TestShiftRelativeMoveBase:
 
 
 # ============================================================
-# _clear_legacy_absolute_move_fields
+# _clear_absolute_move_fields
 # ============================================================
-class TestClearLegacyAbsoluteMoveFields:
+class TestClearAbsoluteMoveFields:
     def test_clears_positions(self):
         w = _make_base_window()
         w.config.start_position = {"x": 1, "y": 2}
         w.config.end_position = {"x": 3, "y": 4}
-        w._clear_legacy_absolute_move_fields()
+        w._clear_absolute_move_fields()
         assert w.config.start_position is None
         assert w.config.end_position is None
 
@@ -455,3 +457,26 @@ class TestSetSelected:
         with patch.object(type(w), "update"):
             w.set_selected(False)
         assert w.is_selected is False
+
+
+# ============================================================
+# mouseMoveEvent (drag + layer z-order sync)
+# ============================================================
+class TestMouseMoveEventLayerZOrder:
+    def test_drag_with_children_reorders_group_stack(self):
+        w = _make_base_window()
+        w.is_dragging = True
+        w.last_mouse_pos = QPoint(10, 10)
+        w.child_windows = [MagicMock()]
+        wm = MagicMock()
+        w.main_window.window_manager = wm
+
+        event = MagicMock()
+        event.globalPosition.return_value.toPoint.return_value = QPoint(25, 30)
+
+        with patch.object(type(w), "move_tree_by_delta") as mock_move_tree:
+            w.mouseMoveEvent(event)
+
+        # delta = (25,30) - (10,10)
+        mock_move_tree.assert_called_once_with(QPoint(15, 20))
+        wm.raise_group_stack.assert_called_once_with(w, include_parent=False)

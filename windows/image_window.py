@@ -2,7 +2,6 @@
 
 import io
 import logging
-import math
 import os
 import traceback
 import warnings
@@ -113,6 +112,8 @@ class ImageWindow(BaseOverlayWindow):
 
     @rotation_angle.setter
     def rotation_angle(self, value: float):
+        # Layer親子は「移動同期のみ」を採用する。
+        # 回転は各ウィンドウを個別に操作する方針のため、子への自動伝播は行わない。
         self.config.rotation_angle = float(value)
 
     @property
@@ -158,6 +159,7 @@ class ImageWindow(BaseOverlayWindow):
             builder.add_action("menu_reselect_image", self.reselect_image)
             builder.add_action("menu_clone_image", self.clone_image)
             builder.add_connect_group_menu()
+            builder.add_layer_menu()
             builder.add_action("menu_show_properties", self.show_property_panel)
             builder.add_separator()
 
@@ -461,15 +463,12 @@ class ImageWindow(BaseOverlayWindow):
                 event.accept()
                 return
 
-            old_scale = self.scale_factor
             step = 0.99 if (event.modifiers() & Qt.ShiftModifier) else 0.9
             if event.angleDelta().y() < 0:
                 step = 1.0 / step
 
             self.scale_factor *= step
             self.update_image()
-            if old_scale != 0:
-                self.propagate_scale_to_children(self.scale_factor / old_scale)
 
             event.accept()
         except Exception:
@@ -914,53 +913,12 @@ class ImageWindow(BaseOverlayWindow):
         self.sig_request_property_panel.emit(self)
 
     def propagate_scale_to_children(self, ratio: float):
-        """親子関係にある子ウィンドウに拡大率を伝播させる。"""
-        if not self.child_windows:
-            return
-        p_center = self.geometry().center()
-        for child in self.child_windows:
-            try:
-                vec = (child.geometry().center() - p_center) * ratio
-                new_center = p_center + vec
-                if hasattr(child, "scale_factor"):
-                    child.scale_factor *= ratio
-                    child.update_image()
-                elif hasattr(child, "font_size"):
-                    child.font_size = float(child.font_size) * ratio
-                    if hasattr(child, "background_corner_radius"):
-                        child.background_corner_radius = int(
-                            child.font_size * getattr(child, "background_corner_ratio", 0)
-                        )
-                    child.update_text()
-                child.move(int(new_center.x() - child.width() / 2), int(new_center.y() - child.height() / 2))
-                if hasattr(child, "propagate_scale_to_children"):
-                    child.propagate_scale_to_children(ratio)
-
-            except Exception:
-                pass  # Propagation fail should not crash
+        """互換API: 拡大率の子伝播は無効（移動同期のみ方針）。"""
+        return
 
     def propagate_rotation_to_children(self, delta_angle: float):
-        """親子関係にある子ウィンドウに回転角度を伝播させる。"""
-        if not self.child_windows:
-            return
-        p_center, rad = self.geometry().center(), math.radians(delta_angle)
-        cos_a, sin_a = math.cos(rad), math.sin(rad)
-        for child in self.child_windows:
-            try:
-                c_center = child.geometry().center()
-                dx, dy = c_center.x() - p_center.x(), c_center.y() - p_center.y()
-                new_center = QPoint(
-                    int(p_center.x() + (dx * cos_a - dy * sin_a)), int(p_center.y() + (dx * sin_a + dy * cos_a))
-                )
-                child.move(new_center.x() - child.width() // 2, new_center.y() - child.height() // 2)
-                if hasattr(child, "rotation_angle"):
-                    child.rotation_angle += delta_angle
-                    child.update_image()
-                if hasattr(child, "propagate_rotation_to_children"):
-                    child.propagate_rotation_to_children(delta_angle)
-
-            except Exception:
-                pass  # Propagation fail should not crash
+        """互換API: 回転角度の子伝播は無効（移動同期のみ方針）。"""
+        return
 
     def fit_to_display(self, screen_index: int, use_available_geometry: bool = True) -> None:
         """指定ディスプレイに対して、画像を最大表示（アスペクト比維持）＋中央配置する。

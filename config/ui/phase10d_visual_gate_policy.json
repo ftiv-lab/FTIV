@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "enforce_rollout": {
+    "enabled": true,
+    "start_date": "2026-02-17",
+    "grace_until": "2026-03-03"
+  },
+  "promotion_rule": {
+    "min_consecutive_monitor_passes": 3,
+    "require_required_cases_complete": true
+  },
+  "temporary_exceptions": [],
+  "governance": {
+    "max_exception_days": 14,
+    "require_reason": true
+  },
+  "unknown_keys_policy": "allow",
+  "notes": "Phase 10D UI visual gate policy for enforce operational governance"
+}

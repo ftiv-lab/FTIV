@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "mode": "monitor",
+  "max_failures_allowed": 0,
+  "required_cases": [
+    "task_title_divider_horizontal",
+    "task_title_divider_vertical",
+    "due_state_today",
+    "due_state_overdue",
+    "due_state_none",
+    "property_panel_summary_short",
+    "property_panel_summary_long",
+    "dialog_only_routes_textwindow",
+    "density_about_compact",
+    "density_about_comfortable"
+  ],
+  "unknown_keys_policy": "allow",
+  "notes": "Phase 10C UI visual regression thresholds contract"
+}

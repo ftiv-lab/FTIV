@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import re
 import traceback
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,6 +16,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from managers.runtime_services import TextWindowRuntimeServices
 from models.constants import AppDefaults
 from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
@@ -25,20 +25,23 @@ from ui.dialogs import (
     MarginRatioDialog,
     ShadowOffsetDialog,
     StyleGalleryDialog,
-    TextInputDialog,
     TextSpacingDialog,
 )
-from utils.due_date import classify_due, format_due_for_display, normalize_due_iso
+from utils.due_date import normalize_due_iso
 from utils.font_dialog import choose_font
-from utils.tag_ops import normalize_tags
 from utils.translator import tr
 
 from .base_window import BaseOverlayWindow
+from .mixins.edit_dialog_mixin import EditDialogMixin
 from .mixins.text_properties_mixin import TextPropertiesMixin
+from .text_window_parts import metadata_ops as text_window_metadata_ops
+from .text_window_parts import selection_ops as text_window_selection_ops
+from .text_window_parts import task_ops as text_window_task_ops
+from .text_window_parts import tooltip_ops as text_window_tooltip_ops
+from .text_window_parts.runtime_bridge import ensure_runtime_services
 
 # ロガーの取得
 logger = logging.getLogger(__name__)
-LEGACY_TASK_LINE_PATTERN = re.compile(r"^\s*\[(?P<state>[ xX])\]\s?(?P<body>.*)$")
 
 
 @dataclass(frozen=True)
@@ -51,13 +54,19 @@ class TaskLineRef:
     done: bool
 
 
-class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
+class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     """テキストを表示・制御するためのオーバーレイウィンドウクラス。
 
-    テキストの描画、スタイル設定、およびマインドマップ風のノード操作を管理します。
+    テキストの描画、スタイル設定、および接続線と組み合わせたノード風の可視化操作を管理します。
     """
 
-    def __init__(self, main_window: Any, text: str, pos: QPoint):
+    def __init__(
+        self,
+        main_window: Any,
+        text: str,
+        pos: QPoint,
+        runtime_services: Optional[TextWindowRuntimeServices] = None,
+    ):
         """TextWindowの初期化を行い、ログに記録します。
 
         Args:
@@ -68,9 +77,12 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
 
         try:
+            self.runtime_services = runtime_services or TextWindowRuntimeServices(main_window)
             self._init_text_renderer(main_window)
             self._suppress_task_state_sync = False
             self._task_press_pos: Optional[QPoint] = None
+            self._edit_dialog: Optional[Any] = None
+            self._edit_original_text: str = ""
 
             self.config.text = text
             self.config.position = {"x": pos.x(), "y": pos.y()}
@@ -82,7 +94,7 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             if self.config.is_vertical:
                 self.config.note_vertical_preference = True
             self._ensure_task_states_for_text(self.config.text)
-            self._ensure_task_mode_constraints(allow_legacy_migration=True)
+            self._ensure_task_mode_constraints()
             self.canvas_size: QSize = QSize(10, 10)
             self.setGeometry(QRect(pos, self.canvas_size))
 
@@ -111,6 +123,9 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             logger.error(f"Failed to initialize TextWindow: {e}\n{traceback.format_exc()}")
             QMessageBox.critical(None, tr("msg_error"), f"Initialization error: {e}")
 
+    def _runtime_services(self) -> TextWindowRuntimeServices:
+        return ensure_runtime_services(self)
+
     # --- Properties ---
 
     # --- Properties ---
@@ -135,8 +150,7 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         """選択状態更新に加えて、必要時に再レンダリングを実行する。"""
         prev = bool(getattr(self, "is_selected", False))
         super().set_selected(selected)
-        if prev != bool(selected):
-            self.update_text()
+        text_window_selection_ops.after_set_selected(self, previous=prev, current=bool(selected))
 
     # update_text, update_text_debounced, _update_text_immediate, _restore_render_debounce_ms_after_wheel
     # Moved to TextPropertiesMixin. _update_text_immediate handles rendering.
@@ -147,98 +161,16 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         self._refresh_overlay_meta_tooltip()
 
     def _classify_due_state(self) -> str:
-        raw_due = getattr(self, "due_at", "")
-        due_at = str(raw_due).strip() if isinstance(raw_due, str) else ""
-        if not due_at:
-            return ""
-        try:
-            return str(
-                classify_due(
-                    due_at,
-                    due_time=str(getattr(self, "due_time", "") or ""),
-                    due_timezone=str(getattr(self, "due_timezone", "") or ""),
-                    due_precision=str(getattr(self, "due_precision", "date") or "date"),
-                )
-            )
-        except Exception:
-            return ""
+        return text_window_tooltip_ops.classify_due_state(self)
 
     def _task_progress_counts(self) -> tuple[int, int]:
-        lines = self._split_lines(str(getattr(self, "text", "") or ""))
-        total = len(lines)
-        raw_states = getattr(self, "task_states", [])
-        normalized = self._normalize_task_states(list(raw_states) if isinstance(raw_states, list) else [], total)
-        done = sum(1 for state in normalized if state)
-        return done, total
+        return text_window_task_ops.task_progress_counts(self)
 
     def _build_overlay_meta_tooltip_lines(self) -> List[str]:
-        lines: List[str] = []
-
-        title = str(getattr(self, "title", "") or "").strip()
-        if title:
-            lines.append(f"{tr('label_note_title')}: {title}")
-
-        if self.is_task_mode():
-            done, total = self._task_progress_counts()
-            lines.append(str(tr("label_task_progress_fmt")).format(done=done, total=total))
-
-        raw_due = getattr(self, "due_at", "")
-        due_at = str(raw_due).strip() if isinstance(raw_due, str) else ""
-        if due_at:
-            due_display = format_due_for_display(
-                due_at,
-                due_time=str(getattr(self, "due_time", "") or ""),
-                due_timezone=str(getattr(self, "due_timezone", "") or ""),
-                due_precision=str(getattr(self, "due_precision", "date") or "date"),
-            )
-            if due_display:
-                lines.append(f"{tr('label_note_due_at')}: {due_display}")
-            due_state = self._classify_due_state()
-            if due_state == "today":
-                lines.append(tr("text_meta_due_today"))
-            elif due_state == "overdue":
-                lines.append(tr("text_meta_due_overdue"))
-
-        raw_tags = getattr(self, "tags", [])
-        tags = [str(tag).strip() for tag in raw_tags] if isinstance(raw_tags, list) else []
-        tags = [tag for tag in tags if tag]
-        if tags:
-            lines.append(f"{tr('label_note_tags')}: {', '.join(tags)}")
-
-        if bool(getattr(self, "is_starred", False)):
-            lines.append(f"★ {tr('text_meta_starred')}")
-        if bool(getattr(self, "is_archived", False)):
-            lines.append(tr("text_meta_archived"))
-        return lines
+        return text_window_tooltip_ops.build_overlay_meta_tooltip_lines(self)
 
     def _refresh_overlay_meta_tooltip(self) -> None:
-        prev_append = str(getattr(self, "_overlay_meta_tooltip_append", "") or "")
-        try:
-            current = str(self.toolTip() or "")
-        except Exception:
-            return
-
-        base = current
-        if prev_append and current.endswith(prev_append):
-            base = current[: -len(prev_append)]
-        base = base.rstrip()
-
-        lines = self._build_overlay_meta_tooltip_lines()
-        if not lines:
-            try:
-                self.setToolTip(base)
-            except Exception:
-                pass
-            self._overlay_meta_tooltip_append = ""
-            return
-
-        suffix = "\n".join(lines)
-        append = f"\n\n{suffix}" if base else suffix
-        try:
-            self.setToolTip(base + append)
-            self._overlay_meta_tooltip_append = append
-        except Exception:
-            self._overlay_meta_tooltip_append = ""
+        text_window_tooltip_ops.refresh_overlay_meta_tooltip(self)
 
     def set_undoable_property(
         self,
@@ -369,52 +301,9 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         remapped = self._remap_task_states(old_lines, new_lines, old_states)
         self.task_states = self._normalize_task_states(remapped, len(new_lines))
 
-    def _extract_legacy_task_data(self, text: str) -> tuple[str, List[bool], bool]:
-        lines = self._split_lines(text)
-        migrated_lines: List[str] = []
-        migrated_states: List[bool] = []
-        migrated_any = False
-
-        for line in lines:
-            match = LEGACY_TASK_LINE_PATTERN.match(str(line or ""))
-            if match:
-                migrated_any = True
-                state = str(match.group("state") or " ").strip().lower() == "x"
-                body = str(match.group("body") or "")
-                migrated_lines.append(body)
-                migrated_states.append(state)
-            else:
-                migrated_lines.append(str(line or ""))
-                migrated_states.append(False)
-        return "\n".join(migrated_lines), migrated_states, migrated_any
-
-    def _migrate_legacy_task_prefixes(self) -> None:
-        text_now = str(self.text or "")
-        cleaned_text, migrated_states, migrated_any = self._extract_legacy_task_data(text_now)
-        if not migrated_any:
-            return
-
-        # task_states が既に実運用値を持っている場合は、本文だけ変換して状態は保持する。
-        existing_states = self._normalize_task_states(self.task_states, len(self._split_lines(text_now)))
-        has_non_default_state = any(existing_states)
-
-        self._suppress_task_state_sync = True
-        try:
-            self.config.text = cleaned_text
-        finally:
-            self._suppress_task_state_sync = False
-
-        if has_non_default_state:
-            self._ensure_task_states_for_text(cleaned_text)
-        else:
-            self.task_states = self._normalize_task_states(migrated_states, len(self._split_lines(cleaned_text)))
-
-    def _ensure_task_mode_constraints(self, allow_legacy_migration: bool = False) -> None:
+    def _ensure_task_mode_constraints(self) -> None:
         self._ensure_task_states_for_text(self.text)
         if self.is_task_mode():
-            if allow_legacy_migration:
-                self._migrate_legacy_task_prefixes()
-                self._ensure_task_states_for_text(self.text)
             if self.is_vertical:
                 self.config.is_vertical = False
         else:
@@ -477,7 +366,6 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
                 self.note_vertical_preference = bool(self.is_vertical)
                 if self.is_vertical:
                     self.set_undoable_property("is_vertical", False, None)
-                self._migrate_legacy_task_prefixes()
                 self._ensure_task_states_for_text(self.text)
             else:
                 restore_vertical = bool(self.note_vertical_preference)
@@ -493,207 +381,61 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
     def _toggle_task_line_by_index(self, idx: int) -> None:
         """指定行の完了状態をトグルする。"""
-        self.toggle_task_line_state(idx)
+        text_window_task_ops.toggle_task_line_by_index(self, idx)
 
     def get_task_progress(self) -> tuple[int, int]:
         """タスクの進捗を返す（完了数, 総数）。"""
-        if not self.is_task_mode():
-            return 0, 0
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        done = sum(1 for state in states if state)
-        return done, total
+        return text_window_task_ops.get_task_progress(self)
 
     def iter_task_items(self) -> List[TaskLineRef]:
         """タスク行の参照一覧を返す（taskモード時のみ）。"""
-        if not self.is_task_mode():
-            return []
-
-        lines = self._split_lines(self.text)
-        states = self._normalize_task_states(self.task_states, len(lines))
-        window_uuid = str(getattr(self, "uuid", ""))
-        return [
-            TaskLineRef(
-                window_uuid=window_uuid,
-                line_index=i,
-                text=str(line or ""),
-                done=bool(states[i]),
-            )
-            for i, line in enumerate(lines)
-        ]
+        return text_window_task_ops.iter_task_items(self)
 
     def get_task_line_state(self, index: int) -> bool:
         """指定行のタスク状態を返す。"""
-        if not self.is_task_mode():
-            return False
-        lines = self._split_lines(self.text)
-        if index < 0 or index >= len(lines):
-            return False
-        states = self._normalize_task_states(self.task_states, len(lines))
-        return bool(states[index])
+        return text_window_task_ops.get_task_line_state(self, index)
 
     def set_task_line_state(self, index: int, done: bool) -> None:
         """指定行のタスク状態を設定する。"""
-        if not self.is_task_mode():
-            return
-        lines = self._split_lines(self.text)
-        if index < 0 or index >= len(lines):
-            return
-
-        states = self._normalize_task_states(self.task_states, len(lines))
-        target = bool(done)
-        if bool(states[index]) == target:
-            return
-
-        new_states = list(states)
-        new_states[index] = target
-        self.set_undoable_property("task_states", new_states, "update_text")
-        self._touch_updated_at()
+        text_window_task_ops.set_task_line_state(self, index, done)
 
     def toggle_task_line_state(self, index: int) -> None:
         """指定行のタスク状態をトグルする。"""
-        if not self.is_task_mode():
-            return
-        self.set_task_line_state(index, not self.get_task_line_state(index))
+        text_window_task_ops.toggle_task_line_state(self, index)
 
     def set_title_and_tags(self, title: str, tags: List[str]) -> None:
-        """ノートメタ（title/tags）をまとめて更新する。"""
-        normalized_title = str(title or "").strip()
-        normalized_tags = normalize_tags(tags or [])
-
-        title_changed = self.title != normalized_title
-        tags_changed = self.tags != normalized_tags
-        if not title_changed and not tags_changed:
-            return
-
-        stack = getattr(self.main_window, "undo_stack", None)
-        use_macro = bool(
-            title_changed
-            and tags_changed
-            and stack is not None
-            and hasattr(stack, "beginMacro")
-            and hasattr(stack, "endMacro")
-        )
-        if use_macro:
-            stack.beginMacro("Update Note Metadata")
-        try:
-            if title_changed:
-                self.set_undoable_property("title", normalized_title, "update_text")
-            if tags_changed:
-                self.set_undoable_property("tags", normalized_tags, "update_text")
-            self._touch_updated_at()
-        finally:
-            if use_macro:
-                stack.endMacro()
+        text_window_metadata_ops.set_title_and_tags(self, title, tags)
 
     def set_tags(self, tags: List[str]) -> None:
-        """タグのみを正規化して更新する。"""
-        normalized_tags = normalize_tags(tags or [])
-        if list(getattr(self, "tags", []) or []) == normalized_tags:
-            return
-        self.set_undoable_property("tags", normalized_tags, "update_text")
-        self._touch_updated_at()
+        text_window_metadata_ops.set_tags(self, tags)
 
     def set_starred(self, value: bool) -> None:
-        """スター状態を更新する。"""
-        new_value = bool(value)
-        if bool(self.is_starred) == new_value:
-            return
-        self.set_undoable_property("is_starred", new_value, "update_text")
-        self._touch_updated_at()
+        text_window_metadata_ops.set_starred(self, value)
 
     def set_archived(self, value: bool) -> None:
-        """アーカイブ状態を更新する。"""
-        new_value = bool(value)
-        if bool(getattr(self, "is_archived", False)) == new_value:
-            return
-        self.set_undoable_property("is_archived", new_value, "update_text")
-        self._touch_updated_at()
+        text_window_metadata_ops.set_archived(self, value)
 
     @staticmethod
     def _normalize_due_iso(value: str) -> str | None:
         return normalize_due_iso(value)
 
     def set_due_at(self, value: str) -> None:
-        """期限を設定する（内部保存は YYYY-MM-DDT00:00:00）。"""
-        normalized = self._normalize_due_iso(value)
-        if normalized is None:
-            return
-        current_due = str(getattr(self, "due_at", "") or "")
-        current_precision = str(getattr(self, "due_precision", "date") or "date").strip().lower()
-        current_time = str(getattr(self, "due_time", "") or "")
-        current_timezone = str(getattr(self, "due_timezone", "") or "")
-        if current_due == normalized and current_precision == "date" and not current_time and not current_timezone:
-            return
-        if current_due != normalized:
-            self.set_undoable_property("due_at", normalized, "update_text")
-        if current_precision != "date":
-            self.set_undoable_property("due_precision", "date", None)
-        if current_time:
-            self.set_undoable_property("due_time", "", None)
-        if current_timezone:
-            self.set_undoable_property("due_timezone", "", None)
-        self._touch_updated_at()
+        text_window_metadata_ops.set_due_at(self, value)
 
     def clear_due_at(self) -> None:
-        """期限を解除する。"""
-        has_due = bool(str(getattr(self, "due_at", "") or ""))
-        has_time = bool(str(getattr(self, "due_time", "") or ""))
-        has_timezone = bool(str(getattr(self, "due_timezone", "") or ""))
-        precision = str(getattr(self, "due_precision", "date") or "date").strip().lower()
-        if not has_due and not has_time and not has_timezone and precision == "date":
-            return
-        if has_due:
-            self.set_undoable_property("due_at", "", "update_text")
-        if has_time:
-            self.set_undoable_property("due_time", "", None)
-        if has_timezone:
-            self.set_undoable_property("due_timezone", "", None)
-        if precision != "date":
-            self.set_undoable_property("due_precision", "date", None)
-        self._touch_updated_at()
+        text_window_metadata_ops.clear_due_at(self)
 
     def bulk_set_task_done(self, indices: List[int], value: bool) -> None:
         """指定行群のタスク状態を一括設定する。"""
-        if not self.is_task_mode():
-            return
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        new_states = list(states)
-        target = bool(value)
-        changed = False
-        for idx in sorted(set(indices or [])):
-            if idx < 0 or idx >= total:
-                continue
-            if bool(new_states[idx]) == target:
-                continue
-            new_states[idx] = target
-            changed = True
-        if changed:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        text_window_task_ops.bulk_set_task_done(self, indices, value)
 
     def complete_all_tasks(self) -> None:
         """全タスク行を完了状態にする。"""
-        if not self.is_task_mode():
-            return
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        new_states = [True for _ in states]
-        if new_states != states:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        text_window_task_ops.complete_all_tasks(self)
 
     def uncomplete_all_tasks(self) -> None:
         """全タスク行を未完了状態にする。"""
-        if not self.is_task_mode():
-            return
-        total = len(self._split_lines(self.text))
-        states = self._normalize_task_states(self.task_states, total)
-        new_states = [False for _ in states]
-        if new_states != states:
-            self.set_undoable_property("task_states", new_states, "update_text")
-            self._touch_updated_at()
+        text_window_task_ops.uncomplete_all_tasks(self)
 
     def set_horizontal_margin_ratio(self) -> None:
         dialog = MarginRatioDialog(
@@ -719,6 +461,7 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             event (Any): QKeyEvent
         """
         try:
+            services = self._runtime_services()
             locked: bool = bool(getattr(self, "is_locked", False))
 
             # --- 管理系（ロック中でも許可）---
@@ -744,27 +487,18 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
             # --- 配置/ノード操作 ---
             if event.key() == Qt.Key_Tab:
-                if hasattr(self.main_window, "window_manager") and hasattr(
-                    self.main_window.window_manager, "create_related_node"
-                ):
-                    self.main_window.window_manager.create_related_node(self, "child")
+                services.create_related_node(self, "child")
                 event.accept()
                 return
 
             if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-                if hasattr(self.main_window, "window_manager") and hasattr(
-                    self.main_window.window_manager, "create_related_node"
-                ):
-                    self.main_window.window_manager.create_related_node(self, "sibling")
+                services.create_related_node(self, "sibling")
                 event.accept()
                 return
 
             # --- ナビゲーション ---
             if event.key() in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
-                if hasattr(self.main_window, "window_manager") and hasattr(
-                    self.main_window.window_manager, "navigate_selection"
-                ):
-                    self.main_window.window_manager.navigate_selection(self, event.key())
+                services.navigate_selection(self, event.key())
                 event.accept()
                 return
 
@@ -798,34 +532,19 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
     def mousePressEvent(self, event: Any) -> None:
         """マウスプレスイベント。タスクモードのクリック検出用に位置を記録。"""
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._task_press_pos = event.position().toPoint()
+        text_window_selection_ops.mouse_press(self, event)
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: Any) -> None:
         """マウスリリースイベント。タスクモードでチェックボックスクリックを処理。"""
-        if event.button() == Qt.MouseButton.LeftButton and self.is_task_mode():
-            release_pos = event.position().toPoint()
-            press_pos = getattr(self, "_task_press_pos", None)
-            if press_pos is not None:
-                dist = (release_pos - press_pos).manhattanLength()
-                if dist < 10:
-                    idx = self._hit_test_task_checkbox(release_pos)
-                    if idx >= 0:
-                        self._toggle_task_line_by_index(idx)
-                        super().mouseReleaseEvent(event)
-                        return
+        if text_window_selection_ops.mouse_release_should_toggle(self, event):
+            super().mouseReleaseEvent(event)
+            return
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event: Any) -> None:
         """マウスムーブイベント。タスクモード時にチェックボックス上でカーソル変更。"""
-        if self.is_task_mode() and not self.is_dragging:
-            pos = event.position().toPoint()
-            idx = self._hit_test_task_checkbox(pos)
-            if idx >= 0:
-                self.setCursor(Qt.CursorShape.PointingHandCursor)
-            else:
-                self.unsetCursor()
+        text_window_selection_ops.mouse_move(self, event)
         super().mouseMoveEvent(event)
 
     def _hit_test_task_checkbox(self, pos: QPoint) -> int:
@@ -837,18 +556,7 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         Returns:
             ヒットした行インデックス。ヒットなしの場合は -1。
         """
-        if not self.is_task_mode() or self.is_vertical:
-            return -1
-
-        renderer = getattr(self, "renderer", None)
-        if renderer is None:
-            return -1
-
-        rects = renderer.get_task_line_rects(self)
-        for i, rect in enumerate(rects):
-            if rect.contains(pos):
-                return i
-        return -1
+        return text_window_selection_ops.hit_test_task_checkbox(self, pos)
 
     def wheelEvent(self, event: Any) -> None:
         """マウスホイールによるフォントサイズ変更。
@@ -914,62 +622,26 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             new_opacity = getattr(self, "_previous_background_opacity", 100)
         self.set_undoable_property("background_opacity", new_opacity, "update_text")
 
+    def closeEvent(self, event: Any) -> None:
+        """クローズ時に編集ダイアログをクリーンアップする。"""
+        self._cleanup_edit_dialog()
+        super().closeEvent(event)
+
     def change_text(self) -> None:
-        """リアルタイムプレビュー付きでテキストを変更し、変更をログに記録します。"""
-        original_text = self.text
-
-        def live_update_callback(new_text: str):
-            try:
-                self.text = new_text
-                self.update_text()
-            except Exception as e:
-                logger.error(f"Live update failed: {e}")
-
-        try:
-            dialog = TextInputDialog(self.text, self, callback=live_update_callback)
-
-            # ダイアログの配置ロジック
-            screen = self.screen()
-            if screen:
-                screen_geo = screen.availableGeometry()
-                win_geo = self.geometry()
-                dlg_w, dlg_h, padding = dialog.width(), dialog.height(), 20
-
-                target_x = win_geo.right() + padding
-                if target_x + dlg_w > screen_geo.right():
-                    target_x = win_geo.left() - dlg_w - padding
-                target_y = max(screen_geo.top(), min(win_geo.top(), screen_geo.bottom() - dlg_h))
-                dialog.move(target_x, target_y)
-
-            if dialog.exec() == QDialog.Accepted:
-                final_text = dialog.get_text()
-                self.text = original_text
-                if final_text != original_text:
-                    self.set_undoable_property("text", final_text, "update_text")
-                    logger.info(f"Text changed for {self.uuid}")
-                else:
-                    self.update_text()
-            else:
-                self.text = original_text
-                self.update_text()
-
-        except Exception as e:
-            logger.error(f"Error in change_text dialog: {e}\n{traceback.format_exc()}")
-            QMessageBox.critical(self, tr("msg_error"), f"Failed to open edit dialog: {e}")
-            self.text = original_text
-            self.update_text()
+        """モードレスダイアログでテキストを変更する（Persistent Mode）。"""
+        self.start_edit_dialog()
 
     def change_font(self) -> None:
         """フォント選択ダイアログを表示し、適用する。"""
         font = choose_font(self, QFont(self.font_family, int(self.font_size)))
         if font is not None:
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Change Font")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Change Font")
             self.set_undoable_property("font_family", font.family(), None)
             self.set_undoable_property("font_size", font.pointSize(), None)
 
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def change_font_color(self) -> None:
         color = QColorDialog.getColor(self.font_color, self)
@@ -997,15 +669,15 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
         """
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 QMessageBox.warning(self, tr("msg_warning"), "WindowManager is not available.")
                 return
 
             # 自分の近くに出す（少しずらす）
             new_pos: QPoint = self.pos() + QPoint(20, 20)
 
-            _w: Optional["TextWindow"] = mw.window_manager.add_text_window(
+            _w: Optional["TextWindow"] = services.add_text_window(
                 text=tr("new_text_default"),
                 pos=new_pos,
                 suppress_limit_message=False,
@@ -1023,12 +695,12 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             - クローンの生成経路を WindowManager に一本化し、制限・選択同期・シグナル接続の整合性を保つ。
         """
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 QMessageBox.warning(self, tr("msg_warning"), "WindowManager is not available.")
                 return
 
-            mw.window_manager.clone_text_window(self)
+            services.clone_text_window(self)
 
         except Exception as e:
             logger.error("Failed to clone TextWindow via WindowManager: %s\n%s", e, traceback.format_exc())
@@ -1060,11 +732,11 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     def hide_all_other_windows(self) -> None:
         """自分以外のテキストを隠す（WindowManager に委譲）。"""
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 return
 
-            mw.window_manager.hide_all_other_text_windows(self)
+            services.hide_all_other_text_windows(self)
 
         except Exception as e:
             QMessageBox.critical(self, tr("msg_error"), f"Failed to hide other text windows: {e}")
@@ -1073,11 +745,11 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     def close_all_other_windows(self) -> None:
         """自分以外のテキストを閉じる（WindowManager に委譲）。"""
         try:
-            mw: Any = getattr(self, "main_window", None)
-            if mw is None or not hasattr(mw, "window_manager"):
+            services = self._runtime_services()
+            if not services.has_window_manager():
                 return
 
-            mw.window_manager.close_all_other_text_windows(self)
+            services.close_all_other_text_windows(self)
 
         except Exception as e:
             QMessageBox.critical(self, tr("msg_error"), f"Failed to close other text windows: {e}")
@@ -1085,13 +757,11 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
     def save_text_to_json(self) -> None:
         """設定をJSONファイルに保存します（FileManagerに委譲）。"""
-        if self.main_window and hasattr(self.main_window, "file_manager"):
-            self.main_window.file_manager.save_window_to_json(self)
+        self._runtime_services().save_window_to_json(self)
 
     def load_text_from_json(self) -> None:
         """JSONファイルから設定を読み込みます（FileManagerに委譲）。"""
-        if self.main_window and hasattr(self.main_window, "file_manager"):
-            self.main_window.file_manager.load_window_from_json(self)
+        self._runtime_services().load_window_from_json(self)
 
     def toggle_text_gradient(self) -> None:
         self.set_undoable_property("text_gradient_enabled", not self.text_gradient_enabled, "update_text")
@@ -1102,22 +772,22 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     def edit_text_gradient(self) -> None:
         dialog = GradientEditorDialog(self.text_gradient, self.text_gradient_angle, self)
         if dialog.exec() == QDialog.Accepted:
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Edit Text Gradient")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Edit Text Gradient")
             self.set_undoable_property("text_gradient", dialog.get_gradient(), None)
             self.set_undoable_property("text_gradient_angle", dialog.get_angle(), "update_text")
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def edit_background_gradient(self) -> None:
         dialog = GradientEditorDialog(self.background_gradient, self.background_gradient_angle, self)
         if dialog.exec() == QDialog.Accepted:
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Edit Background Gradient")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Edit Background Gradient")
             self.set_undoable_property("background_gradient", dialog.get_gradient(), None)
             self.set_undoable_property("background_gradient_angle", dialog.get_angle(), "update_text")
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def _open_slider_dialog(
         self,
@@ -1426,12 +1096,12 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         if dialog.exec() == QDialog.Accepted:
             new_x, new_y = dialog.get_offsets()
             if old_x != new_x or old_y != new_y:
-                if hasattr(self.main_window, "undo_stack"):
-                    self.main_window.undo_stack.beginMacro("Set Shadow Offsets")
+                services = self._runtime_services()
+                use_macro = services.begin_undo_macro("Set Shadow Offsets")
                 self.set_undoable_property("shadow_offset_x", new_x, None)
                 self.set_undoable_property("shadow_offset_y", new_y, "update_text")
-                if hasattr(self.main_window, "undo_stack"):
-                    self.main_window.undo_stack.endMacro()
+                if use_macro:
+                    services.end_undo_macro()
 
     def toggle_background_outline(self) -> None:
         self.set_undoable_property("background_outline_enabled", not self.background_outline_enabled, "update_text")
@@ -1473,8 +1143,11 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         defaults["v_margin_left"] = base_config.v_margin_left
         defaults["v_margin_right"] = base_config.v_margin_right
 
+        services = self._runtime_services()
+        json_dir = services.get_json_directory()
+
         # 2. レガシー：横書き余白
-        h_path = os.path.join(self.main_window.json_directory, "text_defaults.json")
+        h_path = os.path.join(json_dir, "text_defaults.json")
         if os.path.exists(h_path):
             try:
                 with open(h_path, "r") as f:
@@ -1483,7 +1156,7 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
                 logger.warning(f"Failed to load text defaults: {e}")
 
         # 3. レガシー：縦書き余白 (BUG FIX: これがロードされていなかった)
-        v_path = os.path.join(self.main_window.json_directory, "text_defaults_vertical.json")
+        v_path = os.path.join(json_dir, "text_defaults_vertical.json")
         if os.path.exists(v_path):
             try:
                 with open(v_path, "r") as f:
@@ -1492,12 +1165,11 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
                 logger.warning(f"Failed to load vertical text defaults: {e}")
 
         # 4. モダン：Archetype (すべてのスタイル)
-        if hasattr(self.main_window, "settings_manager"):
-            archetype = self.main_window.settings_manager.load_text_archetype()
-            if archetype:
-                # Archetype のキー名が config 準拠 (horizontal_margin_ratio 等) なのでマッピング
-                # load_text_defaults は従来辞書を返し、__init__ で直接属性に代入されている
-                defaults.update(archetype)
+        archetype = services.load_text_archetype()
+        if archetype:
+            # Archetype のキー名が config 準拠 (horizontal_margin_ratio 等) なのでマッピング
+            # load_text_defaults は従来辞書を返し、__init__ で直接属性に代入されている
+            defaults.update(archetype)
 
         return defaults
 
@@ -1530,8 +1202,8 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
         if dialog.exec() == QDialog.Accepted:
             values_dict = dialog.get_values_dict()
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.beginMacro("Change Spacing")
+            services = self._runtime_services()
+            use_macro = services.begin_undo_macro("Change Spacing")
 
             # 辞書の最後のキー以外は update_text を None に
             keys = list(values_dict.keys())
@@ -1541,36 +1213,15 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             if keys:
                 self.set_undoable_property(keys[-1], values_dict[keys[-1]], "update_text")
 
-            if hasattr(self.main_window, "undo_stack"):
-                self.main_window.undo_stack.endMacro()
+            if use_macro:
+                services.end_undo_macro()
 
     def show_property_panel(self) -> None:
         self.sig_request_property_panel.emit(self)
 
     def propagate_scale_to_children(self, ratio: float) -> None:
-        """子ウィンドウに対してスケーリングを伝搬させる。
-
-        Args:
-            ratio (float): スケール倍率。
-        """
-        if not self.child_windows:
-            return
-        parent_center = self.geometry().center()
-        for child in self.child_windows:
-            try:
-                vec = child.geometry().center() - parent_center
-                new_center = parent_center + QPoint(int(vec.x() * ratio), int(vec.y() * ratio))
-                if hasattr(child, "font_size"):
-                    child.font_size *= ratio
-                    child.update_text()
-                elif hasattr(child, "scale_factor"):
-                    child.scale_factor *= ratio
-                    child.update_image()
-                child.move(int(new_center.x() - child.width() / 2), int(new_center.y() - child.height() / 2))
-                if hasattr(child, "propagate_scale_to_children"):
-                    child.propagate_scale_to_children(ratio)
-            except Exception:
-                pass  # Error propagating scale
+        """互換API: 拡大率の子伝播は無効（移動同期のみ方針）。"""
+        return
 
     # --- UI Menu ---
 
@@ -1580,25 +1231,27 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             pos (QPoint): 表示位置。
         """
         try:
+            services = self._runtime_services()
             builder = ContextMenuBuilder(self, self.main_window)
 
             builder.add_connect_group_menu()
+            builder.add_layer_menu()
             builder.add_action("menu_show_properties", self.show_property_panel)
             builder.add_separator()
 
             # スタイルプリセット
-            if hasattr(self.main_window, "style_manager"):
+            if services.has_style_manager():
                 style_menu = builder.add_submenu("menu_style_presets")
                 builder.add_action("menu_open_style_gallery", self.open_style_gallery, parent_menu=style_menu)
                 builder.add_separator(parent_menu=style_menu)
                 builder.add_action(
                     "menu_save_style",
-                    lambda: self.main_window.style_manager.save_text_style(self),
+                    lambda: services.save_text_style(self),
                     parent_menu=style_menu,
                 )
                 builder.add_action(
                     "menu_load_style_file",
-                    lambda: self.main_window.style_manager.load_text_style(self),
+                    lambda: services.load_text_style(self),
                     parent_menu=style_menu,
                 )
 
@@ -1614,7 +1267,7 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
             builder.add_action("menu_clone_text", self.clone_text)
             builder.add_action("menu_save_png", self.save_as_png)
             builder.add_action("menu_save_json", self.save_text_to_json)
-            builder.add_action("menu_load_json", self.main_window.file_manager.load_scene_from_json)
+            builder.add_action("menu_load_json", services.load_scene_from_json)
             builder.add_separator()
 
             # テキスト表示
@@ -1784,8 +1437,13 @@ class TextWindow(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
 
     def open_style_gallery(self) -> None:
         """スタイルギャラリーダイアログを表示し、選択されたスタイルを適用する。"""
-        dialog = StyleGalleryDialog(self.main_window.style_manager, self)
+        services = self._runtime_services()
+        style_manager = services.get_style_manager()
+        if style_manager is None:
+            QMessageBox.warning(self, tr("msg_warning"), "StyleManager is not available.")
+            return
+        dialog = StyleGalleryDialog(style_manager, self)
         if dialog.exec() == QDialog.Accepted:
             json_path = dialog.get_selected_style_path()
             if json_path:
-                self.main_window.style_manager.load_text_style(self, json_path)
+                services.load_text_style(self, json_path)

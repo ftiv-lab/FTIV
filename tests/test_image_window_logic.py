@@ -455,34 +455,17 @@ class TestPropagateScaleToChildren:
         w.child_windows = []
         w.propagate_scale_to_children(2.0)  # No crash
 
-    def test_scales_image_child(self):
+    def test_does_not_scale_image_child(self):
         w = _make_image_window()
         child = MagicMock()
         child.scale_factor = 1.0
-        child_geo = MagicMock()
-        child_center = MagicMock()
-        child_center.x.return_value = 200
-        child_center.y.return_value = 200
-        child_center.__sub__ = lambda self, other: QPoint(self.x() - other.x(), self.y() - other.y())
-        child_geo.center.return_value = child_center
-        child.geometry.return_value = child_geo
-        child.width.return_value = 100
-        child.height.return_value = 50
-
-        parent_geo = MagicMock()
-        parent_center = MagicMock()
-        parent_center.x.return_value = 100
-        parent_center.y.return_value = 100
-        parent_geo.center.return_value = parent_center
-
         w.child_windows = [child]
-        with patch.object(type(w), "geometry", return_value=parent_geo):
-            w.propagate_scale_to_children(2.0)
-        assert child.scale_factor == 2.0
-        child.update_image.assert_called()
-        child.move.assert_called()
+        w.propagate_scale_to_children(2.0)
+        assert child.scale_factor == 1.0
+        child.update_image.assert_not_called()
+        child.move.assert_not_called()
 
-    def test_scales_text_child(self):
+    def test_does_not_scale_text_child(self):
         w = _make_image_window()
         child = MagicMock(
             spec=[
@@ -499,27 +482,10 @@ class TestPropagateScaleToChildren:
         )
         child.font_size = 24.0
         child.background_corner_ratio = 0.1
-        child_geo = MagicMock()
-        child_center = MagicMock()
-        child_center.x.return_value = 150
-        child_center.y.return_value = 150
-        child_center.__sub__ = lambda self, other: QPoint(self.x() - other.x(), self.y() - other.y())
-        child_geo.center.return_value = child_center
-        child.geometry.return_value = child_geo
-        child.width.return_value = 100
-        child.height.return_value = 50
-
-        parent_geo = MagicMock()
-        parent_center = MagicMock()
-        parent_center.x.return_value = 100
-        parent_center.y.return_value = 100
-        parent_geo.center.return_value = parent_center
-
         w.child_windows = [child]
-        with patch.object(type(w), "geometry", return_value=parent_geo):
-            w.propagate_scale_to_children(2.0)
-        assert child.font_size == 48.0
-        child.update_text.assert_called()
+        w.propagate_scale_to_children(2.0)
+        assert child.font_size == 24.0
+        child.update_text.assert_not_called()
 
 
 # ============================================================
@@ -531,34 +497,17 @@ class TestPropagateRotationToChildren:
         w.child_windows = []
         w.propagate_rotation_to_children(45.0)  # No crash
 
-    def test_rotates_child_position(self):
+    def test_does_not_rotate_child(self):
         w = _make_image_window()
         child = MagicMock()
         child.rotation_angle = 0.0
-        child.width.return_value = 100
-        child.height.return_value = 50
-
-        parent_geo = MagicMock()
-        parent_center = MagicMock()
-        parent_center.x.return_value = 100
-        parent_center.y.return_value = 100
-        parent_geo.center.return_value = parent_center
-
-        child_geo = MagicMock()
-        child_center = MagicMock()
-        child_center.x.return_value = 200
-        child_center.y.return_value = 100
-        child_geo.center.return_value = child_center
-        child.geometry.return_value = child_geo
 
         w.child_windows = [child]
-        with patch.object(type(w), "geometry", return_value=parent_geo):
-            w.propagate_rotation_to_children(90.0)
+        w.propagate_rotation_to_children(90.0)
 
-        child.move.assert_called_once()
-        # rotation_angle should increase by 90
-        assert child.rotation_angle == 90.0
-        child.update_image.assert_called()
+        child.move.assert_not_called()
+        assert child.rotation_angle == 0.0
+        child.update_image.assert_not_called()
 
 
 # ============================================================

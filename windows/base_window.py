@@ -1,6 +1,7 @@
 # windows/base_window.py
 
 import logging
+import time
 import traceback
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Type
@@ -67,9 +68,12 @@ class BaseOverlayWindow(QLabel):
         self.child_windows: List["BaseOverlayWindow"] = []
         self.connected_lines: List[Any] = []
         self.is_selected: bool = False
+        self._layer_hover_preview: bool = False
         self.is_dragging: bool = False
         self.last_mouse_pos: Optional[QPoint] = None
         self._drag_start_pos_global: Optional[QPoint] = None
+        # ドラッグ中の過剰な raise_group_stack 呼び出しを抑制する（約60fps上限）
+        self._next_layer_restack_ts: float = 0.0
 
         # ウィンドウ基本設定
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
@@ -281,6 +285,14 @@ class BaseOverlayWindow(QLabel):
         self.is_selected = selected
         self.update()
 
+    def set_layer_hover_preview(self, enabled: bool) -> None:
+        """LayerTab ホバーに応じた一時プレビュー枠の表示を切り替える。"""
+        enabled = bool(enabled)
+        if self._layer_hover_preview == enabled:
+            return
+        self._layer_hover_preview = enabled
+        self.update()
+
     def draw_selection_frame(self, painter: QPainter) -> None:
         """
         選択中のハイライト枠を描画します。
@@ -288,7 +300,10 @@ class BaseOverlayWindow(QLabel):
         Args:
             painter (QPainter): 描画に使用するペインター。
         """
-        if not self.is_selected:
+        is_hover_preview = bool(getattr(self, "_layer_hover_preview", False))
+        draw_selected_frame = bool(self.is_selected)
+        draw_sonar_frame = bool(is_hover_preview)
+        if not draw_selected_frame and not draw_sonar_frame:
             return
 
         # MainWindow 側の設定を参照（無ければデフォルト）
@@ -306,19 +321,33 @@ class BaseOverlayWindow(QLabel):
         except Exception:
             pass
 
+        # 選択枠OFFは「選択枠のみ」を抑止する。SonarはLayer UX導線なので維持する。
         if not enabled:
+            draw_selected_frame = False
+
+        if not draw_selected_frame and not draw_sonar_frame:
             return
 
         try:
             painter.save()
-            pen = QPen(QColor(color_str))
-            pen.setWidth(max(1, int(width)))
-            pen.setJoinStyle(Qt.RoundJoin)
-            painter.setPen(pen)
             painter.setBrush(QColor(0, 0, 0, 0))
 
-            rect = self.rect().adjusted(2, 2, -2, -2)
-            painter.drawRoundedRect(rect, 5, 5)
+            if draw_selected_frame:
+                pen = QPen(QColor(color_str))
+                pen.setWidth(max(1, int(width)))
+                pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(pen)
+                rect = self.rect().adjusted(2, 2, -2, -2)
+                painter.drawRoundedRect(rect, 5, 5)
+
+            if draw_sonar_frame:
+                sonar_pen = QPen(QColor("#FF8F00"))
+                sonar_pen.setWidth(max(2, int(width)))
+                sonar_pen.setStyle(Qt.PenStyle.SolidLine)
+                sonar_pen.setJoinStyle(Qt.RoundJoin)
+                painter.setPen(sonar_pen)
+                sonar_rect = self.rect().adjusted(4, 4, -4, -4)
+                painter.drawRoundedRect(sonar_rect, 4, 4)
             painter.restore()
         except Exception:
             # 描画で落とさない
@@ -329,11 +358,37 @@ class BaseOverlayWindow(QLabel):
 
     # --- 親子・コネクタ管理 ---
 
+    def _contains_in_subtree(self, target: "BaseOverlayWindow", _visited: set | None = None) -> bool:
+        """自分のサブツリー（子・孫…）に target が含まれるか再帰的に確認する。
+        循環参照の安全対策として _visited で訪問済みノードを追跡する。"""
+        if _visited is None:
+            _visited = set()
+        if id(self) in _visited:
+            return False
+        _visited.add(id(self))
+        if self is target:
+            return True
+        for child in self.child_windows:
+            if child._contains_in_subtree(target, _visited):
+                return True
+        return False
+
     def add_child_window(self, window: "BaseOverlayWindow"):
-        """子ウィンドウを追加し親子関係を設定します。"""
-        if window not in self.child_windows and window is not self:
-            self.child_windows.append(window)
-            window.parent_window_uuid = self.uuid
+        """子ウィンドウを追加し親子関係を設定します。
+        循環親子（A→B→A）は ValueError を発生させます。
+        """
+        if window is self:
+            return
+        if window in self.child_windows:
+            return
+        # 循環チェック: window のサブツリーに self が含まれる場合は循環になる
+        if window._contains_in_subtree(self):
+            raise ValueError(
+                f"循環親子禁止: {self.uuid[:8]} は {window.uuid[:8]} の子孫です。"
+                " add_child_window() をキャンセルします。"
+            )
+        self.child_windows.append(window)
+        window.parent_window_uuid = self.uuid
 
     def remove_child_window(self, window: "BaseOverlayWindow"):
         """子ウィンドウをリストから削除します。"""
@@ -642,7 +697,7 @@ class BaseOverlayWindow(QLabel):
         """
         # 相対モードの場合
         if getattr(self.config, "move_use_relative", False):
-            self._clear_legacy_absolute_move_fields()
+            self._clear_absolute_move_fields()
             # 既存の絶対アニメが動いていれば止める
             if self.move_animation:
                 try:
@@ -697,7 +752,7 @@ class BaseOverlayWindow(QLabel):
         """
         # 相対モード
         if getattr(self.config, "move_use_relative", False):
-            self._clear_legacy_absolute_move_fields()
+            self._clear_absolute_move_fields()
             if self.move_animation:
                 try:
                     self.move_animation.stop()
@@ -841,33 +896,6 @@ class BaseOverlayWindow(QLabel):
                 elif self.fade_in_only_loop_enabled:
                     self.start_fade_in_only()
 
-            elif event.button() == Qt.MouseButton.LeftButton and (event.modifiers() & Qt.ShiftModifier):
-                # Shift+Click: Connect to last selected window (Daisy Chain)
-                try:
-                    mw = getattr(self, "main_window", None)
-                    wm = getattr(mw, "window_manager", None) if mw else None
-                    if wm:
-                        # 直前に選択されていたウィンドウを取得
-                        last_sel = getattr(wm, "last_selected_window", None)
-
-                        # 自分自身以外、かつ直前選択がある場合に接続
-                        if last_sel and last_sel != self and hasattr(wm, "add_connector"):
-                            wm.add_connector(last_sel, self)
-
-                        # 次の接続のために自分を選択状態にする
-                        # (ここで is_dragging=True にしないことで、誤ドラッグを防ぐ)
-                        self.sig_window_selected.emit(self)
-                        event.accept()
-                        return
-
-                except Exception as e:
-                    logger.warning(f"Failed to connect via Shift+Click: {e}")
-                    pass  # 失敗しても通常のクリック処理へ流すか、ここで止めるか。安全のため止める。
-
-                # 接続処理が走った（または失敗した）が、通常のドラッグには行かせない
-                event.accept()
-                return
-
             elif event.button() == Qt.MouseButton.LeftButton:
                 # ★追加：ロック中はドラッグ移動を開始しない（選択はできる）
                 if getattr(self, "is_locked", False):
@@ -922,6 +950,24 @@ class BaseOverlayWindow(QLabel):
                 delta = current_pos - self.last_mouse_pos
 
                 self.move_tree_by_delta(delta)
+
+                # 親子レイヤー構造がある場合は、ドラッグ中もZ順を再整列する。
+                # 位置追従だけでは親が前面化して子が隠れるケースがあるため、
+                # WindowManager.raise_group_stack で「親の上に子」を維持する。
+                if self.child_windows:
+                    try:
+                        wm = getattr(self.main_window, "window_manager", None)
+                        if wm is not None and hasattr(wm, "raise_group_stack"):
+                            # ドラッグ中は親を再raiseしない。親を毎イベント前面化すると、
+                            # 子が一瞬隠れてから再表示されるフリッカーが発生しやすい。
+                            # さらに、再整列頻度を約60fpsに制限して負荷を抑える。
+                            now = time.monotonic()
+                            next_ts = float(getattr(self, "_next_layer_restack_ts", 0.0))
+                            if now >= next_ts:
+                                wm.raise_group_stack(self, include_parent=False)
+                                self._next_layer_restack_ts = now + 0.016
+                    except Exception:
+                        pass
 
                 # 追加：相対移動アニメ中なら、軌道の基準も一緒に平行移動する
                 if getattr(self, "_rel_move_anim", None) is not None:
@@ -1330,9 +1376,9 @@ class BaseOverlayWindow(QLabel):
         self._rel_move_anim = None
         self._rel_last_pos = None
 
-    def _clear_legacy_absolute_move_fields(self) -> None:
+    def _clear_absolute_move_fields(self) -> None:
         """
-        旧: start_position / end_position を使わない方針のため、値を無効化する。
+        start_position / end_position を使わない方針のため、値を無効化する。
         ※ 保存処理が exclude_none=True でないと JSON からは消えず null には残る。
         """
         try:

@@ -280,6 +280,7 @@ class TestAppSettings:
         from utils.app_settings import AppSettings
 
         s = AppSettings()
+        assert s.app_settings_schema_version == 2
         assert s.main_window_frontmost is True
         assert s.main_window_width == 0
         assert s.main_window_height == 0
@@ -294,11 +295,9 @@ class TestAppSettings:
         assert s.info_layout_mode == "auto"
         assert s.info_advanced_filters_expanded is False
         assert s.main_ui_density_mode == "auto"
-        assert s.text_editing_mode == "dialog"
         assert s.tab_ui_compact_overrides == {}
         assert s.property_panel_section_state == {}
         assert s.about_section_state == {}
-        assert s.info_operations_expanded is False
 
     def test_save_and_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings, save_app_settings
@@ -323,7 +322,8 @@ class TestAppSettings:
                         "open_tasks_only": False,
                         "archive_scope": "all",
                         "due_filter": "today",
-                        "mode_filter": "task",
+                        "item_scope": "tasks",
+                        "content_mode_filter": "task",
                         "sort_by": "due",
                         "sort_desc": False,
                     },
@@ -341,16 +341,15 @@ class TestAppSettings:
             info_layout_mode="compact",
             info_advanced_filters_expanded=True,
             main_ui_density_mode="compact",
-            text_editing_mode="inline",
             tab_ui_compact_overrides={"image": True, "text": False, "invalid": True},
             property_panel_section_state={"text_content": True, "shadow": False, "invalid": True},
             about_section_state={"edition": True, "performance": False, "bad": True},
-            info_operations_expanded=True,
         )
         result = save_app_settings(None, str(tmp_path), settings)
         assert result is True
 
         loaded = load_app_settings(None, str(tmp_path))
+        assert loaded.app_settings_schema_version == 2
         assert loaded.main_window_frontmost is False
         assert loaded.main_window_width == 480
         assert loaded.main_window_height == 720
@@ -363,23 +362,25 @@ class TestAppSettings:
         assert len(loaded.info_view_presets) == 1
         assert loaded.info_view_presets[0]["id"] == "user:1"
         assert loaded.info_view_presets[0]["filters"]["archive_scope"] == "all"
+        assert loaded.info_view_presets[0]["filters"]["item_scope"] == "tasks"
+        assert loaded.info_view_presets[0]["filters"]["content_mode_filter"] == "task"
+        assert "mode_filter" not in loaded.info_view_presets[0]["filters"]
         assert len(loaded.info_operation_logs) == 1
         assert loaded.info_operation_logs[0]["action"] == "bulk_archive"
         assert loaded.info_layout_mode == "compact"
         assert loaded.info_advanced_filters_expanded is True
         assert loaded.main_ui_density_mode == "compact"
-        # Deprecated key is load-only; save roundtrip should fall back to default.
-        assert loaded.text_editing_mode == "dialog"
         assert loaded.tab_ui_compact_overrides == {"image": True, "text": False}
         assert loaded.property_panel_section_state == {"text_content": True, "shadow": False}
         assert loaded.about_section_state == {"edition": True, "performance": False}
-        # Deprecated key is load-only and should not be saved by roundtrip.
-        assert loaded.info_operations_expanded is False
 
         settings_path = os.path.join(str(tmp_path), "json", "app_settings.json")
         with open(settings_path, "r", encoding="utf-8") as f:
             saved_data = json.load(f)
+        assert saved_data["app_settings_schema_version"] == 2
         assert "text_editing_mode" not in saved_data
+        assert "info_operations_expanded" not in saved_data
+        assert "mode_filter" not in saved_data["info_view_presets"][0]["filters"]
 
     def test_load_nonexistent_returns_default(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import AppSettings, load_app_settings
@@ -423,6 +424,27 @@ class TestAppSettings:
         assert len(loaded.info_view_presets) == 1
         assert loaded.info_view_presets[0]["id"] == "user:1"
 
+    def test_load_legacy_mode_filter_is_not_migrated(self, tmp_path: pytest.TempPathFactory) -> None:
+        from utils.app_settings import load_app_settings
+
+        json_dir = os.path.join(str(tmp_path), "json")
+        os.makedirs(json_dir)
+        data = {
+            "info_view_presets": [
+                {"id": "user:1", "name": "legacy", "filters": {"mode_filter": "task", "due_filter": "today"}}
+            ],
+        }
+        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+        loaded = load_app_settings(None, str(tmp_path))
+        assert len(loaded.info_view_presets) == 1
+        filters = loaded.info_view_presets[0]["filters"]
+        assert filters["item_scope"] == "all"
+        assert filters["content_mode_filter"] == "all"
+        assert filters["due_filter"] == "today"
+        assert "mode_filter" not in filters
+
     def test_load_invalid_info_operation_logs_skips_bad_entries(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import load_app_settings
 
@@ -456,17 +478,20 @@ class TestAppSettings:
         loaded = load_app_settings(None, str(tmp_path))
         assert loaded.info_layout_mode == "auto"
 
-    def test_load_legacy_info_operations_expanded(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_load_deprecated_keys_are_ignored(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import load_app_settings
 
         json_dir = os.path.join(str(tmp_path), "json")
         os.makedirs(json_dir)
-        data = {"info_operations_expanded": True}
+        data = {"info_operations_expanded": True, "text_editing_mode": "inline"}
         with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
             json.dump(data, f)
 
         loaded = load_app_settings(None, str(tmp_path))
-        assert loaded.info_operations_expanded is True
+        assert loaded.app_settings_schema_version == 1
+        assert hasattr(loaded, "info_layout_mode")
+        assert not hasattr(loaded, "info_operations_expanded")
+        assert not hasattr(loaded, "text_editing_mode")
 
     def test_load_invalid_main_ui_density_mode_falls_back_to_auto(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import load_app_settings
@@ -479,18 +504,6 @@ class TestAppSettings:
 
         loaded = load_app_settings(None, str(tmp_path))
         assert loaded.main_ui_density_mode == "auto"
-
-    def test_load_invalid_text_editing_mode_falls_back_to_dialog(self, tmp_path: pytest.TempPathFactory) -> None:
-        from utils.app_settings import load_app_settings
-
-        json_dir = os.path.join(str(tmp_path), "json")
-        os.makedirs(json_dir)
-        data = {"text_editing_mode": "unknown"}
-        with open(os.path.join(json_dir, "app_settings.json"), "w", encoding="utf-8") as f:
-            json.dump(data, f)
-
-        loaded = load_app_settings(None, str(tmp_path))
-        assert loaded.text_editing_mode == "dialog"
 
     def test_load_invalid_tab_ui_compact_overrides_skips_unknown(self, tmp_path: pytest.TempPathFactory) -> None:
         from utils.app_settings import load_app_settings

@@ -13,7 +13,14 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter
 from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
 
 from models.constants import AppDefaults
+from models.protocols import RendererInput
 from utils.translator import get_lang
+from windows.text_rendering import (
+    RendererInputAdapter,
+    adapt_renderer_input,
+    calculate_shadow_padding,
+    get_blur_radius_px,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +55,8 @@ class TextRenderer:
         self._blur_cache: "OrderedDict[tuple[int, int, int, int], QPixmap]" = OrderedDict()
         self._render_cache_size: int = AppDefaults.RENDER_CACHE_SIZE
         self._render_cache: "OrderedDict[str, QPixmap]" = OrderedDict()
+        self._task_rect_cache_size: int = AppDefaults.RENDER_CACHE_SIZE
+        self._task_rect_cache: "OrderedDict[str, tuple[QRect, ...]]" = OrderedDict()
         # --- profiling (debug) ---
         self._profile_enabled: bool = False
         self._profile_warn_ms: float = 16.0
@@ -133,6 +142,7 @@ class TextRenderer:
         *,
         canvas_size: QSize,
         start_x: int,
+        divider_start_x: int | None = None,
         start_y: int,
         right_padding: int,
         layout: dict[str, Any],
@@ -170,7 +180,10 @@ class TextRenderer:
             divider_color = self._with_alpha(QColor(getattr(window, "font_color", "#ffffff")), 102)
             painter.setPen(QPen(divider_color, 1.0))
             line_right = float(canvas_size.width() - right_padding)
-            painter.drawLine(QPointF(float(start_x), divider_y), QPointF(line_right, divider_y))
+            line_left = float(start_x if divider_start_x is None else divider_start_x)
+            if line_left > line_right:
+                line_left = line_right
+            painter.drawLine(QPointF(line_left, divider_y), QPointF(line_right, divider_y))
         finally:
             painter.restore()
 
@@ -209,46 +222,65 @@ class TextRenderer:
 
     def _get_blur_radius_px(self, window: Any) -> float:
         """ぼかし半径（ピクセル）を計算します。Same logic as _apply_blur_to_pixmap"""
-        if not window.shadow_enabled:
-            return 0.0
-        return float(window.shadow_blur) * 20.0 / 100.0
+        return get_blur_radius_px(
+            shadow_enabled=bool(getattr(window, "shadow_enabled", False)),
+            shadow_blur=float(getattr(window, "shadow_blur", 0.0)),
+        )
 
     def _calculate_shadow_padding(self, window: Any) -> Tuple[int, int, int, int]:
         """影とぼかしによる追加パディングを計算します (left, top, right, bottom)。"""
-        if not window.shadow_enabled:
-            return 0, 0, 0, 0
+        return calculate_shadow_padding(
+            font_size=float(getattr(window, "font_size", 0.0)),
+            shadow_enabled=bool(getattr(window, "shadow_enabled", False)),
+            shadow_offset_x=float(getattr(window, "shadow_offset_x", 0.0)),
+            shadow_offset_y=float(getattr(window, "shadow_offset_y", 0.0)),
+            shadow_blur=float(getattr(window, "shadow_blur", 0.0)),
+        )
 
-        font_size = window.font_size
-        sx = font_size * window.shadow_offset_x
-        sy = font_size * window.shadow_offset_y
-        blur_px = self._get_blur_radius_px(window)
+    @staticmethod
+    def _adapt_renderer_input(window: RendererInput) -> RendererInputAdapter:
+        return adapt_renderer_input(window)
 
-        # ぼかしの影響範囲
-        pad_left = int(max(0, -(sx - blur_px)))
-        pad_top = int(max(0, -(sy - blur_px)))
-        pad_right = int(max(0, (sx + blur_px)))
-        pad_bottom = int(max(0, (sy + blur_px)))
+    @staticmethod
+    def _sync_window_canvas_from_cached_pixmap(window: Any, pixmap: QPixmap) -> None:
+        """キャッシュ復帰時に canvas_size / geometry を同期する。"""
+        try:
+            size = pixmap.size()
+            window.canvas_size = size
+            pos_getter = getattr(window, "pos", None)
+            set_geometry = getattr(window, "setGeometry", None)
+            if callable(pos_getter) and callable(set_geometry):
+                set_geometry(QRect(pos_getter(), size))
+        except Exception:
+            pass
 
-        return pad_left, pad_top, pad_right, pad_bottom
-
-    def render(self, window: Any) -> QPixmap:
+    def render(self, window: RendererInput) -> QPixmap:
         """ウィンドウの状態を読み取り、描画結果を生成します（分解プロファイル対応）。"""
+        adapted = self._adapt_renderer_input(window)
         profiling: bool = bool(getattr(self, "_profile_enabled", False))
 
         if not profiling:
-            if window.is_vertical:
-                return self._render_vertical(window)
-            return self._render_horizontal(window)
+            cache_key = self._make_render_cache_key(adapted)
+            cached = self._render_cache_get(cache_key)
+            if cached is not None:
+                self._sync_window_canvas_from_cached_pixmap(adapted, cached)
+                return cached
+            if adapted.is_vertical:
+                pix = self._render_vertical(adapted)
+            else:
+                pix = self._render_horizontal(adapted)
+            self._render_cache_put(cache_key, pix)
+            return pix
 
         self._active_profile = _RenderProfile()
         t0: float = time.perf_counter()
 
         try:
-            if window.is_vertical:
-                pix = self._render_vertical(window)
+            if adapted.is_vertical:
+                pix = self._render_vertical(adapted)
                 mode = "vertical"
             else:
-                pix = self._render_horizontal(window)
+                pix = self._render_horizontal(adapted)
                 mode = "horizontal"
         finally:
             total_ms: float = (time.perf_counter() - t0) * 1000.0
@@ -269,12 +301,12 @@ class TextRenderer:
             self._profile_last_log_ts = now
 
             try:
-                fs = int(getattr(window, "font_size", 0))
+                fs = int(getattr(adapted, "font_size", 0))
             except Exception:
                 fs = 0
 
             try:
-                txt = str(getattr(window, "text", "") or "").replace("\n", "\\n")
+                txt = str(getattr(adapted, "text", "") or "").replace("\n", "\\n")
                 if len(txt) > 30:
                     txt = txt[:30] + "..."
             except Exception:
@@ -303,7 +335,7 @@ class TextRenderer:
     def paint_direct(
         self,
         painter: QPainter,
-        window: Any,
+        window: RendererInput,
         target_rect: Optional[QRect] = None,
     ) -> QSize:
         """外部 QPainter に直接描画する（DPR対応）。
@@ -320,9 +352,10 @@ class TextRenderer:
         Returns:
             QSize: 描画に使用したキャンバスサイズ
         """
-        if window.is_vertical:
-            return self._paint_direct_vertical(painter, window, target_rect)
-        return self._paint_direct_horizontal(painter, window, target_rect)
+        adapted = self._adapt_renderer_input(window)
+        if adapted.is_vertical:
+            return self._paint_direct_vertical(painter, adapted, target_rect)
+        return self._paint_direct_horizontal(painter, adapted, target_rect)
 
     def _paint_direct_horizontal(
         self,
@@ -349,7 +382,7 @@ class TextRenderer:
         m_right = int(window.font_size * window.margin_right_ratio)
 
         lines, done_flags = self._build_render_lines(window)
-        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
+        task_rail_width, _marker_width, _marker_gap, side_padding = self._get_task_rail_metrics(window, fm)
         max_line_width = 0
         for line in lines:
             line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * (max(0, len(line) - 1))
@@ -393,6 +426,10 @@ class TextRenderer:
             painter.setFont(font)
             self._draw_background(painter, window, canvas_size, outline_width)
             text_start_x = int(m_left + outline_width + task_rail_width)
+            title_divider_start_x = int(text_start_x)
+            if self._is_task_mode(window):
+                # タスクモード時は区切り線をチェックボックス左端まで伸ばす
+                title_divider_start_x = int(text_start_x - task_rail_width + side_padding)
             right_padding = int(m_right_for_size + outline_width)
             top_base_y = int(m_top + outline_width)
             self._draw_meta_title(
@@ -400,6 +437,7 @@ class TextRenderer:
                 window,
                 canvas_size=canvas_size,
                 start_x=text_start_x,
+                divider_start_x=title_divider_start_x,
                 start_y=top_base_y,
                 right_padding=right_padding,
                 layout=meta_layout,
@@ -547,7 +585,7 @@ class TextRenderer:
         m_bottom += pad_bottom
 
         lines, done_flags = self._build_render_lines(window)
-        task_rail_width, _marker_width, _marker_gap, _side_padding = self._get_task_rail_metrics(window, fm)
+        task_rail_width, _marker_width, _marker_gap, side_padding = self._get_task_rail_metrics(window, fm)
         max_line_width = 0
         for line in lines:
             line_width = sum(fm.horizontalAdvance(char) for char in line) + margin * (max(0, len(line) - 1))
@@ -588,6 +626,10 @@ class TextRenderer:
             painter.setFont(font)
             self._draw_background(painter, window, canvas_size, outline_width)
             text_start_x = int(m_left + outline_width + task_rail_width)
+            title_divider_start_x = int(text_start_x)
+            if self._is_task_mode(window):
+                # タスクモード時は区切り線をチェックボックス左端まで伸ばす
+                title_divider_start_x = int(text_start_x - task_rail_width + side_padding)
             right_padding = int(m_right + outline_width)
             top_base_y = int(m_top + outline_width)
             self._draw_meta_title(
@@ -595,6 +637,7 @@ class TextRenderer:
                 window,
                 canvas_size=canvas_size,
                 start_x=text_start_x,
+                divider_start_x=title_divider_start_x,
                 start_y=top_base_y,
                 right_padding=right_padding,
                 layout=meta_layout,
@@ -725,6 +768,34 @@ class TextRenderer:
         except Exception:
             pass
 
+    def _task_rect_cache_get(self, key: str) -> Optional[List[QRect]]:
+        """タスク矩形キャッシュから取得する（LRU更新あり）。"""
+        if self._task_rect_cache_size <= 0:
+            return None
+        try:
+            cached = self._task_rect_cache.get(key)
+            if cached is None:
+                return None
+            self._task_rect_cache.move_to_end(key)
+            return [QRect(rect) for rect in cached]
+        except Exception:
+            return None
+
+    def _task_rect_cache_put(self, key: str, rects: List[QRect]) -> None:
+        """タスク矩形キャッシュへ格納する（LRU上限あり）。"""
+        if self._task_rect_cache_size <= 0:
+            return
+        try:
+            self._task_rect_cache[key] = tuple(QRect(rect) for rect in rects)
+            self._task_rect_cache.move_to_end(key)
+            while len(self._task_rect_cache) > self._task_rect_cache_size:
+                self._task_rect_cache.popitem(last=False)
+        except Exception:
+            pass
+
+    def _make_task_rect_cache_key(self, window: Any) -> str:
+        return f"task_rect:{self._make_render_cache_key(window)}"
+
     def _make_render_cache_key(self, window: Any) -> str:
         """window状態から、最終レンダ結果キャッシュ用のキーを生成する。
 
@@ -807,7 +878,7 @@ class TextRenderer:
         done_flags = self._normalize_task_states(getattr(window, "task_states", []), len(raw_lines))
         return raw_lines, done_flags
 
-    def get_task_line_rects(self, window: Any) -> List[QRect]:
+    def get_task_line_rects(self, window: RendererInput) -> List[QRect]:
         """タスクモード時に各行のチェックボックス領域を返す（ヒットテスト用）。
 
         Args:
@@ -816,19 +887,26 @@ class TextRenderer:
         Returns:
             各行のチェックボックス矩形のリスト。noteモード時は空リスト。
         """
-        if not self._is_task_mode(window):
+        adapted = self._adapt_renderer_input(window)
+        if not self._is_task_mode(adapted):
             return []
+        cache_key = self._make_task_rect_cache_key(adapted)
+        cached = self._task_rect_cache_get(cache_key)
+        if cached is not None:
+            return cached
 
-        lines, _done_flags = self._build_render_lines(window)
+        lines, _done_flags = self._build_render_lines(adapted)
         if not lines:
             return []
-        if bool(getattr(window, "is_vertical", False)):
+        if bool(getattr(adapted, "is_vertical", False)):
             return []
 
-        font = QFont(window.font_family, int(window.font_size))
+        font = QFont(adapted.font_family, int(adapted.font_size))
         fm = QFontMetrics(font)
 
-        return self._get_task_line_rects_horizontal(window, lines, fm)
+        rects = self._get_task_line_rects_horizontal(adapted, lines, fm)
+        self._task_rect_cache_put(cache_key, rects)
+        return rects
 
     def _get_task_line_rects_horizontal(self, window: Any, lines: List[str], fm: QFontMetrics) -> List[QRect]:
         """横書きタスクモード時のチェックボックス矩形リスト。"""
@@ -908,7 +986,10 @@ class TextRenderer:
         if canvas_size is None:
             return []
 
-        curr_x = canvas_size.width() - cw - char_spacing - m_right - outline_width
+        # NOTE:
+        # char_spacing_v は「列内の文字間隔（Y方向）」専用。
+        # X基準位置に混入させると、文字間隔調整で列全体が横にずれてしまう。
+        curr_x = canvas_size.width() - cw - m_right - outline_width
         y_start = int(m_top + outline_width)
 
         rects: List[QRect] = []
@@ -1011,7 +1092,8 @@ class TextRenderer:
         pen = QPen(color, max(1.0, float(window.font_size) * 0.04))
 
         cw = float(col_width) if col_width is not None else float(window.font_size)
-        start_x = canvas_size.width() - cw - margin - right_margin - outline_width
+        # Vertical char spacing (margin) must not affect column X anchor.
+        start_x = canvas_size.width() - cw - right_margin - outline_width
         marker_y = float(top_margin + outline_width + marker_fm.ascent())
 
         painter.save()
@@ -1591,7 +1673,8 @@ class TextRenderer:
             # Fix: Vertical Positioning (Double Compensation)
             # Removed '- shadow_x' because shadow padding is already added to 'right_margin'
             # and 'canvas_size'. Subtracting it again here causes the text to shift out of view.
-            curr_x = canvas_size.width() - cw - margin - right_margin - outline_width
+            # Vertical char spacing (margin) controls Y advance only.
+            curr_x = canvas_size.width() - cw - right_margin - outline_width
             y_start = top_margin + outline_width
 
             # Fix: First Character Cutoff (Vertical Centering)

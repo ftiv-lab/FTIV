@@ -9,6 +9,19 @@ Please follow these guidelines to ensure consistency and quality.
 *   **Action Controllers**: Specific domains (Text, Image, Layout) have dedicated controllers in `ui/controllers/`.
 *   **Managers**: `WindowManager`, `FileManager`, etc., handle backend logic and resource management.
 
+## 📚 Documentation Source of Truth (SoT)
+
+To prevent rule drift across multiple docs, use the canonical sources in `AGENTS.md` (Section 4.1).
+
+Quick map:
+*   **Current status (Done / Doing / Next)**: `docs/internal/CURRENT_STATUS_DASHBOARD.md`
+*   **Planning governance rules**: `docs/internal/guides/planning_governance_rules.md`
+*   **Coding / architecture rules**: `docs/internal/RULES_AND_STANDARDS.md`
+*   **Latest test/coverage snapshot**: `docs/internal/guides/MEMORY.md`
+*   **Tracked dev run entry**: `docs/RUNBOOK.md`
+
+If documentation appears inconsistent, treat the SoT sources above as authoritative.
+
 ## 🧪 Testing Strategy
 
 We maintain a high standard of reliability. Before submitting changes:

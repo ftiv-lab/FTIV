@@ -4,7 +4,13 @@ import sys
 # Ensure path is set for imports
 sys.path.append(os.getcwd())
 
-from models.protocols import ImageConfigurable, TextConfigurable, UndoableConfigurable
+from models.protocols import (
+    ImageConfigurable,
+    NoteMetadataEditableTarget,
+    RendererInput,
+    TextConfigurable,
+    UndoableConfigurable,
+)
 from windows.base_window import BaseOverlayWindow
 from windows.image_window import ImageWindow
 from windows.text_window import TextWindow
@@ -43,6 +49,21 @@ class TestProtocols:
         assert issubclass(BaseOverlayWindow, UndoableConfigurable)
         assert hasattr(BaseOverlayWindow, "set_undoable_property")
 
+    def test_text_window_implements_renderer_input_protocol(self):
+        """TextWindow must satisfy renderer boundary protocol."""
+        assert issubclass(TextWindow, RendererInput)
+        assert hasattr(TextWindow, "pos")
+        assert hasattr(TextWindow, "setGeometry")
+
+    def test_text_window_implements_note_metadata_protocol(self):
+        """TextWindow must satisfy note metadata contract used by PropertyPanel."""
+        assert issubclass(TextWindow, NoteMetadataEditableTarget)
+        assert hasattr(TextWindow, "set_title_and_tags")
+        assert hasattr(TextWindow, "set_starred")
+        assert hasattr(TextWindow, "set_due_at")
+        assert hasattr(TextWindow, "clear_due_at")
+        assert hasattr(TextWindow, "set_archived")
+
     def test_protocol_is_runtime_checkable(self):
         """Ensure protocols are decorated with @runtime_checkable."""
 
@@ -52,3 +73,32 @@ class TestProtocols:
                 pass
 
         assert isinstance(Dummy(), UndoableConfigurable)
+
+    def test_note_metadata_protocol_is_runtime_checkable(self):
+        class DummyNoteTarget:
+            def set_title_and_tags(self, title, tags):
+                return None
+
+            def set_starred(self, value):
+                return None
+
+            def set_due_at(self, value):
+                return None
+
+            def clear_due_at(self):
+                return None
+
+            def set_archived(self, value):
+                return None
+
+        assert isinstance(DummyNoteTarget(), NoteMetadataEditableTarget)
+
+    def test_renderer_input_protocol_is_runtime_checkable(self):
+        class DummyRendererInput:
+            def pos(self):
+                return None
+
+            def setGeometry(self, rect):
+                return None
+
+        assert isinstance(DummyRendererInput(), RendererInput)

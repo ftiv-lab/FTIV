@@ -50,7 +50,7 @@ class FileManager:
     # Data Serialization (Save/Load Logic)
     # ==========================================
 
-    def _clear_legacy_absolute_move_fields(self, config: Any) -> None:
+    def _clear_absolute_move_fields_if_relative(self, config: Any) -> None:
         """
         保存前のデータクリーンアップ。
         相対移動モード(move_use_relative=True)の場合は、不要な絶対座標(start/end)を消去する。
@@ -69,10 +69,10 @@ class FileManager:
     def _dump_config_json(self, config: Any) -> Dict[str, Any]:
         """
         Pydantic config を JSON化する共通関数。
-        - 旧 absolute move の残骸を消す
+        - 相対移動モード時の absolute move 残骸を消す
         - exclude_none=True で JSON をクリーンにする
         """
-        self._clear_legacy_absolute_move_fields(config)
+        self._clear_absolute_move_fields_if_relative(config)
         return config.model_dump(mode="json", exclude_none=True)
 
     def _serialize_pen_style(self, pen_style: Any) -> int:
@@ -294,6 +294,42 @@ class FileManager:
                 child = all_map[self_uuid]
                 if parent_uuid in all_map:
                     all_map[parent_uuid].add_child_window(child)
+
+        # 2.5 layer_offset（親相対座標）で位置を復元
+        # layer_offset が無効/未設定の場合は、JSON の絶対座標をそのまま使う。
+        def _restore_layer_offsets(parent: Any) -> None:
+            try:
+                children = list(getattr(parent, "child_windows", []))
+            except Exception:
+                children = []
+            for child in children:
+                try:
+                    offset = getattr(getattr(child, "config", None), "layer_offset", None)
+                    if isinstance(offset, dict):
+                        ox = int(offset.get("x", 0))
+                        oy = int(offset.get("y", 0))
+                        target = parent.pos() + QPoint(ox, oy)
+                        child.move(target)
+                        if hasattr(child, "config"):
+                            child.config.position = {"x": int(target.x()), "y": int(target.y())}
+                except Exception:
+                    # 位置復元に失敗してもロード全体は継続
+                    pass
+                _restore_layer_offsets(child)
+
+        roots = [w for w in all_wins if not getattr(w, "parent_window_uuid", None)]
+        for root in roots:
+            _restore_layer_offsets(root)
+
+        # 2.6 同一親配下の順序を layer_order で復元
+        for parent in all_wins:
+            children = getattr(parent, "child_windows", None)
+            if not children:
+                continue
+            try:
+                children.sort(key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0)
+            except Exception:
+                pass
 
         # 3. 接続の復元
         connections_list = normalized.get("connections", [])
@@ -946,14 +982,10 @@ class FileManager:
             with open(self.main_window.scene_db_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            # 旧形式の判別と自動変換
-            is_old = any(isinstance(v, dict) and ("windows" in v or "version" in v) for v in data.values())
-
-            if is_old:
-                self.main_window.scenes = {default_key: data}
-                self.save_scenes_db()
-            else:
+            if isinstance(data, dict):
                 self.main_window.scenes = _normalize_scene_categories(data)
+            else:
+                self.main_window.scenes = {default_key: {}}
 
             if not self.main_window.scenes:
                 self.main_window.scenes[default_key] = {}
@@ -991,37 +1023,15 @@ class FileManager:
 
         return obj
 
-    def _remove_legacy_absolute_move_keys_in_scene_dict(self, scene_data: Any) -> Any:
-        """
-        scene_data（dict/list）内の start_position/end_position を再帰的に削除する。
-        ※ 既存の scenes DB は「dict化済み」なのでこちらを使う。
-        """
-        if isinstance(scene_data, dict):
-            # window configに居ることが多い
-            scene_data.pop("start_position", None)
-            scene_data.pop("end_position", None)
-
-            # ネストも再帰的に処理
-            for k, v in list(scene_data.items()):
-                scene_data[k] = self._remove_legacy_absolute_move_keys_in_scene_dict(v)
-            return scene_data
-
-        if isinstance(scene_data, list):
-            return [self._remove_legacy_absolute_move_keys_in_scene_dict(v) for v in scene_data]
-
-        return scene_data
-
     def _get_clean_scenes_for_export(self) -> Dict[str, Any]:
         """
         self.main_window.scenes を「保存用」にクリーンアップしたコピーを返す。
-        - start_position/end_position を除去
         - None を除去
         """
         try:
             # まず深いコピー（json経由が簡単で安全）
             scenes_copy = json.loads(json.dumps(self.main_window.scenes, ensure_ascii=False))
 
-            scenes_copy = self._remove_legacy_absolute_move_keys_in_scene_dict(scenes_copy)
             scenes_copy = self._prune_none(scenes_copy)
 
             return scenes_copy

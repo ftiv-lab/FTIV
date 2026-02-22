@@ -463,6 +463,13 @@ class PreviewCommitDialog(QDialog):
 class TextInputDialog(BaseTranslatableDialog):
     """テキスト入力用ダイアログ。フォント設定や設定の保存機能を備える。
 
+    Phase F: Persistent Mode
+    - ツールウィンドウ化（コンパクトタイトルバー、常に最前面）
+    - OK / Cancel / Esc / ×ボタン でのみ閉じる（フォーカスアウト確定は廃止）
+    - ボタンレイアウト改善（OK/Cancel/Font を1行に）
+    - 位置の保存・復元
+    - Auto-Follow: switch_target() で編集対象を切り替え
+
     Attributes:
         callback (Optional[Callable[[str], None]]): テキスト変更時にリアルタイムで呼ばれる関数。
         current_font (QFont): 現在適用されているフォント。
@@ -481,23 +488,28 @@ class TextInputDialog(BaseTranslatableDialog):
             initial_text (str): 初期表示テキスト。
             parent (Optional[QWidget]): 親。
             callback (Optional[Callable[[str], None]]): リアルタイム更新コールバック。
+            initial_font (Optional[QFont]): 初期フォント（TextWindow と同期用）。
         """
         super().__init__(parent)
+
+        # --- ツールウィンドウ化: コンパクトなタイトルバー + 常に最前面 ---
+        self.setWindowFlags(
+            Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowCloseButtonHint
+        )
+
         self.setWindowTitle(tr("title_input_text"))
         self.callback: Optional[Callable[[str], None]] = callback
 
         layout: QVBoxLayout = QVBoxLayout(self)
 
-        self.hint_label: QLabel = QLabel(tr("label_text_edit_hint"))
-        self.hint_label.setProperty("class", "hint-text")
-        layout.addWidget(self.hint_label)
-
+        # --- テキストエリア ---
         self.text_edit: QTextEdit = QTextEdit(self)
         self.text_edit.setText(initial_text)
         self.text_edit.textChanged.connect(self.on_text_changed)
         self.text_edit.selectAll()
         layout.addWidget(self.text_edit)
 
+        # --- 設定読み込み ---
         settings: Dict[str, Any] = self.load_settings()
         if initial_font is not None:
             point_size = int(initial_font.pointSize())
@@ -521,43 +533,55 @@ class TextInputDialog(BaseTranslatableDialog):
 
         self.apply_font_to_text(self.current_font)
 
-        self.font_button: QPushButton = QPushButton(tr("btn_change_font_input"), self)
-        self.font_button.clicked.connect(self.change_font)
-        layout.addWidget(self.font_button)
-
+        # --- ボタン行: OK / Cancel / stretch / Font を1行に ---
         button_layout: QHBoxLayout = QHBoxLayout()
-        ok_button: QPushButton = QPushButton(tr("btn_ok"), self)
-        cancel_button: QPushButton = QPushButton(tr("btn_cancel"), self)
-        ok_button.setDefault(True)
-        ok_button.clicked.connect(self.accept)
-        cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(ok_button)
-        button_layout.addWidget(cancel_button)
+        self.ok_button: QPushButton = QPushButton(tr("btn_ok"), self)
+        self.cancel_button: QPushButton = QPushButton(tr("btn_cancel"), self)
+        self.font_button: QPushButton = QPushButton(tr("btn_change_font_input"), self)
+        self.ok_button.setDefault(True)
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        self.font_button.clicked.connect(self.change_font)
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addStretch()
+        button_layout.addWidget(self.font_button)
         layout.addLayout(button_layout)
 
+        # --- ショートカットヒント（下部） ---
+        self.hint_label: QLabel = QLabel("Ctrl+Enter: OK | Esc: Cancel")
+        self.hint_label.setProperty("class", "hint-text")
+        layout.addWidget(self.hint_label)
+
         self.text_edit.installEventFilter(self)
+
+        # --- 保存済み位置の復元 ---
+        saved_x = settings.get("x")
+        saved_y = settings.get("y")
+        if saved_x is not None and saved_y is not None:
+            self._saved_pos: Optional[Tuple[int, int]] = (int(saved_x), int(saved_y))
+        else:
+            self._saved_pos = None
 
         # 言語切替追従
         self._connect_language_changed()
 
+    def get_saved_position(self) -> Optional[Tuple[int, int]]:
+        """保存された位置を返す。なければ None。"""
+        return self._saved_pos
+
     def refresh_ui_text(self) -> None:
         """言語切替時に、ダイアログ内テキストを更新します。"""
         self.setWindowTitle(tr("title_input_text"))
-        if hasattr(self, "hint_label"):
-            self.hint_label.setText(tr("label_text_edit_hint"))
         if hasattr(self, "font_button"):
             self.font_button.setText(tr("btn_change_font_input"))
+        if hasattr(self, "ok_button"):
+            self.ok_button.setText(tr("btn_ok"))
+        if hasattr(self, "cancel_button"):
+            self.cancel_button.setText(tr("btn_cancel"))
 
     def eventFilter(self, obj: Any, event: QEvent) -> bool:
-        """Ctrl+Enterでの確定を検知するイベントフィルタ。
-
-        Args:
-            obj (Any): イベント対象。
-            event (QEvent): イベント。
-
-        Returns:
-            bool: ハンドルしたなら True。
-        """
+        """Ctrl+Enterでの確定を検知するイベントフィルタ。"""
         if obj == self.text_edit and event.type() == QEvent.KeyPress:
             try:
                 if event.key() == Qt.Key_Return and (event.modifiers() & Qt.ControlModifier):
@@ -573,7 +597,6 @@ class TextInputDialog(BaseTranslatableDialog):
             try:
                 self.callback(self.text_edit.toPlainText())
             except Exception:
-                # リアルタイムプレビューで落ちない
                 pass
 
     def change_font(self) -> None:
@@ -608,19 +631,11 @@ class TextInputDialog(BaseTranslatableDialog):
                 pass
 
     def get_text(self) -> str:
-        """編集中のテキストを取得する。
-
-        Returns:
-            str: 現在の入力内容。
-        """
+        """編集中のテキストを取得する。"""
         return self.text_edit.toPlainText()
 
     def get_settings_path(self) -> str:
-        """設定保存用のJSONファイルパスを取得する。
-
-        Returns:
-            str: 設定ファイルパス。
-        """
+        """設定保存用のJSONファイルパスを取得する。"""
         from utils.paths import get_base_dir
 
         base_dir = get_base_dir()
@@ -629,31 +644,23 @@ class TextInputDialog(BaseTranslatableDialog):
         return os.path.join(json_dir, "dialog_settings.json")
 
     def save_settings(self) -> None:
-        """現在のフォントとウィンドウサイズを保存する。
-
-        Notes:
-            ここは高頻度で呼ばれる可能性があるため、保存失敗でもアプリを落とさない。
-            （販売版で通知方針を決めるなら、ここを QMessageBox.warning にする）
-        """
+        """現在のフォント、ウィンドウサイズ、位置を保存する。"""
         settings_data: Dict[str, Any] = {
             "family": self.current_font.family(),
             "point_size": int(self.current_font.pointSize()),
             "width": int(self.size().width()),
             "height": int(self.size().height()),
+            "x": int(self.x()),
+            "y": int(self.y()),
         }
         try:
             with open(self.get_settings_path(), "w", encoding="utf-8") as f:
                 json.dump(settings_data, f, indent=4, ensure_ascii=False)
         except Exception:
-            # 保存失敗は致命ではないので握る
             pass
 
     def load_settings(self) -> Dict[str, Any]:
-        """保存された設定を読み込む。失敗した場合はデフォルトを返す。
-
-        Returns:
-            Dict[str, Any]: 設定dict。
-        """
+        """保存された設定を読み込む。失敗した場合はデフォルトを返す。"""
         path: str = self.get_settings_path()
         if os.path.exists(path):
             try:
@@ -665,13 +672,28 @@ class TextInputDialog(BaseTranslatableDialog):
                 pass
         return {"family": "Arial", "point_size": 20, "width": 500, "height": 500}
 
+    def switch_target(
+        self,
+        new_text: str,
+        new_callback: Optional[Callable[[str], None]],
+    ) -> None:
+        """Auto-Follow: 編集対象を切り替える。ダイアログ自体は閉じない。"""
+        self.callback = new_callback
+        with QSignalBlocker(self.text_edit):
+            self.text_edit.setText(new_text)
+        self.text_edit.selectAll()
+
     def accept(self) -> None:
-        """確定時に設定保存して閉じる（languageChanged切断は基底が行う）。"""
+        """確定時に設定保存して閉じる。"""
         try:
             self.save_settings()
         except Exception:
             pass
         super().accept()
+
+    def reject(self) -> None:
+        """キャンセル時に閉じる。"""
+        super().reject()
 
 
 class MarginRatioDialog(QDialog):
@@ -1391,15 +1413,22 @@ class TextSpacingDialog(QDialog):
 
         defaults = TextWindowConfig()
 
-        # Horizontal
-        self.h_spin.setValue(defaults.char_spacing_h)
-        self.v_spin.setValue(defaults.line_spacing_h)
-
-        # Padding
-        self.top_spin.setValue(defaults.margin_top)
-        self.bottom_spin.setValue(defaults.margin_bottom)
-        self.left_spin.setValue(defaults.margin_left)
-        self.right_spin.setValue(defaults.margin_right)
+        if self._is_vertical:
+            # Vertical mode defaults
+            self.h_spin.setValue(defaults.char_spacing_v)
+            self.v_spin.setValue(defaults.line_spacing_v)
+            self.top_spin.setValue(float(defaults.v_margin_top or 0.0))
+            self.bottom_spin.setValue(float(defaults.v_margin_bottom or 0.0))
+            self.left_spin.setValue(float(defaults.v_margin_left or 0.0))
+            self.right_spin.setValue(float(defaults.v_margin_right or 0.0))
+        else:
+            # Horizontal mode defaults
+            self.h_spin.setValue(defaults.char_spacing_h)
+            self.v_spin.setValue(defaults.line_spacing_h)
+            self.top_spin.setValue(defaults.margin_top)
+            self.bottom_spin.setValue(defaults.margin_bottom)
+            self.left_spin.setValue(defaults.margin_left)
+            self.right_spin.setValue(defaults.margin_right)
 
     def get_values(self) -> Tuple[float, float, float, float, float, float]:
         """設定されたすべての数値を返す（後方互換性のため維持）。"""

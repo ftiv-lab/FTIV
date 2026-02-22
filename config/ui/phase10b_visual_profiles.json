@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "description": "Phase 10B visual regression execution contract",
+  "cases": {
+    "task_title_divider_horizontal": {
+      "window_size": [320, 180],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "TextWindow"
+    },
+    "task_title_divider_vertical": {
+      "window_size": [320, 180],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "TextWindow"
+    },
+    "due_state_today": {
+      "window_size": [320, 180],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "TextWindowTooltip"
+    },
+    "due_state_overdue": {
+      "window_size": [320, 180],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "TextWindowTooltip"
+    },
+    "due_state_none": {
+      "window_size": [320, 180],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "TextWindowTooltip"
+    },
+    "property_panel_summary_short": {
+      "window_size": [360, 260],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "PropertyPanel"
+    },
+    "property_panel_summary_long": {
+      "window_size": [320, 240],
+      "density_mode": "compact",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "PropertyPanel"
+    },
+    "dialog_only_routes_textwindow": {
+      "window_size": [320, 200],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "TextWindowContextMenu"
+    },
+    "density_about_compact": {
+      "window_size": [320, 240],
+      "density_mode": "compact",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "AboutTab"
+    },
+    "density_about_comfortable": {
+      "window_size": [360, 260],
+      "density_mode": "comfortable",
+      "locale": "ja",
+      "font_policy": "default",
+      "target_widget": "AboutTab"
+    }
+  }
+}

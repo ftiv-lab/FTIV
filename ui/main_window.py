@@ -44,16 +44,10 @@ from ui.controllers.connector_actions import ConnectorActions
 from ui.controllers.image_actions import ImageActions
 from ui.controllers.info_actions import InfoActions
 from ui.controllers.text_actions import TextActions
+from ui.main_window_wiring import build_main_tabs, create_connections_subtab, refresh_main_tab_titles
 from ui.mixins.dnd_mixin import DnDMixin
 from ui.mixins.shortcut_mixin import ShortcutMixin
 from ui.property_panel import PropertyPanel
-from ui.tabs.about_tab import AboutTab
-from ui.tabs.animation_tab import AnimationTab
-from ui.tabs.general_tab import GeneralTab
-from ui.tabs.image_tab import ImageTab
-from ui.tabs.info_tab import InfoTab
-from ui.tabs.scene_tab import ConnectionsTab, SceneTab
-from ui.tabs.text_tab import TextTab
 from utils.app_settings import AppSettings
 from utils.overlay_settings import OverlaySettings
 
@@ -380,44 +374,6 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         """Undoスタックにコマンドを追加。"""
         self.undo_stack.push(command)
 
-    def _legacy_connect_window_signals(self, window: Any) -> None:
-        """互換用：旧シグナル接続API（強制 no-op 版）。
-
-        方針:
-            - 現在の正規ルートは WindowManager.add_text_window / add_image_window 内で
-              _setup_window_connections を呼ぶ方式。
-            - この legacy API が呼ばれるのは設計崩れ（管理外window混入・二重接続の温床）なので、
-              何もせず return する。
-            - ただし販売後のトラブルシュートのため、スタックトレース付きで error ログを残す。
-
-        Args:
-            window (Any): 旧コードから渡されるウィンドウ（未使用）。
-        """
-        _ = window
-
-        try:
-            import logging
-
-            logger = logging.getLogger(__name__)
-            logger.error(
-                "DEPRECATED: connect_window_signals/_legacy_connect_window_signals was called. "
-                "This is a no-op. Please migrate all creation routes to WindowManager.add_*.",
-                exc_info=True,
-            )
-        except Exception:
-            pass
-
-        # ★絶対に接続しない（no-op）
-        return
-
-    def connect_window_signals(self, window: Any) -> None:
-        """互換エイリアス（強制 no-op）。
-
-        Args:
-            window (Any): 旧コードから渡されるウィンドウ（未使用）。
-        """
-        self._legacy_connect_window_signals(window)
-
     def on_properties_changed(self, window: Any) -> None:
         """プロパティ変更時にパネルを更新。"""
         if self.is_property_panel_active and self.last_selected_window == window:
@@ -502,30 +458,7 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def _build_main_tabs(self) -> None:
         """メインのタブ構成を追加する（順序の集中管理）。"""
-        # 1. 一般タブ (クラス化済み)
-        self.general_tab = GeneralTab(self)
-        self.tabs.addTab(self.general_tab, tr("tab_general"))
-        # 2. テキストタブ (クラス化済み)
-        self.text_tab = TextTab(self)
-        self.tabs.addTab(self.text_tab, tr("tab_text"))
-        # 3. 画像タブ (クラス化済み)
-        self.image_tab = ImageTab(self)
-        self.tabs.addTab(self.image_tab, tr("tab_image"))
-        # 4. シーンタブ (クラス化済み)
-        self.scene_tab = SceneTab(self)
-        self.tabs.addTab(self.scene_tab, tr("tab_scene"))
-        # 5. 接続タブ (クラス化済み)
-        self.connections_tab = ConnectionsTab(self)
-        self.tabs.addTab(self.connections_tab, tr("tab_connections"))
-        # 6. 情報管理タブ (クラス化済み)
-        self.info_tab = InfoTab(self)
-        self.tabs.addTab(self.info_tab, tr("tab_info"))
-        # 7. アニメーションタブ (クラス化済み)
-        self.animation_tab = AnimationTab(self)
-        self.tabs.addTab(self.animation_tab, tr("tab_animation"))
-        # 8. 情報タブ (クラス化済み)
-        self.about_tab = AboutTab(self)
-        self.tabs.addTab(self.about_tab, tr("tab_about"))
+        build_main_tabs(self, self.tabs)
 
     def _init_property_panel(self) -> None:
         """プロパティパネルの初期化（Undo/Redo action の取り込み含む）。"""
@@ -588,24 +521,8 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def _refresh_tab_titles(self) -> None:
         """メインタブ/サブタブのタブ名を現在言語で更新する。"""
-        # メインタブ
         if hasattr(self, "tabs"):
-            if self.tabs.count() >= 1:
-                self.tabs.setTabText(0, tr("tab_general"))
-            if self.tabs.count() >= 2:
-                self.tabs.setTabText(1, tr("tab_text"))
-            if self.tabs.count() >= 3:
-                self.tabs.setTabText(2, tr("tab_image"))
-            if self.tabs.count() >= 4:
-                self.tabs.setTabText(3, tr("tab_scene"))
-            if self.tabs.count() >= 5:
-                self.tabs.setTabText(4, tr("tab_connections"))
-            if self.tabs.count() >= 6:
-                self.tabs.setTabText(5, tr("tab_info"))
-            if self.tabs.count() >= 7:
-                self.tabs.setTabText(6, tr("tab_animation"))
-            if self.tabs.count() >= 8:
-                self.tabs.setTabText(7, tr("tab_about"))
+            refresh_main_tab_titles(self.tabs)
 
     def _refresh_selected_labels(self) -> None:
         """
@@ -822,6 +739,8 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
                 self.animation_tab.refresh_ui()
             if hasattr(self, "about_tab"):
                 self.about_tab.refresh_ui()
+            if hasattr(self, "layer_tab"):
+                self.layer_tab.refresh_ui()
 
             # MainWindow自体
             self.setWindowTitle(tr("app_title"))
@@ -1106,10 +1025,10 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
         # しかしコードを見ると open_align_dialog はロジックの塊なので、
         # 将来的にはこれも移動すべきですが、今回は安全策で
         # 「align_images_on_multiple_displays」のみを委譲します。
-        self._legacy_open_align_dialog()
+        self._open_align_dialog_impl()
 
-    def _legacy_open_align_dialog(self):
-        """(Legacy) 画像整列ダイアログを表示する。内部で LayoutActions を利用。"""
+    def _open_align_dialog_impl(self) -> None:
+        """画像整列ダイアログを表示する。内部で LayoutActions を利用。"""
         if not self.image_windows:
             QMessageBox.information(self, tr("msg_info"), tr("msg_no_image_windows"))
             return
@@ -1416,7 +1335,43 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
 
     def show_context_menu(self, pos: QPoint) -> None:
         """メインウィンドウの背景右クリックメニュー構築（MenuManagerに委譲）。"""
+        if self._try_forward_context_menu_to_selected_window(pos):
+            return
         self.menu_manager.show_context_menu(pos)
+
+    def _try_forward_context_menu_to_selected_window(self, pos: QPoint) -> bool:
+        """選択中ウィンドウ上の右クリックを、そのウィンドウのメニューに委譲する。
+
+        主に click-through 時にイベントが MainWindow 側へ落ちるケースを補正する。
+        """
+        selected = self.last_selected_window
+        if selected is None or not hasattr(selected, "show_context_menu"):
+            return False
+
+        try:
+            import shiboken6
+
+            if not shiboken6.isValid(selected):
+                return False
+        except Exception:
+            # shiboken6 が使えない環境では isValid チェックを省略
+            pass
+
+        try:
+            if hasattr(selected, "isVisible") and not selected.isVisible():
+                return False
+
+            global_pos = self.mapToGlobal(pos)
+
+            if hasattr(selected, "frameGeometry") and not selected.frameGeometry().contains(global_pos):
+                return False
+
+            local_pos = selected.mapFromGlobal(global_pos) if hasattr(selected, "mapFromGlobal") else QPoint(0, 0)
+            selected.show_context_menu(local_pos)
+            return True
+        except Exception:
+            logger.debug("Failed to forward context menu to selected window", exc_info=True)
+            return False
 
     def open_log_folder(self) -> None:
         """ログファイルが保存されているフォルダを OS のエクスプローラー等で開きます。"""
@@ -1565,12 +1520,9 @@ class MainWindow(DnDMixin, ShortcutMixin, QWidget):
     def create_connections_tab(self) -> QWidget:
         """
         Connections をメインタブとして表示する。
-        現状は ui/tabs/scene_tab.py の build_connections_subtab を再利用する（仕様合意済みの案C）。
+        実体生成は main_window_wiring 側へ委譲する。
         """
-        # ここは循環import回避のためローカルimportにしておく（安全策）
-        from ui.tabs.scene_tab import build_connections_subtab
-
-        return build_connections_subtab(self)
+        return create_connections_subtab(self)
 
     def apply_overlay_settings_to_all_windows(self) -> None:
         """現在の overlay_settings を、既存の全オーバーレイウィンドウへ反映する。"""

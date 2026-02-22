@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Iterable, List, Literal, Sequence, Tuple
+from typing import Any, Iterable, List, Literal, Sequence, Tuple, Union
 
 from utils.due_date import compose_due_datetime
 
@@ -52,7 +52,6 @@ class InfoQuery:
     include_archived: bool = False
     archive_scope: Literal["active", "archived", "all"] = "active"
     due_filter: Literal["all", "today", "overdue", "upcoming", "dated", "undated"] = "all"
-    mode_filter: Literal["all", "task", "note"] = "all"
     item_scope: Literal["all", "tasks", "notes"] = "all"
     content_mode_filter: str = "all"
     sort_by: Literal["updated", "due", "created", "title"] = "updated"
@@ -65,6 +64,30 @@ class InfoStats:
     done_tasks: int = 0
     overdue_tasks: int = 0
     starred_notes: int = 0
+
+
+@dataclass(frozen=True)
+class GroupedTasks:
+    label: str
+    group_key: str
+    items: List[TaskIndexItem] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class GroupedNotes:
+    label: str
+    group_key: str
+    items: List[NoteIndexItem] = field(default_factory=list)
+
+
+MixedItem = Union[TaskIndexItem, NoteIndexItem]
+
+
+@dataclass(frozen=True)
+class GroupedMixed:
+    label: str
+    group_key: str
+    items: List[MixedItem] = field(default_factory=list)
 
 
 class InfoIndexManager:
@@ -123,19 +146,15 @@ class InfoIndexManager:
 
     @staticmethod
     def _normalize_query_filters(query: InfoQuery) -> tuple[str, str]:
-        legacy_mode = str(getattr(query, "mode_filter", "all") or "all").strip().lower()
         item_scope = str(getattr(query, "item_scope", "all") or "all").strip().lower()
         content_mode_filter = str(getattr(query, "content_mode_filter", "all") or "all").strip().lower()
 
         if item_scope not in {"all", "tasks", "notes"}:
             item_scope = "all"
-        if item_scope == "all":
-            if legacy_mode == "task":
-                item_scope = "tasks"
-            elif legacy_mode == "note":
-                item_scope = "notes"
 
-        if content_mode_filter in {"", "all"}:
+        if content_mode_filter not in {"all", "task", "note"}:
+            content_mode_filter = "all"
+        if content_mode_filter == "all":
             if item_scope == "tasks":
                 content_mode_filter = "task"
             elif item_scope == "notes":
@@ -524,3 +543,255 @@ class InfoIndexManager:
             overdue_tasks=overdue_tasks,
             starred_notes=starred_notes,
         )
+
+    def _classify_due_state(
+        self,
+        due_at: str,
+        due_time: str = "",
+        due_timezone: str = "",
+        due_precision: str = "date",
+    ) -> str:
+        """期限の状態を返す: 'overdue' / 'today' / 'upcoming' / 'none'."""
+        due_dt = compose_due_datetime(
+            due_at=due_at,
+            due_time=due_time,
+            due_timezone=due_timezone,
+            due_precision=due_precision,
+        )
+        if due_dt is None:
+            return "none"
+        now = datetime.now()
+        today = now.date()
+        due_day = due_dt.date()
+        precision = str(due_precision or "date").strip().lower()
+        if precision == "datetime":
+            if due_dt < now:
+                return "overdue"
+        else:
+            if due_day < today:
+                return "overdue"
+        if due_day == today:
+            return "today"
+        return "upcoming"
+
+    def group_tasks_smart(self, items: List[TaskIndexItem]) -> List[GroupedTasks]:
+        """タスクを 期限切れ→今日→スター付き→その他 にグループ分けする。"""
+        overdue: List[TaskIndexItem] = []
+        today: List[TaskIndexItem] = []
+        starred: List[TaskIndexItem] = []
+        other: List[TaskIndexItem] = []
+
+        for item in list(items or []):
+            if not item.done:
+                due_state = self._classify_due_state(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
+                if due_state == "overdue":
+                    overdue.append(item)
+                    continue
+                if due_state == "today":
+                    today.append(item)
+                    continue
+            if item.is_starred:
+                starred.append(item)
+                continue
+            other.append(item)
+
+        groups: List[GroupedTasks] = []
+        if overdue:
+            groups.append(GroupedTasks(label=f"\U0001f534 {len(overdue)}", group_key="overdue", items=overdue))
+        if today:
+            groups.append(GroupedTasks(label=f"\U0001f4c5 {len(today)}", group_key="today", items=today))
+        if starred:
+            groups.append(GroupedTasks(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
+        if other:
+            groups.append(GroupedTasks(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
+
+    def group_notes_smart(self, items: List[NoteIndexItem]) -> List[GroupedNotes]:
+        """ノートを スター付き→その他 にグループ分けする。"""
+        starred: List[NoteIndexItem] = []
+        other: List[NoteIndexItem] = []
+
+        for item in list(items or []):
+            if item.is_starred:
+                starred.append(item)
+            else:
+                other.append(item)
+
+        groups: List[GroupedNotes] = []
+        if starred:
+            groups.append(GroupedNotes(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
+        if other:
+            groups.append(GroupedNotes(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
+
+    @staticmethod
+    def _first_tag_or_untagged(tags: Tuple[str, ...]) -> str:
+        return tags[0] if tags else ""
+
+    def group_tasks_by_tag(self, items: List[TaskIndexItem]) -> List[GroupedTasks]:
+        """タグごとにグループ化。複数タグは最初のタグで分類。タグなしは末尾。"""
+        buckets: dict[str, List[TaskIndexItem]] = {}
+        tag_order: List[str] = []
+        for item in list(items or []):
+            tag = self._first_tag_or_untagged(item.tags)
+            if tag not in buckets:
+                buckets[tag] = []
+                tag_order.append(tag)
+            buckets[tag].append(item)
+        groups: List[GroupedTasks] = []
+        for tag in tag_order:
+            bucket = buckets[tag]
+            label = f"[{tag}] ({len(bucket)})" if tag else f"\U0001f4c1 ({len(bucket)})"
+            group_key = f"tag:{tag}" if tag else "tag:"
+            groups.append(GroupedTasks(label=label, group_key=group_key, items=bucket))
+        return groups
+
+    def group_notes_by_tag(self, items: List[NoteIndexItem]) -> List[GroupedNotes]:
+        """ノートをタグごとにグループ化。"""
+        buckets: dict[str, List[NoteIndexItem]] = {}
+        tag_order: List[str] = []
+        for item in list(items or []):
+            tag = self._first_tag_or_untagged(item.tags)
+            if tag not in buckets:
+                buckets[tag] = []
+                tag_order.append(tag)
+            buckets[tag].append(item)
+        groups: List[GroupedNotes] = []
+        for tag in tag_order:
+            bucket = buckets[tag]
+            label = f"[{tag}] ({len(bucket)})" if tag else f"\U0001f4c1 ({len(bucket)})"
+            group_key = f"tag:{tag}" if tag else "tag:"
+            groups.append(GroupedNotes(label=label, group_key=group_key, items=bucket))
+        return groups
+
+    def group_tasks_by_window(self, items: List[TaskIndexItem]) -> List[GroupedTasks]:
+        """window_uuid + title でグループ化。"""
+        buckets: dict[str, List[TaskIndexItem]] = {}
+        uuid_order: List[str] = []
+        titles: dict[str, str] = {}
+        for item in list(items or []):
+            uid = item.window_uuid
+            if uid not in buckets:
+                buckets[uid] = []
+                uuid_order.append(uid)
+                titles[uid] = item.title or f"TextWindow {uid[:8]}"
+            buckets[uid].append(item)
+        groups: List[GroupedTasks] = []
+        for uid in uuid_order:
+            bucket = buckets[uid]
+            title = titles[uid]
+            starred = any(i.is_starred for i in bucket)
+            star_mark = " \u2605" if starred else ""
+            label = f"{title}{star_mark} ({len(bucket)})"
+            groups.append(GroupedTasks(label=label, group_key=f"window:{uid}", items=bucket))
+        return groups
+
+    def group_notes_by_window(self, items: List[NoteIndexItem]) -> List[GroupedNotes]:
+        """ノートを window_uuid + title でグループ化。"""
+        buckets: dict[str, List[NoteIndexItem]] = {}
+        uuid_order: List[str] = []
+        titles: dict[str, str] = {}
+        for item in list(items or []):
+            uid = item.window_uuid
+            if uid not in buckets:
+                buckets[uid] = []
+                uuid_order.append(uid)
+                titles[uid] = item.title or f"TextWindow {uid[:8]}"
+            buckets[uid].append(item)
+        groups: List[GroupedNotes] = []
+        for uid in uuid_order:
+            bucket = buckets[uid]
+            title = titles[uid]
+            starred = any(i.is_starred for i in bucket)
+            star_mark = " \u2605" if starred else ""
+            label = f"{title}{star_mark} ({len(bucket)})"
+            groups.append(GroupedNotes(label=label, group_key=f"window:{uid}", items=bucket))
+        return groups
+
+    def group_mixed_smart(self, tasks: List[TaskIndexItem], notes: List[NoteIndexItem]) -> List[GroupedMixed]:
+        """タスクとノートを混在で スマートグループ化。"""
+        overdue: List[MixedItem] = []
+        today: List[MixedItem] = []
+        starred: List[MixedItem] = []
+        other: List[MixedItem] = []
+
+        for item in list(tasks or []):
+            if not item.done:
+                due_state = self._classify_due_state(
+                    item.due_at,
+                    due_time=item.due_time,
+                    due_timezone=item.due_timezone,
+                    due_precision=item.due_precision,
+                )
+                if due_state == "overdue":
+                    overdue.append(item)
+                    continue
+                if due_state == "today":
+                    today.append(item)
+                    continue
+            if item.is_starred:
+                starred.append(item)
+                continue
+            other.append(item)
+
+        for item in list(notes or []):
+            if item.is_starred:
+                starred.append(item)
+            else:
+                other.append(item)
+
+        groups: List[GroupedMixed] = []
+        if overdue:
+            groups.append(GroupedMixed(label=f"\U0001f534 {len(overdue)}", group_key="overdue", items=overdue))
+        if today:
+            groups.append(GroupedMixed(label=f"\U0001f4c5 {len(today)}", group_key="today", items=today))
+        if starred:
+            groups.append(GroupedMixed(label=f"\u2605 {len(starred)}", group_key="starred", items=starred))
+        if other:
+            groups.append(GroupedMixed(label=f"\U0001f4c1 {len(other)}", group_key="other", items=other))
+        return groups
+
+    def group_mixed_by_tag(self, tasks: List[TaskIndexItem], notes: List[NoteIndexItem]) -> List[GroupedMixed]:
+        """タスクとノートをタグごとに混在グループ化。"""
+        buckets: dict[str, List[MixedItem]] = {}
+        tag_order: List[str] = []
+        for item in list(tasks or []) + list(notes or []):
+            tag = self._first_tag_or_untagged(item.tags)
+            if tag not in buckets:
+                buckets[tag] = []
+                tag_order.append(tag)
+            buckets[tag].append(item)
+        groups: List[GroupedMixed] = []
+        for tag in tag_order:
+            bucket = buckets[tag]
+            label = f"[{tag}] ({len(bucket)})" if tag else f"\U0001f4c1 ({len(bucket)})"
+            group_key = f"tag:{tag}" if tag else "tag:"
+            groups.append(GroupedMixed(label=label, group_key=group_key, items=bucket))
+        return groups
+
+    def group_mixed_by_window(self, tasks: List[TaskIndexItem], notes: List[NoteIndexItem]) -> List[GroupedMixed]:
+        """タスクとノートをウィンドウごとに混在グループ化。"""
+        buckets: dict[str, List[MixedItem]] = {}
+        uuid_order: List[str] = []
+        titles: dict[str, str] = {}
+        for item in list(tasks or []) + list(notes or []):
+            uid = item.window_uuid
+            if uid not in buckets:
+                buckets[uid] = []
+                uuid_order.append(uid)
+                titles[uid] = item.title or f"TextWindow {uid[:8]}"
+            buckets[uid].append(item)
+        groups: List[GroupedMixed] = []
+        for uid in uuid_order:
+            bucket = buckets[uid]
+            title = titles[uid]
+            starred = any(i.is_starred for i in bucket)
+            star_mark = " \u2605" if starred else ""
+            label = f"{title}{star_mark} ({len(bucket)})"
+            groups.append(GroupedMixed(label=label, group_key=f"window:{uid}", items=bucket))
+        return groups

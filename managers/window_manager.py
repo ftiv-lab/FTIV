@@ -5,7 +5,7 @@ import math
 import traceback
 from typing import TYPE_CHECKING, Any, List, Optional
 
-from PySide6.QtCore import QObject, QPoint, Qt, Signal
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, Signal
 from PySide6.QtWidgets import QMessageBox
 
 from utils.edition import get_edition, get_limits, is_over_limit, show_limit_message
@@ -32,6 +32,7 @@ class WindowManager(QObject):
     sig_selection_changed = Signal(object)  # 選択対象が変わったとき
     sig_status_message = Signal(str)  # フッターメッセージ用
     sig_undo_command_requested = Signal(object)  # Undoコマンド発行用
+    sig_layer_structure_changed = Signal()  # Layer構造変更時（LayerTab再構築用）
 
     def __init__(self, main_window: "MainWindow"):
         super().__init__()
@@ -176,6 +177,7 @@ class WindowManager(QObject):
         window.show()
 
         self.set_selected_window(window)
+        self.sig_layer_structure_changed.emit()
 
         logger.info(f"TextWindow created: UUID={window.uuid}, Text='{text[:20]}...'")
         return window
@@ -213,6 +215,7 @@ class WindowManager(QObject):
             self.image_windows.append(window)
             window.show()
             self.set_selected_window(window)
+            self.sig_layer_structure_changed.emit()
 
             logger.info(f"ImageWindow created: UUID={window.uuid}, Path='{image_path}'")
             return window
@@ -427,6 +430,7 @@ class WindowManager(QObject):
                 except Exception as e:
                     logger.warning(f"Failed to delete associated connector: {e}")
 
+            self.sig_layer_structure_changed.emit()
             logger.info(f"{w_type}Window removed: UUID={w_uuid}")
 
         except Exception as e:
@@ -623,24 +627,214 @@ class WindowManager(QObject):
         source_window.parent_window_uuid = None
 
     # ==========================================
+    # Layer API（feat/layer-tab）
+    # ==========================================
+
+    def attach_layer(self, parent: "TextWindow | ImageWindow", child: "TextWindow | ImageWindow") -> None:
+        """child を parent の子レイヤーとしてアタッチする。
+        循環チェックは add_child_window() 側で実施。
+        Undo 対応: AttachLayerCommand を発行する。
+        """
+        from utils.commands import AttachLayerCommand
+
+        try:
+            # layer_offset（親相対座標）を記録してから追加
+            offset = child.pos() - parent.pos()
+            child.config.layer_offset = {"x": offset.x(), "y": offset.y()}
+            # layer_order を同階層の末尾に設定
+            child.config.layer_order = len(parent.child_windows)
+            parent.add_child_window(child)
+        except ValueError as e:
+            logger.warning("attach_layer rejected: %s", e)
+            return
+
+        # 親子の frontmost フラグを同期する。
+        # 親/子で WindowStaysOnTopHint がずれると、ドラッグ時に子が親の下へ潜る要因になる。
+        try:
+            if hasattr(parent, "is_frontmost") and hasattr(child, "is_frontmost"):
+                child_front = bool(getattr(child, "is_frontmost", False))
+                parent_front = bool(getattr(parent, "is_frontmost", False))
+                if child_front != parent_front:
+                    child.is_frontmost = parent_front
+        except Exception:
+            logger.debug("attach_layer frontmost sync failed", exc_info=True)
+
+        # Z-order: 子を親の前面に並べる
+        self.raise_group_stack(parent)
+
+        # Undo 登録
+        undo_stack = getattr(self.main_window, "undo_stack", None)
+        if undo_stack is not None:
+            cmd = AttachLayerCommand(parent, child, self)
+            undo_stack.push(cmd)
+
+        self.sig_status_message.emit(tr("msg_group_success"))
+        self.sig_layer_structure_changed.emit()
+
+    def detach_layer(self, child: "TextWindow | ImageWindow") -> None:
+        """child の親子関係を解除して独立ウィンドウにする。
+        解除後は絶対座標のまま残る（layer_offset はクリア）。
+        """
+        from utils.commands import DetachLayerCommand
+
+        parent_uuid = child.parent_window_uuid
+        if not parent_uuid:
+            return
+
+        parent = next((w for w in self.all_windows if w.uuid == parent_uuid), None)
+
+        # Undo コマンドを先に作成（解除前の状態を保存）
+        saved_offset = child.config.layer_offset
+        saved_order = child.config.layer_order
+
+        if parent and hasattr(parent, "remove_child_window"):
+            parent.remove_child_window(child)
+        child.config.layer_offset = None
+        child.config.layer_order = None
+
+        undo_stack = getattr(self.main_window, "undo_stack", None)
+        if undo_stack is not None:
+            cmd = DetachLayerCommand(parent, child, self, saved_offset, saved_order)
+            undo_stack.push(cmd)
+
+        self.sig_layer_structure_changed.emit()
+
+    def raise_group_stack(self, parent: "TextWindow | ImageWindow", *, include_parent: bool = True) -> None:
+        """親子ツリーを layer_order 順に raise() する。
+
+        Args:
+            parent: ルート親ウィンドウ
+            include_parent:
+                True  -> 親も含めて再整列（選択時/Attach時）
+                False -> 子孫のみ再整列（ドラッグ中のフリッカー抑止用）
+        """
+
+        def _collect_subtree_in_order(node: "TextWindow | ImageWindow", out: list[Any]) -> None:
+            out.append(node)
+            children = sorted(
+                getattr(node, "child_windows", []),
+                key=lambda c: c.config.layer_order if c.config.layer_order is not None else 0,
+            )
+            for child in children:
+                _collect_subtree_in_order(child, out)
+
+        try:
+            import shiboken6
+
+            if not shiboken6.isValid(parent):
+                return
+
+            ordered: list[Any] = []
+            _collect_subtree_in_order(parent, ordered)
+
+            if not include_parent and ordered:
+                ordered = ordered[1:]
+
+            for window in ordered:
+                try:
+                    if shiboken6.isValid(window):
+                        window.raise_()
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug("raise_group_stack: %s", e)
+
+    def find_window_by_uuid(self, uuid: str) -> "TextWindow | ImageWindow | None":
+        """UUID でウィンドウを検索して返す。見つからない場合は None。"""
+        for w in self.all_windows:
+            if w.uuid == uuid:
+                return w
+        return None
+
+    # ==========================================
     # Selection Logic
     # ==========================================
 
     def set_selected_window(self, window: Optional[QObject]):
         self._prune_invalid_refs()
 
-        if self.last_selected_window and self.last_selected_window != window:
-            if hasattr(self.last_selected_window, "set_selected"):
-                self.last_selected_window.set_selected(False)
+        old_selected = self.last_selected_window
+
+        if old_selected and old_selected != window:
+            if hasattr(old_selected, "set_selected"):
+                old_selected.set_selected(False)
 
         self.last_selected_window = window
 
         if self.last_selected_window:
             if hasattr(self.last_selected_window, "set_selected"):
                 self.last_selected_window.set_selected(True)
+            # Z-order: 子ウィンドウを持つ親を選択したとき、子が前面に残るよう
+            # raise_group_stack で再整列する。単純な raise_() だと親が子の上に出てしまう。
+            if getattr(self.last_selected_window, "child_windows", None):
+                self.raise_group_stack(self.last_selected_window)
+                self._schedule_post_select_child_restack(self.last_selected_window)
+            else:
                 self.last_selected_window.raise_()
 
         self.sig_selection_changed.emit(window)
+
+        # --- Auto-Follow: 編集ダイアログの所有権を移譲 ---
+        self._try_transfer_edit_dialog(old_selected, window)
+
+    def _schedule_post_select_child_restack(self, parent: QObject) -> None:
+        """選択クリック後に子孫だけを再整列して、親前面化の上書きを防ぐ。
+
+        目的:
+            Windows/Qt 側で選択クリック直後に親が前面化されるタイミングがあり、
+            その瞬間に子が一時的/恒久的に隠れるケースがある。
+            0ms遅延で「子孫のみ」再raiseすることで視覚競合を抑える。
+        """
+
+        def _restack_children_only() -> None:
+            try:
+                # 選択対象が変わっていたら何もしない
+                if self.last_selected_window is not parent:
+                    return
+                if not getattr(parent, "child_windows", None):
+                    return
+                self.raise_group_stack(parent, include_parent=False)
+            except Exception:
+                logger.debug("post-select child restack failed", exc_info=True)
+
+        QTimer.singleShot(0, _restack_children_only)
+
+    def _try_transfer_edit_dialog(
+        self,
+        old_window: Optional[QObject],
+        new_window: Optional[QObject],
+    ) -> None:
+        """Auto-Follow: テキスト編集可能ウィジェット間でダイアログを移譲する。
+
+        old_window がダイアログを持ち、new_window も EditDialogMixin を備えていれば、
+        ダイアログの所有権を new_window に移す（auto-commit + switch_target）。
+        Duck Typing により TextWindow ↔ ConnectorLabel 間でも動作する。
+        """
+        if old_window is None or new_window is None:
+            return
+        if old_window is new_window:
+            return
+
+        # Duck Typing: EditDialogMixin を備えているか
+        if not hasattr(old_window, "_release_edit_dialog") or not hasattr(new_window, "_take_over_edit_dialog"):
+            return
+
+        dialog = getattr(old_window, "_edit_dialog", None)
+        if dialog is None:
+            return
+
+        # Release from old (auto-commits current text)
+        released = old_window._release_edit_dialog()
+        if released is None:
+            return
+
+        # Take over by new window
+        new_window._take_over_edit_dialog(released)
+        logger.info(
+            "Auto-Follow: dialog transferred %s -> %s",
+            getattr(old_window, "uuid", "?"),
+            getattr(new_window, "uuid", "?"),
+        )
 
     # ==========================================
     # Node Logic (Clone & Create Related)

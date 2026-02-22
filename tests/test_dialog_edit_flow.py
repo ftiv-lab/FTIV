@@ -85,7 +85,7 @@ def test_text_window_context_menu_has_no_editing_mode_submenu():
     assert "menu_text_editing_mode" not in DummyBuilder.last_instance.submenus
 
 
-@patch("windows.text_window.TextInputDialog")
+@patch("ui.dialogs.TextInputDialog")
 def test_text_window_dialog_font_is_independent(mock_dialog_cls):
     w = _make_text_window()
     w.config.text = "abc"

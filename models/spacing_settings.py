@@ -126,10 +126,12 @@ class SpacingSettings:
         )
 
     @classmethod
-    def from_legacy_config(
+    def from_window_config_fields(
         cls,
         horizontal_margin_ratio: float = DEFAULT_CHAR_SPACING,
         vertical_margin_ratio: float = DEFAULT_LINE_SPACING,
+        char_spacing_v: Optional[float] = None,
+        line_spacing_v: Optional[float] = None,
         margin_top: float = DEFAULT_MARGIN_TOP,
         margin_bottom: float = DEFAULT_MARGIN_BOTTOM,
         margin_left: float = DEFAULT_MARGIN_LEFT,
@@ -140,14 +142,17 @@ class SpacingSettings:
         v_margin_right: Optional[float] = None,
     ) -> "SpacingSettings":
         """
-        Create SpacingSettings from legacy TextWindowConfig fields.
+        Build SpacingSettings from current TextWindowConfig field layout.
 
-        This method provides backward compatibility by mapping old field names
-        to the new structure.
+        This bridge method intentionally maps existing window-config fields to
+        SpacingSettings. It is the only runtime bridge expected to remain until
+        a future data model cleanup.
 
         Args:
             horizontal_margin_ratio: Old name for horizontal char spacing
             vertical_margin_ratio: Old name for vertical line spacing (confusing!)
+            char_spacing_v: Vertical char spacing (new explicit field)
+            line_spacing_v: Vertical line/column spacing (new explicit field)
             margin_top/bottom/left/right: Horizontal mode margins
             v_margin_*: Vertical mode specific margins (new fields)
         """
@@ -161,8 +166,9 @@ class SpacingSettings:
                 margin_right=margin_right,
             ),
             vertical=VerticalSpacing(
-                char_spacing=v_margin_top if v_margin_top is not None else DEFAULT_V_CHAR_SPACING,
-                line_spacing=vertical_margin_ratio,
+                # Vertical spacing must not alias to vertical margins.
+                char_spacing=char_spacing_v if char_spacing_v is not None else DEFAULT_V_CHAR_SPACING,
+                line_spacing=line_spacing_v if line_spacing_v is not None else vertical_margin_ratio,
                 margin_top=v_margin_top if v_margin_top is not None else DEFAULT_V_MARGIN_TOP,
                 margin_bottom=v_margin_bottom if v_margin_bottom is not None else DEFAULT_V_MARGIN_BOTTOM,
                 margin_left=v_margin_left if v_margin_left is not None else DEFAULT_V_MARGIN_LEFT,
@@ -170,11 +176,11 @@ class SpacingSettings:
             ),
         )
 
-    def to_legacy_dict(self) -> Dict[str, float]:
+    def to_window_config_dict(self) -> Dict[str, float]:
         """
-        Convert to legacy TextWindowConfig field names for backward compatibility.
+        Convert settings to TextWindowConfig property keys.
 
-        Returns dict with old field names that can be applied to TextWindow.
+        Returns a bridge dict used by SpacingManager.apply_to_window().
         """
         return {
             "horizontal_margin_ratio": self.horizontal.char_spacing,

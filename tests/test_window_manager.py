@@ -1,6 +1,9 @@
+import sys
+import types
 from unittest.mock import MagicMock
 
 import pytest
+from PySide6.QtCore import QPoint
 
 from managers.window_manager import WindowManager
 
@@ -99,3 +102,75 @@ class TestWindowManager:
 
         assert conn not in window_manager.connectors
         conn.close.assert_called()
+
+    def test_attach_layer_syncs_child_frontmost_to_parent(self, window_manager):
+        parent = MagicMock()
+        child = MagicMock()
+        parent.uuid = "parent"
+        child.uuid = "child"
+        parent.child_windows = []
+        parent.pos.return_value = QPoint(0, 0)
+        child.pos.return_value = QPoint(10, 20)
+        parent.is_frontmost = False
+        child.is_frontmost = True
+        child.config = MagicMock()
+        child.config.layer_offset = None
+        child.config.layer_order = None
+
+        def _add_child(c):
+            parent.child_windows.append(c)
+
+        parent.add_child_window.side_effect = _add_child
+        window_manager.raise_group_stack = MagicMock()
+        window_manager.main_window.undo_stack = None
+
+        window_manager.attach_layer(parent, child)
+
+        assert child.is_frontmost is False
+        assert child.config.layer_offset == {"x": 10, "y": 20}
+        assert child.config.layer_order == 0
+        window_manager.raise_group_stack.assert_called_once_with(parent)
+
+    def test_set_selected_window_with_children_restacked_after_click(self, window_manager, monkeypatch):
+        parent = MagicMock()
+        parent.child_windows = [MagicMock()]
+        window_manager.raise_group_stack = MagicMock()
+
+        called = {"count": 0}
+
+        def _immediate_single_shot(ms, callback):
+            called["count"] += 1
+            callback()
+
+        monkeypatch.setattr("managers.window_manager.QTimer.singleShot", _immediate_single_shot)
+
+        window_manager.set_selected_window(parent)
+
+        assert called["count"] == 1
+        assert window_manager.raise_group_stack.call_count == 2
+        window_manager.raise_group_stack.assert_any_call(parent)
+        window_manager.raise_group_stack.assert_any_call(parent, include_parent=False)
+
+    def test_raise_group_stack_skip_parent_during_drag(self, window_manager, monkeypatch):
+        fake_shiboken = types.SimpleNamespace(isValid=lambda _obj: True)
+        monkeypatch.setitem(sys.modules, "shiboken6", fake_shiboken)
+
+        parent = MagicMock()
+        child = MagicMock()
+        grandchild = MagicMock()
+        parent.child_windows = [child]
+        child.child_windows = [grandchild]
+        grandchild.child_windows = []
+
+        parent.config = MagicMock()
+        parent.config.layer_order = 0
+        child.config = MagicMock()
+        child.config.layer_order = 0
+        grandchild.config = MagicMock()
+        grandchild.config.layer_order = 0
+
+        window_manager.raise_group_stack(parent, include_parent=False)
+
+        parent.raise_.assert_not_called()
+        child.raise_.assert_called_once()
+        grandchild.raise_.assert_called_once()

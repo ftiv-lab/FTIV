@@ -23,18 +23,18 @@ from models.window_config import TextWindowConfig
 from ui.context_menu import ContextMenuBuilder
 from ui.dialogs import (
     SliderSpinDialog,
-    TextInputDialog,
     TextSpacingDialog,
 )
 from utils.font_dialog import choose_font
 from utils.translator import tr
 from windows.base_window import BaseOverlayWindow
+from windows.mixins.edit_dialog_mixin import EditDialogMixin
 from windows.mixins.text_properties_mixin import TextPropertiesMixin
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
+class ConnectorLabel(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
     """
     接続線の上に表示されるラベル専用のウィンドウ
     TextWindowとほぼ同じ機能を持つが、位置はConnectorLineによって管理される
@@ -52,6 +52,8 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         BaseOverlayWindow.__init__(self, main_window, config_class=TextWindowConfig)
 
         self.connector: Any = connector
+        self._edit_dialog: Optional[Any] = None
+        self._edit_original_text: str = ""
 
         try:
             self._init_text_renderer(main_window)
@@ -124,12 +126,14 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         painter.end()
 
     def closeEvent(self, event: Any) -> None:
-        """ラベルが閉じられた場合の互換通知（元の方針へ戻す）。
+        """ラベルが閉じられた場合に編集ダイアログをクリーンアップし互換通知する。
 
         Notes:
             ConnectorLabel が予期せず閉じられた時に、上位側が状態を保てるよう
             互換シグナルを出す（既存挙動に合わせる）。
         """
+        # Phase F: 編集ダイアログクリーンアップ
+        self._cleanup_edit_dialog()
         try:
             try:
                 self.sig_connector_deleted.emit(self)
@@ -174,36 +178,9 @@ class ConnectorLabel(TextPropertiesMixin, BaseOverlayWindow):  # type: ignore
         except Exception:
             pass
 
-    def edit_text_realtime(self):
-        original_text = self.text
-
-        def live_update(new_text):
-            self.text = new_text
-            self.update_text()
-
-        dialog = TextInputDialog(self.text, self, callback=live_update)
-
-        screen_geo = self.screen().availableGeometry()
-        dlg_w = dialog.width()
-        dlg_h = dialog.height()
-        target_x = self.x() + self.width() + 20
-        target_y = self.y()
-        if target_x + dlg_w > screen_geo.right():
-            target_x = self.x() - dlg_w - 20
-        if target_y + dlg_h > screen_geo.bottom():
-            target_y = screen_geo.bottom() - dlg_h
-        dialog.move(target_x, target_y)
-
-        if dialog.exec() == QDialog.Accepted:
-            final_text = dialog.get_text()
-            if final_text != original_text:
-                self.set_undoable_property("text", final_text, "update_text")
-        else:
-            try:
-                self.text = original_text
-                self.update_text()
-            except Exception:
-                pass
+    def edit_text_realtime(self) -> None:
+        """モードレスダイアログでテキストを変更する（Persistent Mode）。"""
+        self.start_edit_dialog()
 
     # --- 余白設定用メソッド (★追加) ---
 

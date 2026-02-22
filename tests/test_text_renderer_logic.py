@@ -5,9 +5,10 @@
 """
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QRect, QSize
+from PySide6.QtGui import QFont
 
 from windows.text_renderer import TextRenderer, _RenderProfile
 
@@ -135,6 +136,29 @@ class TestGetBlurRadiusPx:
         w = _make_mock_window(shadow_blur=100)
         result = r._get_blur_radius_px(w)
         assert result == 20.0
+
+
+class TestRendererInputContract:
+    def test_render_rejects_missing_core_attrs(self):
+        r = TextRenderer()
+
+        class _BrokenInput:
+            is_vertical = False
+            text = "abc"
+            font_family = "Arial"
+            # font_size is intentionally missing
+
+            def pos(self):
+                return MagicMock()
+
+            def setGeometry(self, _rect):
+                return None
+
+        try:
+            r.render(_BrokenInput())  # type: ignore[arg-type]
+            raise AssertionError("render() should reject missing font_size")
+        except AttributeError as e:
+            assert "font_size" in str(e)
 
 
 # ============================================================
@@ -287,6 +311,46 @@ class TestRenderCachePut:
         assert len(r._render_cache) == 0
 
 
+class TestRenderCacheUsage:
+    def test_render_reuses_cached_pixmap_for_same_signature(self):
+        r = TextRenderer()
+        w = _make_mock_window(is_vertical=False, font_family="Arial")
+        fake_pix = MagicMock()
+        fake_pix.size.return_value = QSize(120, 40)
+
+        with patch.object(r, "_render_horizontal", return_value=fake_pix) as render_mock:
+            out1 = r.render(w)
+            out2 = r.render(w)
+
+        assert render_mock.call_count == 1
+        assert out1 is fake_pix
+        assert out2 is fake_pix
+
+
+class TestTaskRectCacheUsage:
+    def test_get_task_line_rects_reuses_cache_for_same_signature(self):
+        r = TextRenderer()
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=False,
+            text="line-1\nline-2",
+            task_states=[False, True],
+            font_family="Arial",
+            font_size=24,
+        )
+        expected = QRect(0, 0, 12, 20)
+
+        with patch.object(r, "_get_task_line_rects_horizontal", return_value=[expected]) as rect_mock:
+            first = r.get_task_line_rects(w)
+            second = r.get_task_line_rects(w)
+
+        assert rect_mock.call_count == 1
+        assert len(first) == 1
+        assert len(second) == 1
+        assert first[0] == expected
+        assert second[0] == expected
+
+
 # ============================================================
 # task mode rendering helpers
 # ============================================================
@@ -393,6 +457,102 @@ class TestTaskRendering:
         r = TextRenderer()
         w = _make_mock_window(content_mode="task", is_vertical=True, text="a\nb", task_states=[True, False])
         assert r.get_task_line_rects(w) == []
+
+    def test_vertical_char_spacing_does_not_shift_column_x(self):
+        """char_spacing_v は縦方向だけに効き、列X基準は変えない。"""
+        r = TextRenderer()
+        w = _make_mock_window(
+            content_mode="note",
+            is_vertical=True,
+            text="AB",
+            font_family="Arial",
+            font_size=24,
+        )
+
+        def _first_column_x(margin: int) -> float:
+            painter = MagicMock()
+            painter.font.return_value = QFont("Arial", 24)
+            painter.pen.return_value = MagicMock()
+            r._draw_vertical_text_content(
+                painter=painter,
+                window=w,
+                lines=["AB"],
+                x_shift=1.0,
+                top_margin=0,
+                margin=margin,
+                right_margin=0,
+                shadow_x=0,
+                outline_width=0.0,
+                canvas_size=QSize(300, 300),
+            )
+            return float(painter.translate.call_args_list[0].args[0])
+
+        assert _first_column_x(0) == _first_column_x(20)
+
+    def test_vertical_char_spacing_changes_y_step_only(self):
+        """char_spacing_v 変更で文字のY間隔のみが増える。"""
+        r = TextRenderer()
+        w = _make_mock_window(
+            content_mode="note",
+            is_vertical=True,
+            text="AB",
+            font_family="Arial",
+            font_size=24,
+        )
+
+        def _y_step(margin: int) -> float:
+            painter = MagicMock()
+            painter.font.return_value = QFont("Arial", 24)
+            painter.pen.return_value = MagicMock()
+            r._draw_vertical_text_content(
+                painter=painter,
+                window=w,
+                lines=["AB"],
+                x_shift=1.0,
+                top_margin=0,
+                margin=margin,
+                right_margin=0,
+                shadow_x=0,
+                outline_width=0.0,
+                canvas_size=QSize(300, 300),
+            )
+            calls = painter.translate.call_args_list
+            return float(calls[1].args[1] - calls[0].args[1])
+
+        base = _y_step(0)
+        widened = _y_step(10)
+        assert widened == base + 10
+
+    def test_vertical_task_rects_x_anchor_ignores_char_spacing(self):
+        """縦書きタスク矩形の列X基準は char_spacing_v に依存しない。"""
+        r = TextRenderer()
+        fm = MagicMock()
+        fm.ascent.return_value = 10
+        fm.descent.return_value = 4
+        fm.horizontalAdvance.side_effect = lambda _ch: 12
+
+        w = _make_mock_window(
+            content_mode="task",
+            is_vertical=True,
+            font_size=20,
+            text="AB",
+            line_spacing_v=0.0,
+            char_spacing_v=0.0,
+            vertical_margin_ratio=0.0,
+            v_margin_top_ratio=0.0,
+            v_margin_right_ratio=0.0,
+            background_outline_enabled=False,
+            background_outline_width_ratio=0.0,
+            shadow_enabled=False,
+        )
+        w.canvas_size = QSize(240, 240)
+
+        rect_base = r._get_task_line_rects_vertical(w, ["AB"], fm)[0]
+        w.char_spacing_v = 0.5
+        rect_changed = r._get_task_line_rects_vertical(w, ["AB"], fm)[0]
+
+        assert rect_changed.x() == rect_base.x()
+        assert rect_changed.height() > rect_base.height()
 
     def test_get_task_line_rects_horizontal_uses_task_rail(self):
         r = TextRenderer()

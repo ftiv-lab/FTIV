@@ -227,7 +227,7 @@ class TestInfoIndexManager:
         assert [n.window_uuid for n in dated] == ["n1"]
         assert [n.window_uuid for n in undated] == ["n2"]
 
-    def test_query_notes_mode_filter_task_and_note(self):
+    def test_query_notes_item_scope_tasks_and_notes(self):
         manager = InfoIndexManager()
         windows = [
             _make_window(uuid="n1", text="memo", content_mode="note"),
@@ -240,13 +240,13 @@ class TestInfoIndexManager:
         ]
         _, notes = manager.build_index(windows)
 
-        only_task = manager.query_notes(notes, InfoQuery(mode_filter="task"))
-        only_note = manager.query_notes(notes, InfoQuery(mode_filter="note"))
+        only_task = manager.query_notes(notes, InfoQuery(item_scope="tasks", content_mode_filter="task"))
+        only_note = manager.query_notes(notes, InfoQuery(item_scope="notes", content_mode_filter="note"))
 
         assert [item.window_uuid for item in only_task] == ["t1"]
         assert [item.window_uuid for item in only_note] == ["n1"]
 
-    def test_query_mode_filter_legacy_mapping_to_item_scope(self):
+    def test_query_tasks_and_notes_respect_item_scope(self):
         manager = InfoIndexManager()
         windows = [
             _make_window(uuid="n1", text="memo", content_mode="note"),
@@ -259,11 +259,36 @@ class TestInfoIndexManager:
         ]
         tasks, notes = manager.build_index(windows)
 
-        tasks_when_note = manager.query_tasks(tasks, InfoQuery(mode_filter="note"))
-        notes_when_task = manager.query_notes(notes, InfoQuery(mode_filter="task"))
+        tasks_when_note_scope = manager.query_tasks(tasks, InfoQuery(item_scope="notes", content_mode_filter="note"))
+        notes_when_task_scope = manager.query_notes(notes, InfoQuery(item_scope="tasks", content_mode_filter="task"))
 
-        assert tasks_when_note == []
-        assert [item.window_uuid for item in notes_when_task] == ["t1"]
+        assert tasks_when_note_scope == []
+        assert [item.window_uuid for item in notes_when_task_scope] == ["t1"]
+
+    def test_query_item_scope_contract_is_primary(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="memo", content_mode="note"),
+            _make_window(
+                uuid="t1",
+                text="task line",
+                content_mode="task",
+                task_refs=[_make_task_ref(0, "task line", False)],
+            ),
+        ]
+        tasks, notes = manager.build_index(windows)
+
+        notes_with_tasks_scope = manager.query_notes(
+            notes,
+            InfoQuery(item_scope="tasks", content_mode_filter="task"),
+        )
+        tasks_with_notes_scope = manager.query_tasks(
+            tasks,
+            InfoQuery(item_scope="notes", content_mode_filter="note"),
+        )
+
+        assert [item.window_uuid for item in notes_with_tasks_scope] == ["t1"]
+        assert tasks_with_notes_scope == []
 
     def test_query_tasks_due_filter_uses_datetime_when_due_precision_datetime(self):
         manager = InfoIndexManager()
@@ -319,3 +344,173 @@ class TestInfoIndexManager:
         assert stats.done_tasks == 1
         assert stats.overdue_tasks == 1
         assert stats.starred_notes == 2
+
+    def test_group_tasks_by_tag(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="a",
+                content_mode="task",
+                tags=["work"],
+                task_refs=[_make_task_ref(0, "task1", False)],
+            ),
+            _make_window(
+                uuid="w2",
+                text="b",
+                content_mode="task",
+                tags=["home"],
+                task_refs=[_make_task_ref(0, "task2", False)],
+            ),
+            _make_window(
+                uuid="w3",
+                text="c",
+                content_mode="task",
+                task_refs=[_make_task_ref(0, "untagged", False)],
+            ),
+        ]
+        tasks, _ = manager.build_index(windows)
+        groups = manager.group_tasks_by_tag(tasks)
+        keys = [g.group_key for g in groups]
+        assert "tag:work" in keys
+        assert "tag:home" in keys
+        assert "tag:" in keys
+        for g in groups:
+            assert len(g.items) == 1
+
+    def test_group_tasks_by_tag_untagged_last(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="a",
+                content_mode="task",
+                task_refs=[_make_task_ref(0, "untagged", False)],
+                updated_at="2026-02-10T12:00:00",
+            ),
+            _make_window(
+                uuid="w2",
+                text="b",
+                content_mode="task",
+                tags=["work"],
+                task_refs=[_make_task_ref(0, "tagged", False)],
+                updated_at="2026-02-10T11:00:00",
+            ),
+        ]
+        tasks, _ = manager.build_index(windows)
+        groups = manager.group_tasks_by_tag(tasks)
+        # untagged item comes first (sorted by updated_at desc) but group order follows item order
+        assert len(groups) == 2
+
+    def test_group_tasks_by_window(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="a\nb",
+                content_mode="task",
+                title="Project A",
+                is_starred=True,
+                task_refs=[_make_task_ref(0, "t1", False), _make_task_ref(1, "t2", True)],
+            ),
+            _make_window(
+                uuid="w2",
+                text="c",
+                content_mode="task",
+                title="Project B",
+                task_refs=[_make_task_ref(0, "t3", False)],
+            ),
+        ]
+        tasks, _ = manager.build_index(windows)
+        groups = manager.group_tasks_by_window(tasks)
+        assert len(groups) == 2
+        keys = [g.group_key for g in groups]
+        assert "window:w1" in keys
+        assert "window:w2" in keys
+        # w1 is starred so label should contain star
+        w1_group = next(g for g in groups if g.group_key == "window:w1")
+        assert "\u2605" in w1_group.label
+
+    def test_group_notes_by_tag(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="memo1", tags=["work"]),
+            _make_window(uuid="n2", text="memo2", tags=["home"]),
+            _make_window(uuid="n3", text="memo3"),
+        ]
+        _, notes = manager.build_index(windows)
+        groups = manager.group_notes_by_tag(notes)
+        assert len(groups) == 3
+        keys = [g.group_key for g in groups]
+        assert "tag:work" in keys
+        assert "tag:home" in keys
+        assert "tag:" in keys
+
+    def test_group_notes_by_window(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(uuid="n1", text="memo1", title="Doc A"),
+            _make_window(uuid="n2", text="memo2", title="Doc B"),
+        ]
+        _, notes = manager.build_index(windows)
+        groups = manager.group_notes_by_window(notes)
+        assert len(groups) == 2
+
+    def test_group_mixed_smart(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="a",
+                content_mode="task",
+                is_starred=True,
+                task_refs=[_make_task_ref(0, "starred task", False)],
+            ),
+            _make_window(uuid="n1", text="memo", is_starred=True),
+            _make_window(uuid="n2", text="other memo"),
+        ]
+        tasks, notes = manager.build_index(windows)
+        groups = manager.group_mixed_smart(tasks, notes)
+        keys = [g.group_key for g in groups]
+        assert "starred" in keys
+        assert "other" in keys
+        starred_group = next(g for g in groups if g.group_key == "starred")
+        # w1: 1 task + 1 note (both starred), n1: 1 note (starred) = 3
+        assert len(starred_group.items) == 3
+
+    def test_group_mixed_by_tag(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="a",
+                content_mode="task",
+                tags=["work"],
+                task_refs=[_make_task_ref(0, "task", False)],
+            ),
+            _make_window(uuid="n1", text="memo", tags=["work"]),
+        ]
+        tasks, notes = manager.build_index(windows)
+        groups = manager.group_mixed_by_tag(tasks, notes)
+        assert len(groups) == 1
+        assert groups[0].group_key == "tag:work"
+        # w1: 1 task + 1 note, n1: 1 note = 3 items total
+        assert len(groups[0].items) == 3
+
+    def test_group_mixed_by_window(self):
+        manager = InfoIndexManager()
+        windows = [
+            _make_window(
+                uuid="w1",
+                text="a",
+                content_mode="task",
+                title="Proj",
+                task_refs=[_make_task_ref(0, "task", False)],
+            ),
+        ]
+        tasks, notes = manager.build_index(windows)
+        groups = manager.group_mixed_by_window(tasks, notes)
+        # Task items and note items from same window should be in same group
+        assert len(groups) == 1
+        assert groups[0].group_key == "window:w1"
+        assert len(groups[0].items) == 2  # 1 task + 1 note (from same window)

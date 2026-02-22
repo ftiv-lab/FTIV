@@ -41,7 +41,6 @@ class AboutTab(QWidget):
         self._applied_compact_state: bool | None = None
         self._suspend_section_events = True
         self._setup_ui()
-        self._inject_compatibility_attributes()
         self._load_section_state_from_settings()
         self._suspend_section_events = False
         self._apply_compact_mode(force=True)
@@ -304,35 +303,6 @@ class AboutTab(QWidget):
             self._set_sections_from_state(next_state)
         else:
             self._set_sections_from_state(dict(self._section_state))
-
-    def _inject_compatibility_attributes(self) -> None:
-        attrs = [
-            "edition_group",
-            "label_current_edition",
-            "btn_open_shop",
-            "btn_copy_shop_url",
-            "system_group",
-            "btn_open_log",
-            "btn_show_about",
-            "btn_manual",
-            "btn_license",
-            "shortcuts_group",
-            "label_shortcuts",
-            "perf_group",
-            "label_debounce",
-            "spin_debounce",
-            "hint_debounce",
-            "label_wheel",
-            "spin_wheel",
-            "hint_wheel",
-            "label_cache",
-            "spin_cache",
-            "hint_cache",
-            "btn_apply_perf",
-        ]
-        for attr in attrs:
-            if hasattr(self, attr):
-                setattr(self.mw, attr, getattr(self, attr))
 
     def refresh_ui(self) -> None:
         self.btn_manual.setText(tr("btn_manual"))

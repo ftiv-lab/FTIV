@@ -59,22 +59,22 @@ class TestSpacingSettings:
         assert restored.horizontal.margin_left == 4.2
         assert restored.vertical.margin_bottom == 9.9
 
-    def test_legacy_dict_export(self):
-        """Verify export to legacy flat dict structure (used by TextWindow)."""
+    def test_window_config_dict_export(self):
+        """Verify export to TextWindow flat property dict structure."""
         settings = SpacingSettings()
         settings.horizontal.char_spacing = 1.0
         settings.vertical.margin_top = 2.0
 
-        legacy = settings.to_legacy_dict()
+        exported = settings.to_window_config_dict()
 
         # Check mapping logic
-        assert legacy["horizontal_margin_ratio"] == 1.0
-        assert legacy["v_margin_top_ratio"] == 2.0  # Legacy dict ADDS 'v_' prefix for vertical fields
-        assert "margin_left_ratio" in legacy  # Standard existing property
+        assert exported["horizontal_margin_ratio"] == 1.0
+        assert exported["v_margin_top_ratio"] == 2.0
+        assert "margin_left_ratio" in exported
 
-    def test_legacy_config_import(self):
-        """Verify initialization from legacy property components."""
-        settings = SpacingSettings.from_legacy_config(
+    def test_window_config_fields_import(self):
+        """Verify initialization from TextWindow property components."""
+        settings = SpacingSettings.from_window_config_fields(
             horizontal_margin_ratio=0.5,
             margin_top=0.8,
             # Vertical specific (optional)
@@ -95,7 +95,7 @@ class TestSpacingSettings:
 
 class TestPersistenceCompatibility:
     """
-    Since BulkOperationManager handles saving/loading directly using legacy keys,
+    Since BulkOperationManager handles saving/loading directly using window config keys,
     we must verify SpacingSettings is compatible with that data format.
     """
 
@@ -117,9 +117,9 @@ class TestPersistenceCompatibility:
 
         # 2. Simulate Loading Logic
         # The app loads this JSON, creates a dict, and then applies it via set_undoable_property.
-        # SpacingSettings.from_legacy_config simulates how these properties map to the object model.
+        # SpacingSettings.from_window_config_fields simulates how these properties map.
 
-        settings = SpacingSettings.from_legacy_config(
+        settings = SpacingSettings.from_window_config_fields(
             horizontal_margin_ratio=saved_json_data["h_margin"],
             vertical_margin_ratio=saved_json_data["v_margin"],
             margin_top=saved_json_data["margin_top"],
@@ -133,8 +133,7 @@ class TestPersistenceCompatibility:
         assert settings.horizontal.line_spacing == 1.2
         assert settings.horizontal.margin_top == 0.3
 
-        # 4. Verify Vertical Isolation (Should not be affected by horizontal margins unless shared)
-        # Note: In legacy, line_spacing IS shared.
+        # 4. Verify Vertical Isolation (line_spacing is intentionally shared).
         assert settings.vertical.line_spacing == 1.2
 
     def test_vertical_defaults_compatibility(self):
@@ -147,7 +146,7 @@ class TestPersistenceCompatibility:
             "v_margin_right": 0.3,
         }
 
-        settings = SpacingSettings.from_legacy_config(
+        settings = SpacingSettings.from_window_config_fields(
             v_margin_top=saved_vertical_json["v_margin_top"],
             v_margin_bottom=saved_vertical_json["v_margin_bottom"],
             v_margin_left=saved_vertical_json["v_margin_left"],

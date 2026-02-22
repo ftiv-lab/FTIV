@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-02-16T23:40:00",
+  "baseline_measurement_id": "phase9e_measurement_20260216_213653",
+  "notes": "Phase 9F initial thresholds with safety buffer for local variance.",
+  "scenarios": {
+    "P9E-S06": {
+      "median_ms": 52.0,
+      "p95_ms": 55.0,
+      "samples": 5
+    },
+    "P9E-S05": {
+      "median_ms": 6.0,
+      "p95_ms": 7.0,
+      "samples": 5
+    },
+    "P9E-S02": {
+      "median_ms": 0.8,
+      "p95_ms": 1.2,
+      "samples": 5
+    }
+  }
+}
