@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTIV - Desktop Overlay Tool | Floating Text Image Viewer</title>
+    <meta name="description" content="A desktop overlay tool that lets you place text and images freely on your screen. Supports text decoration, APNG/GIF animation, vertical writing, and more. Free for Windows 10/11.">
+    <link rel="canonical" href="https://ftiv-lab.github.io/FTIV/public/en-us/">
+    <link rel="alternate" hreflang="ja" href="https://ftiv-lab.github.io/FTIV/public/ja-jp/">
+    <link rel="alternate" hreflang="en" href="https://ftiv-lab.github.io/FTIV/public/en-us/">
+    <link rel="alternate" hreflang="x-default" href="https://ftiv-lab.github.io/FTIV/public/ja-jp/">
+
+    <!-- OGP -->
+    <meta property="og:title" content="FTIV - Floating Text Image Viewer">
+    <meta property="og:description" content="A desktop overlay tool that lets you place text and images freely on your screen">
+    <meta property="og:url" content="https://ftiv-lab.github.io/FTIV/public/en-us/">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="ja_JP">
+    <meta name="twitter:card" content="summary">
+    <!-- OGP image: Enable after adding screenshot
+    <meta property="og:image" content="https://ftiv-lab.github.io/FTIV/public/assets/ogp.png">
+    <meta name="twitter:card" content="summary_large_image">
+    -->
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "FTIV",
+        "alternateName": "Floating Text Image Viewer",
+        "description": "A desktop overlay tool that lets you place text and images freely on your screen",
+        "applicationCategory": "DesktopEnhancement",
+        "operatingSystem": "Windows 10, Windows 11",
+        "downloadUrl": "https://github.com/ftiv-lab/FTIV/releases/latest",
+        "softwareRequirements": "Windows 10/11 64bit",
+        "author": {
+            "@type": "Organization",
+            "name": "FTIV Lab"
+        },
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }
+    }
+    </script>
+
+    <style>
+        /* ===== Reset & Base ===== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+            color: #333;
+            background: #fff;
+            line-height: 1.8;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        a:focus-visible {
+            outline: 2px solid #0366d6;
+            outline-offset: 2px;
+            border-radius: 2px;
+        }
+
+        /* ===== Header ===== */
+        header {
+            border-bottom: 1px solid #e1e4e8;
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header-left { display: flex; align-items: center; gap: 0.5rem; }
+        .header-left .site-name {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        nav { display: flex; align-items: center; gap: 1.25rem; font-size: 0.9rem; }
+        nav a { color: #555; }
+        nav a:hover { color: #0366d6; }
+        .lang-switch {
+            border-left: 1px solid #ddd;
+            padding-left: 1.25rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .lang-switch .current { font-weight: 700; color: #1a1a1a; }
+
+        /* ===== Main Content ===== */
+        main {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 3rem;
+        }
+
+        /* ===== Hero ===== */
+        .hero {
+            text-align: center;
+            padding: 2rem 0 1.5rem;
+            border-bottom: 1px solid #e1e4e8;
+            margin-bottom: 2rem;
+        }
+        .hero h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 0.25rem;
+        }
+        .hero .subtitle {
+            font-size: 1rem;
+            color: #666;
+            margin-bottom: 0.75rem;
+        }
+        .hero .description {
+            font-size: 1.05rem;
+            color: #333;
+            line-height: 1.7;
+        }
+
+        /* ===== Screenshot ===== */
+        .screenshot {
+            text-align: center;
+            margin: 2rem 0;
+        }
+        .screenshot img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .screenshot-placeholder {
+            background: #f6f8fa;
+            border: 2px dashed #d1d5da;
+            border-radius: 8px;
+            padding: 3rem 1rem;
+            color: #959da5;
+            font-size: 0.9rem;
+        }
+
+        /* ===== Sections ===== */
+        section { margin-bottom: 2rem; }
+        section h2 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            border-bottom: 1px solid #e1e4e8;
+            padding-bottom: 0.4rem;
+            margin-bottom: 0.75rem;
+        }
+
+        /* ===== Lists ===== */
+        ul { padding-left: 1.5rem; }
+        ul li { margin-bottom: 0.3rem; }
+        ul li::marker { color: #999; }
+
+        /* ===== Tables ===== */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid #e1e4e8;
+        }
+        th {
+            background: #f6f8fa;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        /* ===== Download Links ===== */
+        .download-links a {
+            display: inline-block;
+            margin-right: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ===== Document Grid ===== */
+        .doc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.5rem;
+        }
+        .doc-grid a {
+            padding: 0.3rem 0;
+        }
+
+        /* ===== Footer ===== */
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            color: #959da5;
+            font-size: 0.85rem;
+            border-top: 1px solid #e1e4e8;
+        }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 600px) {
+            header { flex-direction: column; gap: 0.5rem; }
+            .hero h1 { font-size: 1.6rem; }
+            .doc-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <span class="site-name">FTIV</span>
+    </div>
+    <nav>
+        <a href="https://github.com/ftiv-lab/FTIV" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/ftiv-lab/FTIV/releases/latest" target="_blank" rel="noopener">Download</a>
+        <div class="lang-switch">
+            <a href="../ja-jp/">日本語</a>
+            <span class="current">English</span>
+        </div>
+    </nav>
+</header>
+
+<main>
+
+    <!-- Product Overview -->
+    <div class="hero">
+        <h1>FTIV</h1>
+        <p class="subtitle">Floating Text Image Viewer</p>
+        <p class="description">A desktop overlay tool that lets you place text and images freely on your screen</p>
+    </div>
+
+    <!-- Screenshot -->
+    <div class="screenshot">
+        <!-- Enable after adding screenshot:
+        <img src="../assets/screenshot.png" alt="FTIV in use - text and images placed on the desktop" width="800" height="450">
+        -->
+        <div class="screenshot-placeholder">
+            Screenshot coming soon<br>
+            <small>assets/screenshot.png (recommended: 1200x675px)</small>
+        </div>
+    </div>
+
+    <!-- Features -->
+    <section>
+        <h2>Features</h2>
+        <ul>
+            <li>Place text and images anywhere on your desktop</li>
+            <li>Text decoration with outlines, shadows, and gradients</li>
+            <li>Vertical writing support</li>
+            <li>APNG / GIF animation playback</li>
+            <li>Connect windows with connector lines</li>
+            <li>Layer management (parent-child grouping and reordering)</li>
+            <li>Click-through (interact with apps behind overlays)</li>
+            <li>Save and restore scenes</li>
+            <li>Adjustable opacity</li>
+            <li>Always on Top</li>
+        </ul>
+    </section>
+
+    <!-- Supported Formats -->
+    <section>
+        <h2>Supported Formats</h2>
+        <table>
+            <tr>
+                <th>Type</th>
+                <th>Formats</th>
+            </tr>
+            <tr>
+                <td>Text</td>
+                <td>UTF-8 text (multilingual)</td>
+            </tr>
+            <tr>
+                <td>Images</td>
+                <td>PNG, JPEG, BMP, GIF, APNG, WebP</td>
+            </tr>
+            <tr>
+                <td>Scenes</td>
+                <td>.ftiv (proprietary format)</td>
+            </tr>
+        </table>
+    </section>
+
+    <!-- System Requirements -->
+    <section>
+        <h2>System Requirements</h2>
+        <table>
+            <tr>
+                <th>Item</th>
+                <th>Requirement</th>
+            </tr>
+            <tr>
+                <td>OS</td>
+                <td>Windows 10 / 11 (64-bit)</td>
+            </tr>
+            <tr>
+                <td>Installation</td>
+                <td>Not required (portable / installer available)</td>
+            </tr>
+        </table>
+    </section>
+
+    <!-- Download -->
+    <section>
+        <h2>Download</h2>
+        <div class="download-links">
+            <a href="https://github.com/ftiv-lab/FTIV/releases/latest" target="_blank" rel="noopener">GitHub Releases (latest)</a>
+        </div>
+        <p style="color: #666; font-size: 0.9rem;">Download the Zip (portable) and extract it to any folder.</p>
+    </section>
+
+    <!-- Documentation -->
+    <section>
+        <h2>Documentation</h2>
+        <p style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">Documentation is being prepared.</p>
+        <div class="doc-grid">
+            <!-- Enable as documentation pages are added:
+            <a href="#">User Guide</a>
+            <a href="#">Keyboard Shortcuts</a>
+            <a href="#">Layer Operations</a>
+            <a href="#">Connectors</a>
+            <a href="#">Scene Management</a>
+            <a href="#">Troubleshooting</a>
+            -->
+        </div>
+        <ul>
+            <li><a href="https://github.com/ftiv-lab/FTIV/releases" target="_blank" rel="noopener">Changelog (GitHub Releases)</a></li>
+            <li><a href="https://github.com/ftiv-lab/FTIV/issues" target="_blank" rel="noopener">Bug Reports &amp; Feature Requests (GitHub Issues)</a></li>
+        </ul>
+    </section>
+
+    <!-- License -->
+    <section>
+        <h2>License</h2>
+        <p>See the <a href="https://github.com/ftiv-lab/FTIV" target="_blank" rel="noopener">GitHub repository</a> for details.</p>
+    </section>
+
+</main>
+
+<footer>
+    <p>FTIV Lab</p>
+</footer>
+
+</body>
+</html>

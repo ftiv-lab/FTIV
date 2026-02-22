@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTIV - デスクトップオーバーレイツール | Floating Text Image Viewer</title>
+    <meta name="description" content="デスクトップ上にテキストや画像を自由に配置できるオーバーレイツール。縁取り・影・グラデーション装飾、APNG/GIFアニメーション再生、縦書き対応。Windows 10/11対応、無料。">
+    <link rel="canonical" href="https://ftiv-lab.github.io/FTIV/public/ja-jp/">
+    <link rel="alternate" hreflang="ja" href="https://ftiv-lab.github.io/FTIV/public/ja-jp/">
+    <link rel="alternate" hreflang="en" href="https://ftiv-lab.github.io/FTIV/public/en-us/">
+    <link rel="alternate" hreflang="x-default" href="https://ftiv-lab.github.io/FTIV/public/ja-jp/">
+
+    <!-- OGP -->
+    <meta property="og:title" content="FTIV - Floating Text Image Viewer">
+    <meta property="og:description" content="デスクトップ上にテキストや画像を自由に配置できるオーバーレイツール">
+    <meta property="og:url" content="https://ftiv-lab.github.io/FTIV/public/ja-jp/">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="ja_JP">
+    <meta property="og:locale:alternate" content="en_US">
+    <meta name="twitter:card" content="summary">
+    <!-- OGP画像: スクリーンショット追加後に有効化
+    <meta property="og:image" content="https://ftiv-lab.github.io/FTIV/public/assets/ogp.png">
+    <meta name="twitter:card" content="summary_large_image">
+    -->
+
+    <!-- 構造化データ -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "FTIV",
+        "alternateName": "Floating Text Image Viewer",
+        "description": "デスクトップ上にテキストや画像を自由に配置できるオーバーレイツール",
+        "applicationCategory": "DesktopEnhancement",
+        "operatingSystem": "Windows 10, Windows 11",
+        "downloadUrl": "https://github.com/ftiv-lab/FTIV/releases/latest",
+        "softwareRequirements": "Windows 10/11 64bit",
+        "author": {
+            "@type": "Organization",
+            "name": "FTIV Lab"
+        },
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "JPY"
+        }
+    }
+    </script>
+
+    <style>
+        /* ===== リセット & ベース ===== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: "Segoe UI", "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+            color: #333;
+            background: #fff;
+            line-height: 1.8;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        a { color: #0366d6; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        a:focus-visible {
+            outline: 2px solid #0366d6;
+            outline-offset: 2px;
+            border-radius: 2px;
+        }
+
+        /* ===== ヘッダー ===== */
+        header {
+            border-bottom: 1px solid #e1e4e8;
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header-left { display: flex; align-items: center; gap: 0.5rem; }
+        .header-left .site-name {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1a1a1a;
+        }
+        nav { display: flex; align-items: center; gap: 1.25rem; font-size: 0.9rem; }
+        nav a { color: #555; }
+        nav a:hover { color: #0366d6; }
+        .lang-switch {
+            border-left: 1px solid #ddd;
+            padding-left: 1.25rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .lang-switch .current { font-weight: 700; color: #1a1a1a; }
+
+        /* ===== メインコンテンツ ===== */
+        main {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 3rem;
+        }
+
+        /* ===== ヒーロー（製品概要） ===== */
+        .hero {
+            text-align: center;
+            padding: 2rem 0 1.5rem;
+            border-bottom: 1px solid #e1e4e8;
+            margin-bottom: 2rem;
+        }
+        .hero h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 0.25rem;
+        }
+        .hero .subtitle {
+            font-size: 1rem;
+            color: #666;
+            margin-bottom: 0.75rem;
+        }
+        .hero .description {
+            font-size: 1.05rem;
+            color: #333;
+            line-height: 1.7;
+        }
+
+        /* ===== スクリーンショット ===== */
+        .screenshot {
+            text-align: center;
+            margin: 2rem 0;
+        }
+        .screenshot img {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .screenshot-placeholder {
+            background: #f6f8fa;
+            border: 2px dashed #d1d5da;
+            border-radius: 8px;
+            padding: 3rem 1rem;
+            color: #959da5;
+            font-size: 0.9rem;
+        }
+
+        /* ===== セクション ===== */
+        section { margin-bottom: 2rem; }
+        section h2 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            border-bottom: 1px solid #e1e4e8;
+            padding-bottom: 0.4rem;
+            margin-bottom: 0.75rem;
+        }
+
+        /* ===== リスト ===== */
+        ul { padding-left: 1.5rem; }
+        ul li { margin-bottom: 0.3rem; }
+        ul li::marker { color: #999; }
+
+        /* ===== テーブル ===== */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid #e1e4e8;
+        }
+        th {
+            background: #f6f8fa;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        /* ===== ダウンロードリンク ===== */
+        .download-links a {
+            display: inline-block;
+            margin-right: 1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* ===== ドキュメントリンク ===== */
+        .doc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.5rem;
+        }
+        .doc-grid a {
+            padding: 0.3rem 0;
+        }
+
+        /* ===== フッター ===== */
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            color: #959da5;
+            font-size: 0.85rem;
+            border-top: 1px solid #e1e4e8;
+        }
+
+        /* ===== レスポンシブ ===== */
+        @media (max-width: 600px) {
+            header { flex-direction: column; gap: 0.5rem; }
+            .hero h1 { font-size: 1.6rem; }
+            .doc-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="header-left">
+        <span class="site-name">FTIV</span>
+    </div>
+    <nav>
+        <a href="https://github.com/ftiv-lab/FTIV" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/ftiv-lab/FTIV/releases/latest" target="_blank" rel="noopener">ダウンロード</a>
+        <div class="lang-switch">
+            <span class="current">日本語</span>
+            <a href="../en-us/">English</a>
+        </div>
+    </nav>
+</header>
+
+<main>
+
+    <!-- 製品概要 -->
+    <div class="hero">
+        <h1>FTIV</h1>
+        <p class="subtitle">Floating Text Image Viewer</p>
+        <p class="description">デスクトップ上にテキストや画像を自由に配置できるオーバーレイツール</p>
+    </div>
+
+    <!-- スクリーンショット -->
+    <div class="screenshot">
+        <!-- スクリーンショット追加後に以下を有効化:
+        <img src="../assets/screenshot.png" alt="FTIV の使用画面 - テキストと画像をデスクトップに配置している様子" width="800" height="450">
+        -->
+        <div class="screenshot-placeholder">
+            スクリーンショット準備中<br>
+            <small>assets/screenshot.png (推奨: 1200×675px)</small>
+        </div>
+    </div>
+
+    <!-- 主な機能 -->
+    <section>
+        <h2>主な機能</h2>
+        <ul>
+            <li>テキストや画像をデスクトップ上の好きな位置に配置</li>
+            <li>縁取り・影・グラデーションによるテキスト装飾</li>
+            <li>縦書き表示に対応</li>
+            <li>APNG / GIF アニメーションの再生</li>
+            <li>ウィンドウ同士をコネクタ線で接続</li>
+            <li>レイヤー管理（親子グループ化・並べ替え）</li>
+            <li>クリックスルー（背面のアプリを操作透過）</li>
+            <li>シーンの保存と復元</li>
+            <li>不透明度の調整</li>
+            <li>前面固定（Always on Top）</li>
+        </ul>
+    </section>
+
+    <!-- 対応形式 -->
+    <section>
+        <h2>対応形式</h2>
+        <table>
+            <tr>
+                <th>種別</th>
+                <th>形式</th>
+            </tr>
+            <tr>
+                <td>テキスト</td>
+                <td>UTF-8 テキスト（多言語対応）</td>
+            </tr>
+            <tr>
+                <td>画像</td>
+                <td>PNG, JPEG, BMP, GIF, APNG, WebP</td>
+            </tr>
+            <tr>
+                <td>シーン</td>
+                <td>.ftiv（独自形式）</td>
+            </tr>
+        </table>
+    </section>
+
+    <!-- 動作環境 -->
+    <section>
+        <h2>動作環境</h2>
+        <table>
+            <tr>
+                <th>項目</th>
+                <th>要件</th>
+            </tr>
+            <tr>
+                <td>OS</td>
+                <td>Windows 10 / 11（64bit）</td>
+            </tr>
+            <tr>
+                <td>インストール</td>
+                <td>不要（ポータブル版 / インストーラー版）</td>
+            </tr>
+        </table>
+    </section>
+
+    <!-- ダウンロード -->
+    <section>
+        <h2>ダウンロード</h2>
+        <div class="download-links">
+            <a href="https://github.com/ftiv-lab/FTIV/releases/latest" target="_blank" rel="noopener">GitHub Releases（最新版）</a>
+        </div>
+        <p style="color: #666; font-size: 0.9rem;">Zip（ポータブル版）をダウンロードし、任意のフォルダに展開してください。</p>
+    </section>
+
+    <!-- ドキュメント -->
+    <section>
+        <h2>ドキュメント</h2>
+        <p style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">ドキュメントは順次整備中です。</p>
+        <div class="doc-grid">
+            <!-- ドキュメントページ追加時にリンクを有効化:
+            <a href="#">ユーザーガイド</a>
+            <a href="#">ショートカット一覧</a>
+            <a href="#">レイヤー操作</a>
+            <a href="#">コネクタ</a>
+            <a href="#">シーン管理</a>
+            <a href="#">トラブルシューティング</a>
+            -->
+        </div>
+        <ul>
+            <li><a href="https://github.com/ftiv-lab/FTIV/releases" target="_blank" rel="noopener">更新履歴（GitHub Releases）</a></li>
+            <li><a href="https://github.com/ftiv-lab/FTIV/issues" target="_blank" rel="noopener">不具合報告・要望（GitHub Issues）</a></li>
+        </ul>
+    </section>
+
+    <!-- ライセンス -->
+    <section>
+        <h2>ライセンス</h2>
+        <p>詳細は <a href="https://github.com/ftiv-lab/FTIV" target="_blank" rel="noopener">GitHub リポジトリ</a> をご確認ください。</p>
+    </section>
+
+</main>
+
+<footer>
+    <p>FTIV Lab</p>
+</footer>
+
+</body>
+</html>
