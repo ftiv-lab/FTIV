@@ -139,5 +139,10 @@ docs/internal/
 .claude/
 
 # User Data & Settings
-json/
+# Keep user data under json/ ignored by default, but track built-in preset library assets.
+json/*
+!json/presets/
+json/presets/*
+!json/presets/*.json
+!json/presets/*.png
 backups/
