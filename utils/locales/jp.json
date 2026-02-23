@@ -879,5 +879,16 @@
     "preset_lbl_category": "カテゴリ:",
     "preset_lbl_sort": "ソート:",
     "preset_lbl_tags": "タグ:",
-    "preset_lbl_no_description": "(説明なし)"
+    "preset_lbl_no_description": "(説明なし)",
+
+    "preset_menu_edit_tags": "タグ編集...",
+    "preset_menu_change_category": "カテゴリ変更",
+    "preset_menu_edit_description": "説明を編集...",
+    "preset_tag_edit_title": "タグ編集",
+    "preset_tag_edit_current": "現在のタグ:",
+    "preset_tag_edit_add": "タグを追加:",
+    "preset_tag_edit_add_btn": "追加",
+    "preset_tag_edit_suggestions": "よく使われるタグ:",
+    "preset_desc_edit_title": "説明を編集",
+    "preset_desc_edit_label": "説明文:"
 }

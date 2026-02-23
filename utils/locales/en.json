@@ -879,5 +879,16 @@
     "preset_lbl_category": "Category:",
     "preset_lbl_sort": "Sort:",
     "preset_lbl_tags": "Tags:",
-    "preset_lbl_no_description": "(No description)"
+    "preset_lbl_no_description": "(No description)",
+
+    "preset_menu_edit_tags": "Edit tags...",
+    "preset_menu_change_category": "Change category",
+    "preset_menu_edit_description": "Edit description...",
+    "preset_tag_edit_title": "Edit Tags",
+    "preset_tag_edit_current": "Current tags:",
+    "preset_tag_edit_add": "Add tag:",
+    "preset_tag_edit_add_btn": "Add",
+    "preset_tag_edit_suggestions": "Frequently used tags:",
+    "preset_desc_edit_title": "Edit Description",
+    "preset_desc_edit_label": "Description:"
 }

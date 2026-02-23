@@ -1482,6 +1482,129 @@ class TextSpacingDialog(QDialog):
         return self._is_vertical
 
 
+class PresetTagEditDialog(QDialog):
+    """プリセットのタグを編集するダイアログ。
+
+    チップ表示 + テキスト入力 + よく使われるタグの候補表示。
+    """
+
+    def __init__(
+        self,
+        current_tags: list[str],
+        all_tags: list[str],
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("preset_tag_edit_title"))
+        self.setMinimumWidth(400)
+
+        self._tags: list[str] = list(current_tags)
+        self._signal_connected: bool = False
+
+        layout = QVBoxLayout(self)
+
+        # 現在のタグ表示
+        layout.addWidget(QLabel(tr("preset_tag_edit_current")))
+        self._tags_list = QListWidget()
+        self._tags_list.setMaximumHeight(100)
+        self._refresh_tags_list()
+        layout.addWidget(self._tags_list)
+
+        # タグ追加入力
+        add_layout = QHBoxLayout()
+        add_layout.addWidget(QLabel(tr("preset_tag_edit_add")))
+        self._edit_add = QLineEdit()
+        self._edit_add.returnPressed.connect(self._add_tag_from_input)
+        add_layout.addWidget(self._edit_add, 1)
+        self._btn_add = QPushButton(tr("preset_tag_edit_add_btn"))
+        self._btn_add.clicked.connect(self._add_tag_from_input)
+        add_layout.addWidget(self._btn_add)
+        layout.addLayout(add_layout)
+
+        # よく使われるタグ候補
+        suggestions = [t for t in all_tags if t not in current_tags]
+        if suggestions:
+            layout.addWidget(QLabel(tr("preset_tag_edit_suggestions")))
+            suggestions_layout = QHBoxLayout()
+            for tag in suggestions[:12]:
+                btn = QPushButton(tag)
+                btn.setFlat(True)
+                btn.setStyleSheet("QPushButton { color: #0078d4; text-decoration: underline; padding: 2px 6px; }")
+                btn.clicked.connect(lambda checked, t=tag: self._add_tag(t))
+                suggestions_layout.addWidget(btn)
+            suggestions_layout.addStretch(1)
+            layout.addLayout(suggestions_layout)
+
+        # OK/Cancel
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def _refresh_tags_list(self) -> None:
+        """タグリストを再描画する。"""
+        if self._signal_connected:
+            self._tags_list.itemClicked.disconnect(self._remove_tag_by_click)
+            self._signal_connected = False
+        self._tags_list.clear()
+        for tag in self._tags:
+            item = QListWidgetItem(f"  {tag}  ×")
+            self._tags_list.addItem(item)
+        self._tags_list.itemClicked.connect(self._remove_tag_by_click)
+        self._signal_connected = True
+
+    def _add_tag_from_input(self) -> None:
+        """入力欄からタグを追加する。"""
+        text = self._edit_add.text().strip().lower()
+        if text:
+            self._add_tag(text)
+        self._edit_add.clear()
+
+    def _add_tag(self, tag: str) -> None:
+        """タグを追加する（重複チェック付き）。"""
+        normalized = tag.strip().lower()
+        if normalized and normalized not in self._tags:
+            self._tags.append(normalized)
+            self._refresh_tags_list()
+
+    def _remove_tag_by_click(self, item: QListWidgetItem) -> None:
+        """クリックでタグを削除する。"""
+        idx = self._tags_list.row(item)
+        if 0 <= idx < len(self._tags):
+            self._tags.pop(idx)
+            self._refresh_tags_list()
+
+    def get_tags(self) -> list[str]:
+        """確定されたタグリストを返す。"""
+        return list(self._tags)
+
+
+class PresetDescriptionEditDialog(QDialog):
+    """プリセットの説明文を編集するダイアログ。"""
+
+    def __init__(self, current_description: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(tr("preset_desc_edit_title"))
+        self.setMinimumWidth(400)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(tr("preset_desc_edit_label")))
+
+        self._text_edit = QTextEdit()
+        self._text_edit.setPlainText(current_description)
+        self._text_edit.setMaximumHeight(120)
+        layout.addWidget(self._text_edit)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def get_description(self) -> str:
+        """確定された説明文を返す。"""
+        return self._text_edit.toPlainText().strip()
+
+
 class StyleGalleryDialog(BaseTranslatableDialog):
     """保存されたスタイルプリセットをサムネイル付きで一覧表示・選択するダイアログ。"""
 
@@ -1734,10 +1857,10 @@ class StyleGalleryDialog(BaseTranslatableDialog):
             self._block_filter_events = False
 
     def show_context_menu(self, pos: QPoint) -> None:
-        """アイテムに対する右クリックメニュー（名前変更・削除）を表示。
+        """アイテムに対する右クリックメニューを表示。
 
         Args:
-            pos (QPoint): クリック位置（Qtの型は実際には QPoint のはずだが既存互換で受ける）。
+            pos (QPoint): クリック位置。
         """
         item = self.list_widget.itemAt(pos)
         if not item:
@@ -1749,6 +1872,30 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         rename_action.triggered.connect(lambda: self.list_widget.editItem(item))
         menu.addAction(rename_action)
 
+        # カテゴリ変更サブメニュー
+        cat_menu = QMenu(tr("preset_menu_change_category"), self)
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+        current_cat: str = str(meta.get("category", "other"))
+        for cat_id, tr_key in self.PRESET_CATEGORIES:
+            if cat_id == "all":
+                continue
+            action = QAction(tr(tr_key), self)
+            action.setCheckable(True)
+            action.setChecked(cat_id == current_cat)
+            action.triggered.connect(lambda checked, c=cat_id, it=item: self._change_category(it, c))
+            cat_menu.addAction(action)
+        menu.addMenu(cat_menu)
+
+        # タグ編集
+        tag_action = QAction(tr("preset_menu_edit_tags"), self)
+        tag_action.triggered.connect(lambda: self._open_tag_edit_dialog(item))
+        menu.addAction(tag_action)
+
+        # 説明編集
+        desc_action = QAction(tr("preset_menu_edit_description"), self)
+        desc_action.triggered.connect(lambda: self._open_description_edit_dialog(item))
+        menu.addAction(desc_action)
+
         menu.addSeparator()
 
         delete_action = QAction(tr("menu_delete_style"), self)
@@ -1756,6 +1903,73 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         menu.addAction(delete_action)
 
         menu.exec(self.list_widget.mapToGlobal(pos))
+
+    def _change_category(self, item: QListWidgetItem, new_category: str) -> None:
+        """プリセットのカテゴリを変更する。"""
+        json_path: str = str(item.data(Qt.UserRole) or "")
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+        if not json_path:
+            return
+        try:
+            updated = self.style_manager.update_preset_meta(json_path, category=new_category)
+            if not updated:
+                raise RuntimeError("update_preset_meta returned False")
+            meta["category"] = new_category
+            item.setData(Qt.UserRole + 1, meta)
+            self._apply_filters()
+            self._on_selection_changed(item, None)
+        except Exception:
+            traceback.print_exc()
+
+    def _open_tag_edit_dialog(self, item: QListWidgetItem) -> None:
+        """タグ編集ダイアログを開く。"""
+        json_path: str = str(item.data(Qt.UserRole) or "")
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+        if not json_path:
+            return
+
+        all_tags: list[str] = []
+        try:
+            all_tags = self.style_manager.get_all_tags()
+        except Exception:
+            pass
+
+        dlg = PresetTagEditDialog(list(meta.get("tags", [])), all_tags, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        new_tags: list[str] = dlg.get_tags()
+        try:
+            updated = self.style_manager.update_preset_meta(json_path, tags=new_tags)
+            if not updated:
+                raise RuntimeError("update_preset_meta returned False")
+            meta["tags"] = new_tags
+            item.setData(Qt.UserRole + 1, meta)
+            self._on_selection_changed(item, None)
+        except Exception:
+            traceback.print_exc()
+
+    def _open_description_edit_dialog(self, item: QListWidgetItem) -> None:
+        """説明編集ダイアログを開く。"""
+        json_path: str = str(item.data(Qt.UserRole) or "")
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+        if not json_path:
+            return
+
+        dlg = PresetDescriptionEditDialog(str(meta.get("description", "")), self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        new_desc: str = dlg.get_description()
+        try:
+            updated = self.style_manager.update_preset_meta(json_path, description=new_desc)
+            if not updated:
+                raise RuntimeError("update_preset_meta returned False")
+            meta["description"] = new_desc
+            item.setData(Qt.UserRole + 1, meta)
+            self._on_selection_changed(item, None)
+        except Exception:
+            traceback.print_exc()
 
     def delete_preset(self, item: QListWidgetItem) -> None:
         """プリセットを削除する。
