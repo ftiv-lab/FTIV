@@ -858,5 +858,26 @@
     "layer_msg_drag_detach_preview": "ドロップで「独立させる」",
     "menu_layer_ops": "レイヤー操作",
     "menu_layer_attach": "子にする",
-    "menu_layer_detach": "独立させる"
+    "menu_layer_detach": "独立させる",
+
+    "preset_cat_all": "すべて",
+    "preset_cat_subtitle": "字幕",
+    "preset_cat_title": "タイトル",
+    "preset_cat_game": "ゲーム",
+    "preset_cat_neon": "ネオン",
+    "preset_cat_elegant": "エレガント",
+    "preset_cat_card": "カード",
+    "preset_cat_pop": "ポップ",
+    "preset_cat_japanese": "和風",
+    "preset_cat_comic": "漫画",
+    "preset_cat_other": "その他",
+
+    "preset_sort_name": "名前順",
+    "preset_sort_date": "作成日順",
+    "preset_sort_category": "カテゴリ順",
+
+    "preset_lbl_category": "カテゴリ:",
+    "preset_lbl_sort": "ソート:",
+    "preset_lbl_tags": "タグ:",
+    "preset_lbl_no_description": "(説明なし)"
 }

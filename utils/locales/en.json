@@ -858,5 +858,26 @@
     "layer_msg_drag_detach_preview": "Drop to detach",
     "menu_layer_ops": "Layer Operations",
     "menu_layer_attach": "Make Child",
-    "menu_layer_detach": "Detach"
+    "menu_layer_detach": "Detach",
+
+    "preset_cat_all": "All",
+    "preset_cat_subtitle": "Subtitle",
+    "preset_cat_title": "Title",
+    "preset_cat_game": "Game",
+    "preset_cat_neon": "Neon",
+    "preset_cat_elegant": "Elegant",
+    "preset_cat_card": "Card",
+    "preset_cat_pop": "Pop",
+    "preset_cat_japanese": "Japanese",
+    "preset_cat_comic": "Comic",
+    "preset_cat_other": "Other",
+
+    "preset_sort_name": "Name",
+    "preset_sort_date": "Date created",
+    "preset_sort_category": "Category",
+
+    "preset_lbl_category": "Category:",
+    "preset_lbl_sort": "Sort:",
+    "preset_lbl_tags": "Tags:",
+    "preset_lbl_no_description": "(No description)"
 }

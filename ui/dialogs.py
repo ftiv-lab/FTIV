@@ -1485,6 +1485,21 @@ class TextSpacingDialog(QDialog):
 class StyleGalleryDialog(BaseTranslatableDialog):
     """保存されたスタイルプリセットをサムネイル付きで一覧表示・選択するダイアログ。"""
 
+    # カテゴリ定義: (id, translation_key)
+    PRESET_CATEGORIES: list[tuple[str, str]] = [
+        ("all", "preset_cat_all"),
+        ("subtitle", "preset_cat_subtitle"),
+        ("title", "preset_cat_title"),
+        ("game", "preset_cat_game"),
+        ("neon", "preset_cat_neon"),
+        ("elegant", "preset_cat_elegant"),
+        ("card", "preset_cat_card"),
+        ("pop", "preset_cat_pop"),
+        ("japanese", "preset_cat_japanese"),
+        ("comic", "preset_cat_comic"),
+        ("other", "preset_cat_other"),
+    ]
+
     def __init__(self, style_manager: Any, parent: Optional[QWidget] = None) -> None:
         """StyleGalleryDialog を初期化する。
 
@@ -1497,9 +1512,10 @@ class StyleGalleryDialog(BaseTranslatableDialog):
 
         self.style_manager: Any = style_manager
         self.selected_json_path: Optional[str] = None
+        self._block_filter_events: bool = False
 
         try:
-            self.resize(600, 500)
+            self.resize(650, 560)
         except Exception:
             pass
 
@@ -1511,15 +1527,36 @@ class StyleGalleryDialog(BaseTranslatableDialog):
 
         self.search_input: QLineEdit = QLineEdit()
         self.search_input.setPlaceholderText(tr("placeholder_search_styles"))
-        self.search_input.textChanged.connect(self.filter_items)
+        self.search_input.textChanged.connect(self._apply_filters)
 
         search_layout.addWidget(self.search_input)
         layout.addLayout(search_layout)
 
+        # フィルタバー (カテゴリ + ソート)
+        filter_layout: QHBoxLayout = QHBoxLayout()
+
+        self.lbl_category: QLabel = QLabel(tr("preset_lbl_category"))
+        filter_layout.addWidget(self.lbl_category)
+
+        self.cmb_category: QComboBox = QComboBox()
+        self._reload_category_combo()
+        self.cmb_category.currentIndexChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self.cmb_category, 1)
+
+        self.lbl_sort: QLabel = QLabel(tr("preset_lbl_sort"))
+        filter_layout.addWidget(self.lbl_sort)
+
+        self.cmb_sort: QComboBox = QComboBox()
+        self._reload_sort_combo()
+        self.cmb_sort.currentIndexChanged.connect(self._on_sort_changed)
+        filter_layout.addWidget(self.cmb_sort, 1)
+
+        layout.addLayout(filter_layout)
+
         # ギャラリーリスト
         self.list_widget: QListWidget = QListWidget()
         self.list_widget.setViewMode(QListWidget.IconMode)
-        self.list_widget.setIconSize(QSize(120, 120))
+        self.list_widget.setIconSize(QSize(140, 140))
         self.list_widget.setResizeMode(QListWidget.Adjust)
         self.list_widget.setSpacing(10)
         self.list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -1527,7 +1564,15 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         self.list_widget.itemChanged.connect(self.on_item_changed)
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
+        self.list_widget.currentItemChanged.connect(self._on_selection_changed)
         layout.addWidget(self.list_widget)
+
+        # 説明文表示エリア
+        self.lbl_description: QLabel = QLabel("")
+        self.lbl_description.setWordWrap(True)
+        self.lbl_description.setMaximumHeight(48)
+        self.lbl_description.setStyleSheet("color: #888; padding: 2px 4px;")
+        layout.addWidget(self.lbl_description)
 
         # OK/Cancel
         self.button_box: QDialogButtonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -1541,52 +1586,152 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         # 初回ロード（※二重ロードはしない）
         self.load_presets()
 
+    def _reload_category_combo(self) -> None:
+        """カテゴリコンボボックスの項目を（再）構築する。"""
+        prev = self.cmb_category.currentData() if self.cmb_category.count() else "all"
+        self.cmb_category.blockSignals(True)
+        self.cmb_category.clear()
+        for cat_id, tr_key in self.PRESET_CATEGORIES:
+            self.cmb_category.addItem(tr(tr_key), cat_id)
+        idx = self.cmb_category.findData(prev)
+        self.cmb_category.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_category.blockSignals(False)
+
+    def _reload_sort_combo(self) -> None:
+        """ソートコンボボックスの項目を（再）構築する。"""
+        prev = self.cmb_sort.currentData() if self.cmb_sort.count() else "name"
+        self.cmb_sort.blockSignals(True)
+        self.cmb_sort.clear()
+        self.cmb_sort.addItem(tr("preset_sort_name"), "name")
+        self.cmb_sort.addItem(tr("preset_sort_date"), "created")
+        self.cmb_sort.addItem(tr("preset_sort_category"), "category")
+        idx = self.cmb_sort.findData(prev)
+        self.cmb_sort.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_sort.blockSignals(False)
+
     def refresh_ui_text(self) -> None:
         """言語切替時に、ダイアログ内テキストを更新します。"""
         self.setWindowTitle(tr("menu_style_presets"))
         if hasattr(self, "search_input"):
             self.search_input.setPlaceholderText(tr("placeholder_search_styles"))
+        if hasattr(self, "lbl_category"):
+            self.lbl_category.setText(tr("preset_lbl_category"))
+        if hasattr(self, "lbl_sort"):
+            self.lbl_sort.setText(tr("preset_lbl_sort"))
+        if hasattr(self, "cmb_category"):
+            self._reload_category_combo()
+        if hasattr(self, "cmb_sort"):
+            self._reload_sort_combo()
 
     def filter_items(self, text: str) -> None:
-        """入力テキストに基づいて表示するスタイルをフィルタリングする。
+        """後方互換用ラッパー。"""
+        self._apply_filters()
 
-        Args:
-            text (str): 検索文字列。
-        """
+    def _apply_filters(self) -> None:
+        """カテゴリ・検索テキストの複合フィルタを適用する。"""
+        if self._block_filter_events:
+            return
         try:
-            q: str = str(text or "").lower()
+            q: str = str(self.search_input.text() or "").strip().lower()
+            category: str = str(self.cmb_category.currentData() or "all")
+
             for i in range(self.list_widget.count()):
                 item = self.list_widget.item(i)
-                item.setHidden(q not in item.text().lower())
+                meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+
+                visible = True
+
+                # カテゴリフィルタ
+                if category != "all" and meta.get("category", "other") != category:
+                    visible = False
+
+                # テキスト検索（名前 + タグ + 説明）
+                if visible and q:
+                    searchable: str = " ".join(
+                        [
+                            str(meta.get("display_name", "")),
+                            str(meta.get("name", "")),
+                            " ".join(meta.get("tags", [])),
+                            str(meta.get("description", "")),
+                        ]
+                    ).lower()
+                    if q not in searchable:
+                        visible = False
+
+                item.setHidden(not visible)
         except Exception:
             pass
+
+    def _on_sort_changed(self) -> None:
+        """ソート変更時にプリセットを再読み込みする。"""
+        self.load_presets()
+
+    def _on_selection_changed(self, current: Optional[QListWidgetItem], _previous: Optional[QListWidgetItem]) -> None:
+        """選択アイテム変更時に説明文を更新する。"""
+        if current is None:
+            self.lbl_description.setText("")
+            return
+        meta: dict[str, Any] = current.data(Qt.UserRole + 1) or {}
+        desc: str = str(meta.get("description", "")).strip()
+        tags: list[str] = meta.get("tags", [])
+        parts: list[str] = []
+        if tags:
+            parts.append(tr("preset_lbl_tags") + " " + ", ".join(tags))
+        if desc:
+            parts.append(desc)
+        self.lbl_description.setText("\n".join(parts) if parts else tr("preset_lbl_no_description"))
 
     def load_presets(self) -> None:
         """プリセット一覧を読み込んでリストを更新する。"""
         try:
+            self._block_filter_events = True
             with QSignalBlocker(self.list_widget):
                 self.list_widget.clear()
-                presets = self.style_manager.get_available_presets()
+                presets: list[dict[str, Any]] = self.style_manager.get_available_presets()
+
+                # ソート
+                sort_key: str = str(self.cmb_sort.currentData() or "name")
+                if sort_key == "created":
+                    presets.sort(key=lambda p: str(p.get("created", "")), reverse=True)
+                elif sort_key == "category":
+                    presets.sort(key=lambda p: str(p.get("category", "other")))
+                else:
+                    presets.sort(key=lambda p: str(p.get("display_name") or p.get("name", "")).lower())
 
                 for p in presets:
-                    name: str = str(p.get("name", ""))
+                    display_name: str = str(p.get("display_name") or p.get("name", ""))
                     json_path: str = str(p.get("json_path", ""))
                     thumb_path: Optional[str] = p.get("thumb_path")
 
-                    item = QListWidgetItem(name)
+                    item = QListWidgetItem(display_name)
                     item.setData(Qt.UserRole, json_path)
+                    item.setData(
+                        Qt.UserRole + 1,
+                        {
+                            "name": str(p.get("name", "")),
+                            "display_name": display_name,
+                            "description": str(p.get("description", "")),
+                            "category": str(p.get("category", "other")),
+                            "tags": list(p.get("tags", [])),
+                            "favorite": bool(p.get("favorite", False)),
+                            "builtin": bool(p.get("builtin", False)),
+                            "created": str(p.get("created", "")),
+                        },
+                    )
                     item.setFlags(item.flags() | Qt.ItemIsEditable)
 
                     if thumb_path and os.path.exists(thumb_path):
                         item.setIcon(QIcon(thumb_path))
                     else:
-                        pix = QPixmap(120, 120)
+                        pix = QPixmap(140, 140)
                         pix.fill(Qt.gray)
                         item.setIcon(QIcon(pix))
 
                     self.list_widget.addItem(item)
+            self._block_filter_events = False
+            self._apply_filters()
         except Exception:
-            pass
+            self._block_filter_events = False
 
     def show_context_menu(self, pos: QPoint) -> None:
         """アイテムに対する右クリックメニュー（名前変更・削除）を表示。
@@ -1671,45 +1816,38 @@ class StyleGalleryDialog(BaseTranslatableDialog):
             return None
 
     def on_item_changed(self, item: QListWidgetItem) -> None:
-        """プリセット名の変更をファイル名に反映する。
+        """プリセット表示名の変更を _display_name メタデータに反映する。
+
+        SP2: ファイル名renameではなく _display_name の更新に変更。
 
         Args:
             item (QListWidgetItem): 変更されたアイテム。
         """
-        new_name: str = item.text().strip()
-        old_json_path: Any = item.data(Qt.UserRole)
+        new_display_name: str = item.text().strip()
+        json_path: Any = item.data(Qt.UserRole)
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
 
-        if not old_json_path or not os.path.exists(str(old_json_path)):
+        if not json_path or not os.path.exists(str(json_path)):
             return
 
-        directory: str = os.path.dirname(str(old_json_path))
-        old_name: str = os.path.splitext(os.path.basename(str(old_json_path)))[0]
+        old_display_name: str = str(meta.get("display_name", ""))
 
-        if new_name == old_name or not new_name:
-            return
-
-        new_json_path: str = os.path.join(directory, f"{new_name}.json")
-
-        if os.path.exists(new_json_path):
-            QMessageBox.warning(self, tr("title_error"), tr("msg_file_exists"))
-            with QSignalBlocker(self.list_widget):
-                item.setText(old_name)
+        if new_display_name == old_display_name or not new_display_name:
+            if not new_display_name:
+                with QSignalBlocker(self.list_widget):
+                    item.setText(old_display_name)
             return
 
         try:
-            os.rename(str(old_json_path), new_json_path)
-
-            old_thumb_path: str = os.path.splitext(str(old_json_path))[0] + ".png"
-            new_thumb_path: str = os.path.splitext(new_json_path)[0] + ".png"
-            if os.path.exists(old_thumb_path):
-                os.rename(old_thumb_path, new_thumb_path)
-
-            item.setData(Qt.UserRole, new_json_path)
-
+            updated = self.style_manager.update_preset_meta(str(json_path), display_name=new_display_name)
+            if not updated:
+                raise RuntimeError("update_preset_meta returned False")
+            meta["display_name"] = new_display_name
+            item.setData(Qt.UserRole + 1, meta)
         except Exception as e:
             QMessageBox.critical(self, tr("title_error"), tr("msg_rename_error").format(e))
             with QSignalBlocker(self.list_widget):
-                item.setText(old_name)
+                item.setText(old_display_name)
             traceback.print_exc()
 
 
