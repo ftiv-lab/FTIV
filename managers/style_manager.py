@@ -3,6 +3,7 @@
 import json
 import os
 import traceback  # エラーハンドリング用に追加
+from datetime import date
 from typing import Any
 
 from PySide6.QtCore import QPoint, Qt
@@ -326,6 +327,62 @@ class StyleManager:
             # 縦書き・配置モード
             "is_vertical",
         ]
+        self._preset_meta_defaults: dict[str, Any] = {
+            "_display_name": "",
+            "_description": "",
+            "_category": "other",
+            "_tags": [],
+            "_favorite": False,
+            "_builtin": False,
+            "_created": "",
+            "_author": "user",
+        }
+
+    def _normalize_preset_tags(self, raw_tags: Any) -> list[str]:
+        """Normalize preset tags into a de-duplicated lowercase list."""
+        if raw_tags is None:
+            return []
+        if isinstance(raw_tags, str):
+            candidates = [raw_tags]
+        elif isinstance(raw_tags, (list, tuple, set)):
+            candidates = list(raw_tags)
+        else:
+            return []
+
+        out: list[str] = []
+        seen: set[str] = set()
+        for tag in candidates:
+            val = str(tag or "").strip().lower()
+            if not val or val in seen:
+                continue
+            seen.add(val)
+            out.append(val)
+        return out
+
+    def _build_preset_meta(self, style_data: dict[str, Any], base_name: str) -> dict[str, Any]:
+        """Return normalized preset metadata for legacy and new preset JSONs."""
+        meta: dict[str, Any] = dict(self._preset_meta_defaults)
+        for key in self._preset_meta_defaults.keys():
+            if key in style_data:
+                meta[key] = style_data[key]
+
+        # Normalize types / fallbacks.
+        meta["_display_name"] = str(meta.get("_display_name", "") or "")
+        meta["_description"] = str(meta.get("_description", "") or "")
+        meta["_category"] = str(meta.get("_category", "other") or "other")
+        meta["_tags"] = self._normalize_preset_tags(meta.get("_tags"))
+        meta["_favorite"] = bool(meta.get("_favorite", False))
+        meta["_builtin"] = bool(meta.get("_builtin", False))
+        meta["_created"] = str(meta.get("_created", "") or "")
+        meta["_author"] = str(meta.get("_author", "user") or "user")
+        if not meta["_display_name"]:
+            meta["_display_name"] = str(base_name or "")
+        return meta
+
+    def _ensure_preset_schema_version(self, style_data: dict[str, Any]) -> None:
+        """Upgrade preset schema version marker in-memory (non-destructive until save)."""
+        # SP1 decision: keep a single _version for the whole preset JSON schema.
+        style_data["_version"] = "1.1"
 
     def get_presets_directory(self):
         """プリセット保存用ディレクトリのパスを取得（なければ作成）"""
@@ -366,9 +423,18 @@ class StyleManager:
                 if field in config_dump:
                     style_data[field] = config_dump[field]
 
-            # メタデータ
+            # メタデータ（SP1: preset schema v1.1 + default meta fields）
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
             style_data["_type"] = "ftiv_text_style"
-            style_data["_version"] = "1.0"
+            style_data["_version"] = "1.1"
+            style_data["_display_name"] = base_name
+            style_data["_description"] = ""
+            style_data["_category"] = "other"
+            style_data["_tags"] = []
+            style_data["_favorite"] = False
+            style_data["_builtin"] = False
+            style_data["_created"] = date.today().isoformat()
+            style_data["_author"] = "user"
 
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(style_data, f, indent=4, ensure_ascii=False)
@@ -466,6 +532,7 @@ class StyleManager:
         """
         プリセットフォルダ内の情報を取得
         戻り値: [{'name': 'Style1', 'json_path': '...', 'thumb_path': '...'}, ...]
+        既存キーは維持しつつ、SP1以降はメタデータ関連キーも追加する。
         """
         presets_dir = self.get_presets_directory()
         presets = []
@@ -477,13 +544,106 @@ class StyleManager:
                     base_name = os.path.splitext(f)[0]
                     thumb_name = base_name + ".png"
                     thumb_path = os.path.join(presets_dir, thumb_name)
+                    style_data: dict[str, Any] = {}
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as fp:
+                            loaded = json.load(fp)
+                        if isinstance(loaded, dict):
+                            style_data = loaded
+                    except Exception:
+                        # Keep listing the preset file even if metadata parsing fails.
+                        style_data = {}
+                    meta = self._build_preset_meta(style_data, base_name)
 
                     # サムネイルがない場合はNone
                     if not os.path.exists(thumb_path):
                         thumb_path = None
 
-                    presets.append({"name": base_name, "json_path": json_path, "thumb_path": thumb_path})
+                    presets.append(
+                        {
+                            # Backward-compatible keys (legacy UI currently uses these).
+                            "name": base_name,
+                            "json_path": json_path,
+                            "thumb_path": thumb_path,
+                            # SP1 metadata keys
+                            "display_name": meta["_display_name"],
+                            "description": meta["_description"],
+                            "category": meta["_category"],
+                            "tags": list(meta["_tags"]),
+                            "favorite": meta["_favorite"],
+                            "builtin": meta["_builtin"],
+                            "created": meta["_created"],
+                            "author": meta["_author"],
+                            "version": str(style_data.get("_version", "") or "1.0"),
+                            "type": str(style_data.get("_type", "") or ""),
+                        }
+                    )
         return presets
+
+    def update_preset_meta(self, json_path: str, **kwargs: Any) -> bool:
+        """Update metadata fields only, preserving style fields."""
+        try:
+            if not json_path or not os.path.exists(json_path):
+                return False
+            with open(json_path, "r", encoding="utf-8") as fp:
+                loaded = json.load(fp)
+            if not isinstance(loaded, dict):
+                return False
+
+            data: dict[str, Any] = dict(loaded)
+            base_name = os.path.splitext(os.path.basename(json_path))[0]
+            meta = self._build_preset_meta(data, base_name)
+
+            alias_map = {
+                "display_name": "_display_name",
+                "description": "_description",
+                "category": "_category",
+                "tags": "_tags",
+                "favorite": "_favorite",
+                "builtin": "_builtin",
+                "created": "_created",
+                "author": "_author",
+            }
+            for key, value in kwargs.items():
+                target_key = alias_map.get(key, key if str(key).startswith("_") else None)
+                if target_key not in self._preset_meta_defaults:
+                    continue
+                if target_key == "_tags":
+                    meta[target_key] = self._normalize_preset_tags(value)
+                elif target_key in ("_favorite", "_builtin"):
+                    meta[target_key] = bool(value)
+                elif target_key == "_category":
+                    meta[target_key] = str(value or "other")
+                elif target_key == "_author":
+                    meta[target_key] = str(value or "user")
+                else:
+                    meta[target_key] = str(value or "")
+
+            # Preserve fallback behavior: display name can be empty in file, but we store
+            # explicit values if provided. If someone clears it, keep empty string.
+            for meta_key in self._preset_meta_defaults.keys():
+                data[meta_key] = meta[meta_key]
+
+            # Keep schema marker consistent after metadata update.
+            self._ensure_preset_schema_version(data)
+            if "_type" not in data:
+                data["_type"] = "ftiv_text_style"
+
+            with open(json_path, "w", encoding="utf-8") as fp:
+                json.dump(data, fp, indent=4, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+
+    def get_all_tags(self) -> list[str]:
+        """Collect normalized tags currently used across presets."""
+        all_tags: set[str] = set()
+        for preset in self.get_available_presets():
+            for tag in preset.get("tags", []) or []:
+                val = str(tag or "").strip().lower()
+                if val:
+                    all_tags.add(val)
+        return sorted(all_tags)
 
     # managers/style_manager.py (抜粋・追加)
 

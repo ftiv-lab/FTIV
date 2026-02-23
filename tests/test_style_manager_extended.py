@@ -199,6 +199,107 @@ class TestStyleManagerPresets:
         s2 = next(p for p in result if p["name"] == "style2")
         assert s2["thumb_path"] is None
 
+    def test_get_available_presets_adds_meta_defaults_for_legacy_json(self, sm, tmp_path):
+        sm.get_presets_directory()
+        (tmp_path / "presets" / "legacy_style.json").write_text(
+            json.dumps({"_type": "ftiv_text_style", "_version": "1.0", "font": "Arial"}),
+            encoding="utf-8",
+        )
+
+        result = sm.get_available_presets()
+        preset = next(p for p in result if p["name"] == "legacy_style")
+        assert preset["display_name"] == "legacy_style"
+        assert preset["description"] == ""
+        assert preset["category"] == "other"
+        assert preset["tags"] == []
+        assert preset["favorite"] is False
+        assert preset["builtin"] is False
+        assert preset["author"] == "user"
+        assert preset["version"] == "1.0"
+
+    def test_get_available_presets_reads_meta_fields(self, sm, tmp_path):
+        sm.get_presets_directory()
+        (tmp_path / "presets" / "neon.json").write_text(
+            json.dumps(
+                {
+                    "_type": "ftiv_text_style",
+                    "_version": "1.1",
+                    "_display_name": "Neon Blue",
+                    "_description": "Bright neon style",
+                    "_category": "neon",
+                    "_tags": ["Glow", "dark", "glow"],
+                    "_favorite": True,
+                    "_builtin": True,
+                    "_created": "2026-02-23",
+                    "_author": "ai",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = sm.get_available_presets()
+        preset = next(p for p in result if p["name"] == "neon")
+        assert preset["display_name"] == "Neon Blue"
+        assert preset["description"] == "Bright neon style"
+        assert preset["category"] == "neon"
+        assert preset["tags"] == ["glow", "dark"]
+        assert preset["favorite"] is True
+        assert preset["builtin"] is True
+        assert preset["created"] == "2026-02-23"
+        assert preset["author"] == "ai"
+        assert preset["version"] == "1.1"
+
+    def test_update_preset_meta_updates_only_metadata(self, sm, tmp_path):
+        presets_dir = tmp_path / "presets"
+        presets_dir.mkdir(exist_ok=True)
+        json_path = presets_dir / "style.json"
+        json_path.write_text(
+            json.dumps(
+                {
+                    "_type": "ftiv_text_style",
+                    "_version": "1.0",
+                    "font": "Arial",
+                    "font_color": "#ffffff",
+                    "_display_name": "Old Name",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        ok = sm.update_preset_meta(
+            str(json_path),
+            display_name="New Name",
+            category="subtitle",
+            tags=["Glow", "stream", "glow"],
+            favorite=True,
+            description="desc",
+        )
+        assert ok is True
+
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        assert data["font"] == "Arial"
+        assert data["font_color"] == "#ffffff"
+        assert data["_display_name"] == "New Name"
+        assert data["_category"] == "subtitle"
+        assert data["_tags"] == ["glow", "stream"]
+        assert data["_favorite"] is True
+        assert data["_description"] == "desc"
+        assert data["_version"] == "1.1"
+
+    def test_get_all_tags_collects_deduped_sorted_tags(self, sm, tmp_path):
+        sm.get_presets_directory()
+        (tmp_path / "presets" / "a.json").write_text(
+            json.dumps({"_tags": ["Glow", "blue", "glow"]}),
+            encoding="utf-8",
+        )
+        (tmp_path / "presets" / "b.json").write_text(
+            json.dumps({"_tags": ["字幕", "Blue", " "]}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        # Japanese tag lower() is stable; English tags normalize to lowercase.
+        assert sm.get_all_tags() == ["blue", "glow", "字幕"]
+
     def test_delete_style_removes_files(self, sm, tmp_path):
         presets_dir = sm.get_presets_directory()
         json_path = os.path.join(presets_dir, "test.json")
