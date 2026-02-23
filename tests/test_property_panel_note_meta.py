@@ -38,6 +38,7 @@ class _DummyTargetWithUndo(_DummyTarget):
 class _DummyOrientationTarget:
     def __init__(self, is_vertical: bool = False, task_mode: bool = False) -> None:
         self.calls: list[tuple[str, object, str]] = []
+        self.toggle_calls = 0
         self.is_vertical = is_vertical
         self._task_mode = task_mode
         self.text_opacity = 100
@@ -57,6 +58,12 @@ class _DummyOrientationTarget:
         if key == "is_vertical":
             self.is_vertical = bool(value)
         self.calls.append((key, value, action))
+
+    def toggle_vertical_text(self) -> None:
+        self.toggle_calls += 1
+        if self.is_task_mode():
+            return
+        self.set_undoable_property("is_vertical", (not self.is_vertical), "update_text")
 
 
 def _make_panel():
@@ -168,7 +175,22 @@ def test_text_orientation_toggle_routes_to_undoable_property_and_resync(qapp):
     with patch.object(panel, "update_property_values", MagicMock()) as mock_update:
         panel._on_text_orientation_toggled(True, target)
 
+    assert target.toggle_calls == 1
     assert ("is_vertical", True, "update_text") in target.calls
+    mock_update.assert_called_once()
+
+
+def test_text_orientation_toggle_task_mode_is_blocked_and_resynced(qapp):
+    _ = qapp
+    panel = _make_panel()
+    target = _DummyOrientationTarget(is_vertical=False, task_mode=True)
+
+    with patch.object(panel, "update_property_values", MagicMock()) as mock_update:
+        panel._on_text_orientation_toggled(True, target)
+
+    assert target.toggle_calls == 1
+    assert target.is_vertical is False
+    assert ("is_vertical", True, "update_text") not in target.calls
     mock_update.assert_called_once()
 
 

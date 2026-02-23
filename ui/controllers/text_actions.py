@@ -346,12 +346,19 @@ class TextActions:
                 if checked is None:
                     return
                 try:
-                    if hasattr(w, "set_undoable_property"):
-                        w.set_undoable_property("is_vertical", bool(checked), "update_text")
-                    else:
-                        setattr(w, "is_vertical", bool(checked))
-                        if hasattr(w, "update_text"):
-                            w.update_text()
+                    desired = bool(checked)
+                    current = bool(getattr(w, "is_vertical", False))
+                    toggle_method = getattr(w, "toggle_vertical_text", None)
+
+                    if desired != current:
+                        if callable(toggle_method):
+                            toggle_method()
+                        elif hasattr(w, "set_undoable_property"):
+                            w.set_undoable_property("is_vertical", bool(checked), "update_text")
+                        else:
+                            setattr(w, "is_vertical", bool(checked))
+                            if hasattr(w, "update_text"):
+                                w.update_text()
                 except Exception as e:
                     report_unexpected_error(self.mw, "Failed to set vertical mode.", e, self._err_state)
 

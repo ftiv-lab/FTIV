@@ -71,6 +71,20 @@ class TestToggleTextVisibility:
             w.toggle_text_visibility()
         mock_prop.assert_called_once_with("text_opacity", 100, "update_text")
 
+    def test_text_opacity_setter_syncs_text_visible_false(self):
+        w = _make_text_window()
+        w.config.text_visible = True
+        w.text_opacity = 0
+        assert w.config.text_opacity == 0
+        assert w.config.text_visible is False
+
+    def test_text_opacity_setter_syncs_text_visible_true(self):
+        w = _make_text_window()
+        w.config.text_visible = False
+        w.text_opacity = 55
+        assert w.config.text_opacity == 55
+        assert w.config.text_visible is True
+
 
 # ============================================================
 # toggle_background_visibility

@@ -256,9 +256,20 @@ class TestRunSelectedLayoutAction:
     @patch.object(TextActions, "_is_text_like", return_value=True)
     def test_set_vertical(self, _mock, ta, mock_mw):
         w = MagicMock()
+        w.is_vertical = False
         mock_mw.last_selected_window = w
         ta.run_selected_layout_action("set_vertical", checked=True)
-        w.set_undoable_property.assert_called_once_with("is_vertical", True, "update_text")
+        w.toggle_vertical_text.assert_called_once()
+        w.set_undoable_property.assert_not_called()
+
+    @patch.object(TextActions, "_is_text_like", return_value=True)
+    def test_set_vertical_same_value_is_noop(self, _mock, ta, mock_mw):
+        w = MagicMock()
+        w.is_vertical = True
+        mock_mw.last_selected_window = w
+        ta.run_selected_layout_action("set_vertical", checked=True)
+        w.toggle_vertical_text.assert_not_called()
+        w.set_undoable_property.assert_not_called()
 
     @patch.object(TextActions, "_is_text_like", return_value=True)
     def test_set_vertical_without_checked_is_noop(self, _mock, ta, mock_mw):

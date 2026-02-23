@@ -632,7 +632,16 @@ class PropertyPanel(QWidget):
     def _on_text_orientation_toggled(self, checked: bool, target: Any) -> None:
         if not isinstance(target, UndoableConfigurable):
             return
-        target.set_undoable_property("is_vertical", bool(checked), "update_text")
+
+        desired = bool(checked)
+        current = bool(getattr(target, "is_vertical", False))
+        if desired != current:
+            toggle_method = getattr(target, "toggle_vertical_text", None)
+            if callable(toggle_method):
+                toggle_method()
+            else:
+                # Fallback for non-TextWindow targets that still support direct property updates.
+                target.set_undoable_property("is_vertical", desired, "update_text")
         self.update_property_values()
 
     @staticmethod

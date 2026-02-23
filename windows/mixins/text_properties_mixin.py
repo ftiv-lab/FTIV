@@ -272,7 +272,11 @@ class TextPropertiesMixin:
 
     @text_opacity.setter
     def text_opacity(self, v: int):
-        self.config.text_opacity = int(v)
+        opacity = int(v)
+        self.config.text_opacity = opacity
+        # Contract tightening: renderer visibility is opacity-based today.
+        # Keep legacy text_visible in sync to avoid route/state drift.
+        self.config.text_visible = opacity > 0
 
     @property
     def background_opacity(self) -> int:
