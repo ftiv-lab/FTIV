@@ -21,6 +21,7 @@
     "font_color": "#ffd54f",
     "text_opacity": 100,
     "is_vertical": false,
+    "background_visible": false,
     "background_color": "#000000",
     "background_opacity": 0,
     "background_corner_ratio": 0.2,

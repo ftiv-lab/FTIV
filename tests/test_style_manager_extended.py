@@ -340,6 +340,21 @@ class TestApplyDataToWindow:
         window.set_undoable_property.assert_any_call("font_color", "#FF0000", None)
         window.update_text.assert_called_once()
 
+    def test_apply_sets_background_visible(self, sm):
+        window = MagicMock()
+        style_data = {"background_visible": True}
+        sm._apply_data_to_window(window, style_data)
+        window.set_undoable_property.assert_any_call("background_visible", True, None)
+        window.update_text.assert_called_once()
+
+    def test_apply_infers_background_visible_from_opacity_for_legacy_preset(self, sm):
+        window = MagicMock()
+        style_data = {"background_opacity": 55}
+        sm._apply_data_to_window(window, style_data)
+        window.set_undoable_property.assert_any_call("background_visible", True, None)
+        window.set_undoable_property.assert_any_call("background_opacity", 55, None)
+        window.update_text.assert_called_once()
+
     def test_apply_skips_font_size(self, sm):
         window = MagicMock()
         style_data = {"font_size": 48}

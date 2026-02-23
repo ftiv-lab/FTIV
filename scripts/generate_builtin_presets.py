@@ -93,6 +93,7 @@ def _base(
         "font_color": font_color,
         "text_opacity": text_opacity,
         "is_vertical": is_vertical,
+        "background_visible": background_visible,
         "background_color": background_color,
         "background_opacity": background_opacity,
         "background_corner_ratio": background_corner_ratio,
@@ -131,8 +132,8 @@ def _base(
         "background_gradient_angle": background_gradient_angle,
         "background_gradient_opacity": background_gradient_opacity,
     }
-    # background_visible は TextWindowConfig にあるが text_style_fields に含まれていない
-    # → 直接書いても適用されない。代わりに background_opacity=0 で非表示を表現
+    # background_visible はプリセット適用対象。
+    # 非表示プリセットは opacity=0 も併用して、旧環境/視覚的一貫性を保つ。
     if not background_visible:
         data["background_opacity"] = 0
     return data

@@ -283,6 +283,7 @@ class StyleManager:
             "font_size",
             "font_color",
             "text_opacity",
+            "background_visible",
             "background_opacity",
             "background_color",
             "background_corner_ratio",
@@ -765,6 +766,17 @@ class StyleManager:
         単一のウィンドウにスタイルデータを適用するヘルパー
         ★ font_size に加え、is_vertical も除外する制御を追加
         """
+        # Legacy compatibility:
+        # Older presets may not contain background_visible. Infer it from opacity so
+        # presets with visible card backgrounds still apply as users expect.
+        if "background_visible" not in style_data and "background_opacity" in style_data:
+            try:
+                inferred_bg_visible = int(style_data["background_opacity"]) > 0
+            except Exception:
+                inferred_bg_visible = bool(style_data["background_opacity"])
+            if hasattr(window, "background_visible"):
+                window.set_undoable_property("background_visible", inferred_bg_visible, None)
+
         for field in self.text_style_fields:
             if field in style_data:
                 # ★修正: フォントサイズは適用しない（現在のウィンドウのサイズを維持する）

@@ -20,6 +20,7 @@
     "font_color": "#ffffff",
     "text_opacity": 100,
     "is_vertical": false,
+    "background_visible": true,
     "background_color": "#455a64",
     "background_opacity": 55,
     "background_corner_ratio": 0.2,
