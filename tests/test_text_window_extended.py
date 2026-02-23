@@ -76,21 +76,19 @@ class TestToggleTextVisibility:
 # toggle_background_visibility
 # ============================================================
 class TestToggleBackgroundVisibility:
-    def test_hides_when_opacity_positive(self):
+    def test_toggles_background_visible_off(self):
         w = _make_text_window()
-        w.config.background_opacity = 60
+        w.config.background_visible = True
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.toggle_background_visibility()
-        mock_prop.assert_called_once_with("background_opacity", 0, "update_text")
-        assert w._previous_background_opacity == 60
+        mock_prop.assert_called_once_with("background_visible", False, "update_text")
 
-    def test_restores_previous_opacity(self):
+    def test_toggles_background_visible_on(self):
         w = _make_text_window()
-        w.config.background_opacity = 0
-        w._previous_background_opacity = 50
+        w.config.background_visible = False
         with patch.object(type(w), "set_undoable_property") as mock_prop:
             w.toggle_background_visibility()
-        mock_prop.assert_called_once_with("background_opacity", 50, "update_text")
+        mock_prop.assert_called_once_with("background_visible", True, "update_text")
 
 
 # ============================================================

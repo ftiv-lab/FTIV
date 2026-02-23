@@ -615,12 +615,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
         self.set_undoable_property("text_opacity", new_opacity, "update_text")
 
     def toggle_background_visibility(self) -> None:
-        if self.background_opacity > 0:
-            self._previous_background_opacity = self.background_opacity
-            new_opacity = 0
-        else:
-            new_opacity = getattr(self, "_previous_background_opacity", 100)
-        self.set_undoable_property("background_opacity", new_opacity, "update_text")
+        self.set_undoable_property("background_visible", not self.background_visible, "update_text")
 
     def closeEvent(self, event: Any) -> None:
         """クローズ時に編集ダイアログをクリーンアップする。"""
@@ -1287,7 +1282,7 @@ class TextWindow(EditDialogMixin, TextPropertiesMixin, BaseOverlayWindow):  # ty
                 "menu_toggle_background",
                 self.toggle_background_visibility,
                 checkable=True,
-                checked=(self.background_opacity > 0),
+                checked=self.background_visible,
             )
             builder.add_action(
                 "menu_toggle_bg_outline",
