@@ -890,5 +890,10 @@
     "preset_tag_edit_add_btn": "追加",
     "preset_tag_edit_suggestions": "よく使われるタグ:",
     "preset_desc_edit_title": "説明を編集",
-    "preset_desc_edit_label": "説明文:"
+    "preset_desc_edit_label": "説明文:",
+
+    "preset_menu_toggle_favorite": "お気に入り ☆",
+    "preset_chk_favorites_only": "☆のみ",
+    "preset_msg_cannot_delete_builtin": "ビルトインプリセットは削除できません。",
+    "preset_menu_regenerate_thumbnail": "サムネイル再生成"
 }

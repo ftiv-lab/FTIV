@@ -668,6 +668,64 @@ class StyleManager:
 
             return False
 
+    def generate_thumbnail(self, json_path: str) -> bool:
+        """既存プリセットのサムネイルを（再）生成する。
+
+        Args:
+            json_path: プリセットJSONファイルパス。
+
+        Returns:
+            成功時 True、失敗時 False。
+        """
+        try:
+            if not os.path.exists(json_path):
+                return False
+
+            with open(json_path, "r", encoding="utf-8") as f:
+                style_data: dict[str, Any] = json.load(f)
+
+            tmp_cfg: TextWindowConfig = TextWindowConfig()
+            for k, v in style_data.items():
+                if k.startswith("_"):
+                    continue
+                if hasattr(tmp_cfg, k):
+                    try:
+                        setattr(tmp_cfg, k, v)
+                    except Exception:
+                        pass
+            tmp_cfg.text = "Aa あ"
+            tmp_cfg.uuid = ""
+            tmp_cfg.parent_uuid = None
+
+            renderer: TextRenderer = TextRenderer()
+            dummy = _TextRenderDummy(tmp_cfg)
+            original_pixmap: QPixmap = renderer.render(dummy)
+
+            thumb_size: int = 200
+            scaled_pixmap: QPixmap = original_pixmap.scaled(
+                thumb_size,
+                thumb_size,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
+            )
+            final_thumb: QPixmap = QPixmap(thumb_size, thumb_size)
+            final_thumb.fill(QColor(50, 50, 50))
+
+            painter: QPainter = QPainter(final_thumb)
+            try:
+                x: int = (thumb_size - scaled_pixmap.width()) // 2
+                y: int = (thumb_size - scaled_pixmap.height()) // 2
+                painter.drawPixmap(x, y, scaled_pixmap)
+            finally:
+                painter.end()
+
+            base_path, _ = os.path.splitext(json_path)
+            thumb_path: str = base_path + ".png"
+            return bool(final_thumb.save(thumb_path, "PNG"))
+        except Exception:
+            traceback.print_exc()
+            return False
+
     def apply_style_to_text_windows(self, windows, json_path):
         """
         複数のTextWindowに指定されたスタイルを一括適用する。

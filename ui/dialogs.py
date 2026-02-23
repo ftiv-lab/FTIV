@@ -10,6 +10,7 @@ from PySide6.QtGui import QAction, QColor, QFont, QFontDatabase, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCalendarWidget,
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QDialog,
@@ -1674,6 +1675,10 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         self.cmb_sort.currentIndexChanged.connect(self._on_sort_changed)
         filter_layout.addWidget(self.cmb_sort, 1)
 
+        self.chk_favorites_only: QCheckBox = QCheckBox(tr("preset_chk_favorites_only"))
+        self.chk_favorites_only.stateChanged.connect(self._apply_filters)
+        filter_layout.addWidget(self.chk_favorites_only)
+
         layout.addLayout(filter_layout)
 
         # ギャラリーリスト
@@ -1745,6 +1750,8 @@ class StyleGalleryDialog(BaseTranslatableDialog):
             self._reload_category_combo()
         if hasattr(self, "cmb_sort"):
             self._reload_sort_combo()
+        if hasattr(self, "chk_favorites_only"):
+            self.chk_favorites_only.setText(tr("preset_chk_favorites_only"))
 
     def filter_items(self, text: str) -> None:
         """後方互換用ラッパー。"""
@@ -1757,6 +1764,7 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         try:
             q: str = str(self.search_input.text() or "").strip().lower()
             category: str = str(self.cmb_category.currentData() or "all")
+            fav_only: bool = self.chk_favorites_only.isChecked()
 
             for i in range(self.list_widget.count()):
                 item = self.list_widget.item(i)
@@ -1764,8 +1772,12 @@ class StyleGalleryDialog(BaseTranslatableDialog):
 
                 visible = True
 
+                # お気に入りフィルタ
+                if fav_only and not meta.get("favorite", False):
+                    visible = False
+
                 # カテゴリフィルタ
-                if category != "all" and meta.get("category", "other") != category:
+                if visible and category != "all" and meta.get("category", "other") != category:
                     visible = False
 
                 # テキスト検索（名前 + タグ + 説明）
@@ -1896,10 +1908,26 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         desc_action.triggered.connect(lambda: self._open_description_edit_dialog(item))
         menu.addAction(desc_action)
 
+        # お気に入りトグル
+        fav_action = QAction(tr("preset_menu_toggle_favorite"), self)
+        fav_action.setCheckable(True)
+        fav_action.setChecked(meta.get("favorite", False))
+        fav_action.triggered.connect(lambda checked, it=item: self._toggle_favorite(it, checked))
+        menu.addAction(fav_action)
+
+        menu.addSeparator()
+
+        # サムネイル再生成
+        regen_action = QAction(tr("preset_menu_regenerate_thumbnail"), self)
+        regen_action.triggered.connect(lambda: self._regenerate_thumbnail(item))
+        menu.addAction(regen_action)
+
         menu.addSeparator()
 
         delete_action = QAction(tr("menu_delete_style"), self)
         delete_action.triggered.connect(lambda: self.delete_preset(item))
+        if meta.get("builtin", False):
+            delete_action.setEnabled(False)
         menu.addAction(delete_action)
 
         menu.exec(self.list_widget.mapToGlobal(pos))
@@ -1971,12 +1999,45 @@ class StyleGalleryDialog(BaseTranslatableDialog):
         except Exception:
             traceback.print_exc()
 
+    def _toggle_favorite(self, item: QListWidgetItem, checked: bool) -> None:
+        """お気に入りフラグをトグルする。"""
+        json_path: str = str(item.data(Qt.UserRole) or "")
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+        if not json_path:
+            return
+        try:
+            updated = self.style_manager.update_preset_meta(json_path, favorite=checked)
+            if not updated:
+                raise RuntimeError("update_preset_meta returned False")
+            meta["favorite"] = checked
+            item.setData(Qt.UserRole + 1, meta)
+            self._apply_filters()
+        except Exception:
+            traceback.print_exc()
+
+    def _regenerate_thumbnail(self, item: QListWidgetItem) -> None:
+        """プリセットのサムネイルを再生成する。"""
+        json_path: str = str(item.data(Qt.UserRole) or "")
+        if not json_path:
+            return
+        try:
+            ok: bool = self.style_manager.generate_thumbnail(json_path)
+            if ok:
+                self.load_presets()
+        except Exception:
+            traceback.print_exc()
+
     def delete_preset(self, item: QListWidgetItem) -> None:
         """プリセットを削除する。
 
         Args:
             item (QListWidgetItem): 対象アイテム。
         """
+        meta: dict[str, Any] = item.data(Qt.UserRole + 1) or {}
+        if meta.get("builtin", False):
+            QMessageBox.warning(self, tr("title_error"), tr("preset_msg_cannot_delete_builtin"))
+            return
+
         name: str = item.text()
         json_path: Any = item.data(Qt.UserRole)
 
