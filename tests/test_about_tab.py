@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from ui.tabs.about_tab import AboutTab
+from utils.translator import tr
 
 
 def _make_main_window_stub() -> SimpleNamespace:
@@ -35,6 +36,22 @@ def test_about_tab_default_sections_state(qapp) -> None:
     assert tab.system_group.toggle_button.isChecked() is True
     assert tab.shortcuts_group.toggle_button.isChecked() is False
     assert tab.perf_group.toggle_button.isChecked() is False
+    tab.deleteLater()
+
+
+def test_about_tab_has_info_and_settings_subtabs(qapp) -> None:
+    _ = qapp
+    mw = _make_main_window_stub()
+    tab = AboutTab(mw)
+
+    assert tab.about_subtabs.count() == 2
+    assert tab.about_subtabs.tabText(0) == tr("about_subtab_info")
+    assert tab.about_subtabs.tabText(1) == tr("about_subtab_settings")
+
+    assert tab.edition_group.parent() is tab.info_page
+    assert tab.system_group.parent() is tab.info_page
+    assert tab.shortcuts_group.parent() is tab.info_page
+    assert tab.perf_group.parent() is tab.settings_page
     tab.deleteLater()
 
 
@@ -118,4 +135,19 @@ def test_about_tab_overflow_actions_are_reachable(qapp) -> None:
     assert mw.open_log_folder.called
     assert mw.open_shop_page.called
     assert mw.copy_shop_url.called
+    tab.deleteLater()
+
+
+def test_about_tab_refresh_ui_restores_subtab_labels(qapp) -> None:
+    _ = qapp
+    mw = _make_main_window_stub()
+    tab = AboutTab(mw)
+
+    tab.about_subtabs.setTabText(0, "X")
+    tab.about_subtabs.setTabText(1, "Y")
+
+    tab.refresh_ui()
+
+    assert tab.about_subtabs.tabText(0) == tr("about_subtab_info")
+    assert tab.about_subtabs.tabText(1) == tr("about_subtab_settings")
     tab.deleteLater()

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QTabWidget,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -22,7 +23,7 @@ from utils.translator import tr
 
 
 class AboutTab(QWidget):
-    """情報（About）タブ。"""
+    """情報・設定（About）タブ。"""
 
     _SECTION_DEFAULTS = {
         "edition": True,
@@ -63,6 +64,22 @@ class AboutTab(QWidget):
         self.content_layout = QVBoxLayout(self.scroll_content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(4)
+
+        self.about_subtabs = QTabWidget()
+        self.about_subtabs.setObjectName("AboutSubtabs")
+        self.content_layout.addWidget(self.about_subtabs)
+
+        self.info_page = QWidget()
+        self.info_layout = QVBoxLayout(self.info_page)
+        self.info_layout.setContentsMargins(0, 0, 0, 0)
+        self.info_layout.setSpacing(4)
+        self.about_subtabs.addTab(self.info_page, tr("about_subtab_info"))
+
+        self.settings_page = QWidget()
+        self.settings_layout = QVBoxLayout(self.settings_page)
+        self.settings_layout.setContentsMargins(0, 0, 0, 0)
+        self.settings_layout.setSpacing(4)
+        self.about_subtabs.addTab(self.settings_page, tr("about_subtab_settings"))
 
         self.quick_actions_row = QWidget()
         self.quick_actions_row.setObjectName("AboutQuickActions")
@@ -117,7 +134,7 @@ class AboutTab(QWidget):
         self.btn_more_actions.setMenu(self.menu_more_actions)
         self.quick_actions_layout.addWidget(self.btn_more_actions)
 
-        self.content_layout.addWidget(self.quick_actions_row)
+        self.info_layout.addWidget(self.quick_actions_row)
 
         self.edition_group = self._create_section_box("edition", tr("grp_edition"), True)
         edition_layout = QVBoxLayout()
@@ -127,7 +144,7 @@ class AboutTab(QWidget):
         self.label_current_edition.setProperty("class", "edition-label")
         edition_layout.addWidget(self.label_current_edition)
         self.edition_group.setContentLayout(edition_layout)
-        self.content_layout.addWidget(self.edition_group)
+        self.info_layout.addWidget(self.edition_group)
 
         self.system_group = self._create_section_box("system", tr("grp_system_info"), True)
         system_layout = QVBoxLayout()
@@ -138,7 +155,7 @@ class AboutTab(QWidget):
         self.label_system_summary.setProperty("class", "about-hint")
         system_layout.addWidget(self.label_system_summary)
         self.system_group.setContentLayout(system_layout)
-        self.content_layout.addWidget(self.system_group)
+        self.info_layout.addWidget(self.system_group)
 
         self.shortcuts_group = self._create_section_box("shortcuts", tr("grp_shortcuts"), False)
         shortcuts_layout = QVBoxLayout()
@@ -149,7 +166,7 @@ class AboutTab(QWidget):
         self.label_shortcuts.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         shortcuts_layout.addWidget(self.label_shortcuts)
         self.shortcuts_group.setContentLayout(shortcuts_layout)
-        self.content_layout.addWidget(self.shortcuts_group)
+        self.info_layout.addWidget(self.shortcuts_group)
 
         self.perf_group = self._create_section_box("performance", tr("grp_performance"), False)
         perf_layout = QGridLayout()
@@ -209,9 +226,10 @@ class AboutTab(QWidget):
 
         perf_layout.addWidget(self.btn_apply_perf, 6, 0, 1, 2)
         self.perf_group.setContentLayout(perf_layout)
-        self.content_layout.addWidget(self.perf_group)
+        self.settings_layout.addWidget(self.perf_group)
 
-        self.content_layout.addStretch(1)
+        self.info_layout.addStretch(1)
+        self.settings_layout.addStretch(1)
 
     def _create_section_box(self, key: str, title: str, expanded: bool) -> CollapsibleBox:
         box = CollapsibleBox(title)
@@ -292,6 +310,8 @@ class AboutTab(QWidget):
         else:
             self.root_layout.setContentsMargins(4, 4, 4, 4)
         self.content_layout.setSpacing(3 if compact else 4)
+        self.info_layout.setSpacing(3 if compact else 4)
+        self.settings_layout.setSpacing(3 if compact else 4)
         self.quick_actions_layout.setSpacing(3 if compact else 4)
         self._apply_hint_visibility(not compact)
 
@@ -305,6 +325,9 @@ class AboutTab(QWidget):
             self._set_sections_from_state(dict(self._section_state))
 
     def refresh_ui(self) -> None:
+        self.about_subtabs.setTabText(0, tr("about_subtab_info"))
+        self.about_subtabs.setTabText(1, tr("about_subtab_settings"))
+
         self.btn_manual.setText(tr("btn_manual"))
         self.btn_license.setText(tr("btn_license"))
         self.btn_show_about.setText(tr("btn_show_about_dialog"))

@@ -13,6 +13,8 @@
     "tab_image": "Image",
     "tab_scene": "Scenes",
     "tab_info": "Tasks & Notes",
+    "about_subtab_info": "Info",
+    "about_subtab_settings": "Settings",
     "grp_language": "Language Settings",
     "btn_main_frontmost": "Main Window Frontmost",
     "grp_file_ops": "File Operations",

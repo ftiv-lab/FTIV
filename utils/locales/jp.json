@@ -713,6 +713,8 @@
     "msg_limit_text_windows": "無料版の制限：テキストは最大5個までです。(PRO版は無制限)",
     "msg_limit_image_windows": "無料版の制限：画像は最大5個までです。(PRO版は無制限)",
     "tab_about": "情報・設定",
+    "about_subtab_info": "情報",
+    "about_subtab_settings": "設定",
     "grp_system_info": "システム・情報",
     "about_system_summary": "主要操作は上部のクイックアクション、保守系は［その他］から利用できます。",
     "about_more_actions": "その他",
